@@ -285,6 +285,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| fd03bb2 | 2026-10-27 | v0.14.1: Learnverse AI worlds with a building screen, gates open by themselves, jump, saved points and purchases, home plus button aligned |
 | 543e8b5 | 2026-10-27 | v0.14.0: scenes play while they are made, per-stage progress, parallel study tools, profile, spaced repetition, weak spots, exports, offline lesson file, papers, teach-back, resumable jobs |
 | 2c9fb16 | 2026-10-27 | progress.md: git history for v0.13.0 |
 | cddcb2a | 2026-10-27 | Android app (native Kotlin + Compose, fully on-device): Figma screens, Gemma tutor and lesson planner, Piper voices, Whisper and Vosk speech, ML Kit translation and OCR, study tools, homework, rewards, profile with name and age |
