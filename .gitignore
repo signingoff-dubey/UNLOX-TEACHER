@@ -10,4 +10,6 @@ web/.remotion-bundle/
 web/public/fonts/
 .impeccable/
 _ref/
-data/
+data/kb/
+data/library/
+data/uploads/
