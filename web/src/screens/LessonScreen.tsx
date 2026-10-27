@@ -6,6 +6,7 @@ import { EpisodeRail } from "../components/EpisodeRail";
 import { LessonVideo, lessonFrames } from "../remotion/Lesson";
 import { FPS, H, W } from "../remotion/theme";
 import { ChatPanel } from "../components/ChatPanel";
+import { preloadMetaverse } from "../components/MetaverseLayer";
 import { Generating } from "../components/Generating";
 import { NotesPanel } from "../components/NotesPanel";
 import { PlayerControls } from "../components/PlayerControls";
@@ -24,11 +25,16 @@ type Props = {
   playlist?: Playlist | null;
   episode?: number;
   onEpisode?: (index: number) => void;
+  /** Opens the 3D quiz world built from this lesson. */
+  onMetaverse?: () => void;
+  /** Meta quiz: a metaverse world from every study tool and every video; `metaBusy` is its progress. */
+  onMetaQuiz?: () => Promise<void>;
+  metaBusy?: { progress: number; stage: string } | null;
 };
 
 /** The lesson screen: notes on the left, video in the middle, tutor chat on the right. */
 export const LessonScreen: React.FC<Props> = (
-  { lesson, generating, lang, onLang, assetBase, onBack, onVideo, playlist, episode = 0, onEpisode },
+  { lesson, generating, lang, onLang, assetBase, onBack, onVideo, playlist, episode = 0, onEpisode, onMetaverse, onMetaQuiz, metaBusy },
 ) => {
   const track = lesson?.languages[lang];
   const player = useRef<PlayerRef>(null);
@@ -193,6 +199,9 @@ export const LessonScreen: React.FC<Props> = (
             ))}
           </div>
         )}
+        {lesson && onMetaverse && (
+          <button type="button" className="ghost metaverse-btn" onClick={onMetaverse} onPointerEnter={preloadMetaverse} onFocus={preloadMetaverse}>Quiz in the metaverse</button>
+        )}
       </header>
 
       <div className="lesson-main three">
@@ -289,7 +298,7 @@ export const LessonScreen: React.FC<Props> = (
         </div>
 
         <div className="col-chat">
-          <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} />
+          <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} onMetaQuiz={onMetaQuiz} metaBusy={metaBusy} />
         </div>
       </div>
     </div>

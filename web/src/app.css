@@ -137,6 +137,27 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .scene .heading { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .stats { margin: 0; border: 0; padding: 0; }
+.sources-label { margin-top: 18px; }
+.src-title { font-weight: 700; }
+
+/* ---- PDF upload ---- */
+.upload { margin: 4px 0 22px; }
+.drop {
+  width: 100%; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
+  padding: 14px 16px; border: 2px dashed var(--line); border-radius: 12px; background: var(--paper); color: var(--ink);
+}
+.drop:hover:not(:disabled) { border-color: var(--teal); }
+.file { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.file-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.file-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .bar { margin: 0; }
+.link { border: 0; background: none; color: var(--rose); font-weight: 700; padding: 0; }
+.focus { width: 100%; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); }
+.focus:focus { border-color: var(--saffron); outline: none; }
+.sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.sources li { display: flex; justify-content: space-between; gap: 8px; }
+.sources a { color: var(--teal); font-weight: 700; text-decoration: none; }
+.sources a:hover { text-decoration: underline; }
 .json { margin-top: 16px; }
 .json summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .json pre {
@@ -183,3 +204,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .layout { grid-template-columns: 1fr; }
   .tag { display: none; }
 }
+
+/* Metaverse entry point: additive, does not touch the existing layout. */
+.top-right { display: flex; align-items: center; gap: 14px; }
+.metaverse-btn { padding: 8px 14px; background: transparent; cursor: pointer; }
+.mv-overlay { position: fixed; inset: 0; z-index: 1000; background: #0e0a24; }
+.mv-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #fff2e3; font-weight: 700; }

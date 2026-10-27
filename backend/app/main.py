@@ -8,14 +8,16 @@ from typing import Literal
 import requests
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, jobs, translate, tts
+from . import config, jobs, knowledge, routes_rag, stt, translate, tts
 from .exporter import export_mp4
+from .ocr.ingest import upload_status
 from .languages import LANGUAGES
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
@@ -25,6 +27,10 @@ log = logging.getLogger("visual-teacher")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    try:
+        knowledge.KnowledgeBase.get()          # load the index once, not on the first lesson
+    except Exception as e:
+        log.error("Knowledge base failed to load: %s", e)
     if config.PRELOAD:
         log.info("Preloading translation and voice models…")
         try:
@@ -38,14 +44,18 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Visual Teacher", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+app.include_router(routes_rag.router)        # PDF uploads + OCR status + hybrid search
 
 
 class LessonRequest(BaseModel):
-    concept: str = Field(min_length=2, max_length=200)
+    # Either a concept, or an uploaded PDF (upload=<sha>) with an optional focus such as "chapter 4" or
+    # "pages 120-135". A concept plus a PDF searches that PDF first. `documents` is the same thing as a list.
+    concept: str = Field("", max_length=200)
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=90)      # target video length
-    # Reserved for the document (RAG/OCR) service: ids of uploaded PDFs to teach from.
+    upload: str | None = Field(None, pattern=r"^[0-9a-f]{16}$")
+    focus: str = Field("", max_length=100)
     documents: list[str] = []
 
 
@@ -68,6 +78,7 @@ class ChatRequest(BaseModel):
     lang: str = "en"
     time_s: float = 0                 # where the learner is in the video, so the tutor knows the current scene
     history: list[dict] = []          # [{"role": "user"|"assistant", "content": "..."}]
+    speak: bool = False               # also return the reply as a voice clip (audio_url)
 
 
 class ExportRequest(BaseModel):
@@ -94,12 +105,17 @@ def health() -> dict:
         ollama = {"ok": False, "models": []}
     return {
         "llm": {"backend": config.LLM_BACKEND, "model": config.OLLAMA_MODEL, "ollama": ollama},
-        "translate": {"backend": config.TRANSLATE_BACKEND, "model": config.INDICTRANS2_MODEL,
-                      "toolkit_installed": importlib.util.find_spec("IndicTransToolkit") is not None},
+        "knowledge": knowledge.status(),
+        "translate": {"backend": config.TRANSLATE_BACKEND,
+                      "model": {"nllb": config.NLLB_MODEL, "indictrans2": config.INDICTRANS2_MODEL}.get(
+                          config.TRANSLATE_BACKEND, config.OLLAMA_MODEL),
+                      "toolkit_installed": importlib.util.find_spec(
+                          "IndicTransToolkit" if config.TRANSLATE_BACKEND == "indictrans2" else "transformers") is not None},
         "tts": {"engine": config.TTS_ENGINE, "fallback": config.TTS_FALLBACK,
                 "piper_voices": sorted(p.stem for p in tts.PIPER_DIR.glob("*.onnx")),
                 "parler_installed": importlib.util.find_spec("parler_tts") is not None,
                 "parler_model": config.PARLER_MODEL},
+        "stt": {"model": config.STT_MODEL, "ready": stt.available()},
         "render": {"web_dir_ok": (config.WEB_DIR / "render.mjs").exists(),
                    "node_modules_ok": (config.WEB_DIR / "node_modules" / "@remotion" / "renderer").exists()},
         "device": config.torch_device(),
@@ -120,7 +136,15 @@ def create_lesson(req: LessonRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    return jobs.submit("lesson", build_lesson, req.concept.strip(), req.languages, req.level, req.duration_s, req.documents)
+    concept = req.concept.strip()
+    documents = ([req.upload] if req.upload else []) + [d for d in req.documents if d != req.upload]
+    if len(concept) < 2 and not documents:
+        raise HTTPException(400, "Type a concept, or attach a PDF")
+    for d in documents:
+        if upload_status(d) is None:
+            raise HTTPException(404, "That PDF upload was not found")
+    return jobs.submit("lesson", build_lesson, concept, req.languages, req.level, req.duration_s, documents, None,
+                       req.focus.strip())
 
 
 @app.get("/api/jobs/{job_id}")
@@ -129,6 +153,15 @@ def job_status(job_id: str) -> dict:
     if not job:
         raise HTTPException(404, "No such job")
     return job
+
+
+@app.get("/api/knowledge/search")
+def knowledge_search(q: str, k: int = 5) -> list[dict]:
+    """Inspect retrieval directly (handy for tuning and for showing judges how RAG works)."""
+    kb = knowledge.KnowledgeBase.get()
+    if not kb:
+        raise HTTPException(404, "Knowledge base not built. Run backend/scripts/build_knowledge.py")
+    return [p.__dict__ for p in kb.search(q, k=k)]
 
 
 @app.get("/api/lessons")
@@ -193,12 +226,96 @@ def export_playlist(playlist_id: str, req: PlaylistExportRequest) -> dict:
 def chat_about_lesson(lesson_id: str, req: ChatRequest) -> dict:
     from . import chat
     try:
-        return chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history)
+        res = chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history)
+        if req.speak:
+            res["audio_url"] = chat.speak(res["reply"], req.lang)
+        return res
     except FileNotFoundError:
         raise HTTPException(404, "No such lesson")
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+
+class StudioRequest(BaseModel):
+    kind: Literal["flashcards", "quiz", "mindmap", "studyguide", "faq", "glossary", "timeline"]
+    lang: str = "en"
+    size: Literal["few", "standard", "more"] = "standard"
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
+
+
+def _lang(code: str) -> str:
+    if code not in LANGUAGES:
+        raise HTTPException(400, f"Unsupported language '{code}'")
+    return code
+
+
+@app.get("/api/lessons/{lesson_id}/studio")
+def study_status(lesson_id: str, lang: str = "en", size: Literal["few", "standard", "more"] = "standard",
+                 difficulty: Literal["easy", "medium", "hard"] = "medium") -> dict:
+    """Which study tools of this lesson are ready, and how far along the others are. Also starts building them in the background."""
+    from . import studio
+    get_lesson(lesson_id)
+    studio.prebuild(lesson_id)
+    return {"tools": studio.status(lesson_id, _lang(lang), size, difficulty)}
+
+
+@app.post("/api/lessons/{lesson_id}/studio")
+def study_request(lesson_id: str, req: StudioRequest) -> dict:
+    """The learner wants this tool now: it jumps the build queue. Returns its state; poll GET .../studio for progress."""
+    from . import studio
+    get_lesson(lesson_id)
+    return studio.request(lesson_id, req.kind, _lang(req.lang), req.size, req.difficulty)
+
+
+@app.get("/api/lessons/{lesson_id}/studio/{kind}")
+def study_result(lesson_id: str, kind: str, lang: str = "en", size: str = "standard", difficulty: str = "medium") -> dict:
+    from . import studio
+    get_lesson(lesson_id)
+    res = studio.cached(lesson_id, kind, _lang(lang), size, difficulty) if kind in studio.KINDS else None
+    if res is None:
+        raise HTTPException(404, "Not made yet")
+    return res
+
+
+class MetaQuizRequest(BaseModel):
+    lesson_ids: list[str] = Field(min_length=1, max_length=12)       # one video, or every episode of a course
+    focus: str | None = None                                         # the video being watched
+    lang: str = "en"
+    title: str = Field("", max_length=80)
+
+
+@app.post("/api/metaquiz")
+def meta_quiz(req: MetaQuizRequest) -> dict:
+    """A metaverse world built from everything the AI wrote for these videos (lessons + every study tool)."""
+    from . import metaquiz
+    for i in req.lesson_ids:
+        get_lesson(i)
+    if req.lang not in LANGUAGES:
+        raise HTTPException(400, f"Unsupported language '{req.lang}'")
+    return jobs.submit("studio", metaquiz.build_world, req.lesson_ids, req.focus, req.lang, req.title.strip())
+
+
+@app.post("/api/stt")
+async def speech_to_text(request: Request, lang: str = "auto", lesson_id: str | None = None) -> dict:
+    """Push-to-talk: the raw recording (webm/wav/ogg) is the request body. Returns {text, lang, duration_s}."""
+    if lang != "auto" and lang not in LANGUAGES:
+        raise HTTPException(400, f"Unsupported language '{lang}'")
+    vocabulary = ""
+    if lesson_id:
+        try:
+            lesson = load_lesson(lesson_id)
+            vocabulary = lesson["plan"]["title"] + ". " + ", ".join(
+                i for s in lesson["plan"]["scenes"] for i in s.get("items", [])[:3])[:300]
+        except (FileNotFoundError, ValueError, KeyError):
+            pass
+    body = await request.body()
+    try:
+        return await run_in_threadpool(stt.transcribe, body, lang, vocabulary)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except stt.SttUnavailable as e:
         raise HTTPException(503, str(e))
 
 

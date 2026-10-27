@@ -83,3 +83,51 @@
 **Fix:** `HF_HUB_DISABLE_XET=1` and a retrying `snapshot_download` script
 **Files Changed:** none
 **Status:** Resolved
+
+## [ISSUE-011] — 2026-10-27
+**Title:** Merge: `app/rag.py` stub shadowed by Dhiraj's `app/rag/` package
+**Symptom:** After merging origin/main, `from .rag import retrieve_context` would fail (package wins over module of the same name)
+**Root Cause:** Both sides used the name `rag` (my one-file hook for the friend's service, Dhiraj's real package)
+**Fix:** Removed `rag.py`; pipeline/planner/chat use `knowledge.retrieve()` and `knowledge.pages_passages()`; uploads are `POST /api/uploads` (sha) instead of the placeholder `/api/documents`; frontend uses `PdfUpload`, the placeholder `UploadArea` and `uploadDocument` were deleted
+**Files Changed:** backend/app/{rag.py (deleted), pipeline.py, planner.py, chat.py, main.py}, web/src/{App.tsx, api.ts, screens/Home.tsx, components/UploadArea.tsx (deleted)}
+**Status:** Resolved
+
+## [ISSUE-012] — 2026-10-27
+**Title:** `/api/stt` returned 500: `open() got an unexpected keyword argument 'metadata_errors'`
+**Symptom:** faster-whisper 1.2.1 crashed decoding any clip
+**Root Cause:** it calls PyAV with an argument that PyAV 19 no longer has (faster-whisper expects av 14-15)
+**Fix:** `stt.py` decodes with ffmpeg (already required for export) to 16 kHz mono float32 and passes the array to Whisper, so PyAV is not used
+**Files Changed:** backend/app/stt.py
+**Status:** Resolved
+
+## [ISSUE-013] — 2026-10-27
+**Title:** PDF ingest failed: `models/multilingual-e5-small not found`
+**Symptom:** upload job errors in 4 s on a fresh machine
+**Root Cause:** Dhiraj's RAG expects the e5 embedder and bge reranker under `models/` (not downloaded by `download_models.py`)
+**Fix:** downloaded `intfloat/multilingual-e5-small` and `BAAI/bge-reranker-v2-m3` into `models/` with `HF_HUB_DISABLE_XET=1`
+**Files Changed:** none (models are gitignored)
+**Status:** Resolved on this machine; teammates need the same download
+
+## [ISSUE-014] — 2026-10-27
+**Title:** Metaverse entrance laggy at the white flash and at the Start page
+**Symptom:** frame freezes right when the tunnel ends and again as the Start button appears
+**Root Cause:** the 3D world initialised on the main thread in the middle of the animation (measured 0.9-1.6 s long tasks), App re-rendered the whole tree at that moment, and the Start page used `backdrop-filter: blur` over a live WebGL canvas
+**Fix:** `MetaverseLayer` owns all entrance state (no App re-render); the world is mounted only once the screen is a still white frame and the light clears after it has painted and frames are calm; blur/backdrop-filter removed (opacity/transform only); tunnel geometry and colours precomputed, no per-edge strokes, adaptive canvas scale; chunk preloaded on hover and when idle
+**Files Changed:** web/src/components/{TunnelTransition,MetaverseLayer,MetaverseStart}.tsx, web/src/App.tsx, web/src/screens.css
+**Status:** Resolved (tunnel phase has no frame over 50 ms; remaining start-up work is hidden behind the still frame)
+
+## [ISSUE-015] — 2026-10-27
+**Title:** OCR with many workers crashed ("paging file is too small"), and ingest ran at half speed
+**Symptom:** more than ~10 Tesseract workers died with BrokenProcessPool; a full upload took 2x the raw OCR time
+**Root Cause:** each worker imported numpy/OpenBLAS, which reserved ~670 MB per worker; e5 embedding ran on the CPU while every core was busy with Tesseract
+**Fix:** pin OpenBLAS/MKL/OMP to one thread in workers (80 MB per worker), cap workers by free memory, embed on the idle GPU during pass 1
+**Files Changed:** backend/app/ocr/tesseract.py, ingest.py, rag/embed.py
+**Status:** Resolved (5.9 pages/s end to end)
+
+## [ISSUE-016] — 2026-10-27
+**Title:** Study-tool progress border drew 0% and the number stalled then jumped
+**Symptom:** the border arc never showed progress; the percentage sat at 15% then jumped to 30%
+**Root Cause:** `@property --p` was registered with `inherits: false`, so the pseudo-element never saw it; backend progress arrives in bursts (silence while the model reads the lesson, then tokens)
+**Fix:** `inherits: true`; border is now a constant flowing gradient; the displayed percentage comes from `useSteadyProgress` (a clock that always moves; real progress can only pull it ahead, and it glides)
+**Files Changed:** web/src/studio/{studio.css,useSteadyProgress.ts,StudioButton.tsx}
+**Status:** Resolved (measured 6% to 60% in 12 s, biggest step 1%)

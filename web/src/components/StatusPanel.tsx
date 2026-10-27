@@ -9,6 +9,11 @@ function checks(h: Health): Check[] {
     h.llm.backend === "mock"
       ? { label: "Planner", detail: "Sample lesson (mock)", ok: "warn" }
       : { label: "Planner", detail: h.llm.ollama.ok ? h.llm.model : "Ollama not running or model missing", ok: h.llm.ollama.ok },
+    !h.knowledge.enabled
+      ? { label: "Knowledge", detail: "Retrieval turned off", ok: "warn" }
+      : h.knowledge.ready
+        ? { label: "Knowledge", detail: `${h.knowledge.articles} articles · ${h.knowledge.chunks} passages`, ok: true }
+        : { label: "Knowledge", detail: "Not built (run build_knowledge.py)", ok: "warn" },
     h.translate.backend === "indictrans2"
       ? { label: "Translation", detail: h.translate.toolkit_installed ? "IndicTrans2" : "IndicTrans2 not installed", ok: h.translate.toolkit_installed || "warn" }
       : { label: "Translation", detail: h.translate.backend, ok: h.translate.backend === "none" ? "warn" : true },

@@ -47,7 +47,7 @@ const SceneFrame: React.FC<{ scene: Scene; index: number; track: Track; assetBas
       {scene.audio_url ? <Audio src={assetBase + scene.audio_url} /> : null}
       <Header title={track.title} index={index} count={track.scenes.length} />
       <AbsoluteFill style={{ opacity: fade }}>
-        <Template scene={scene} speechFrames={speechFrames} lessonTitle={track.title} />
+        <Template scene={scene} speechFrames={speechFrames} lessonTitle={track.title} sourceNote={track.source_note} />
       </AbsoluteFill>
       {captions ? <Captions scene={scene} /> : null}
     </AbsoluteFill>

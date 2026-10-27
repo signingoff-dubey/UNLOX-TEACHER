@@ -6,6 +6,8 @@ models/
 media/
 web/node_modules/
 web/dist/
+metaverse/node_modules/
+metaverse/dist/
 web/.remotion-bundle/
 web/public/fonts/
 .impeccable/
@@ -31,3 +33,7 @@ frontend/output/
 # third-party reference material
 inspiration/
 _ref/
+data/kb/
+data/library/
+data/uploads/
+data/bench/

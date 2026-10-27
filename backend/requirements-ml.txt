@@ -1,8 +1,14 @@
-# GPU extras: IndicTrans2 translation + AI4Bharat Indic Parler-TTS.
+# GPU extras: NLLB-200 translation (and optionally Indic Parler-TTS).
 # Install PyTorch FIRST with CUDA 12.8 wheels (needed for RTX 50-series / Blackwell):
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
 # then:  pip install -r requirements-ml.txt
-git+https://github.com/huggingface/parler-tts.git
-IndicTransToolkit
+transformers==4.57.1
 sentencepiece
 soundfile
+faster-whisper                  # voice assistant: speech to text on the CPU (model: Systran/faster-whisper-small)
+
+# Optional, not installed by default:
+# - IndicTransToolkit (for TRANSLATE_BACKEND=indictrans2): needs a C compiler on Windows,
+#   and the IndicTrans2 models are gated on Hugging Face (accept terms + `huggingface-cli login`).
+# - parler-tts (for TTS_ENGINE/TTS_FALLBACK=parler): pins an older transformers; install it in a
+#   separate venv if you need Kannada/Tamil voices:  pip install git+https://github.com/huggingface/parler-tts.git

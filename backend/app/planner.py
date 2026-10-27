@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import requests
 from pydantic import ValidationError
 
 from . import config
+from .knowledge import Passage, pages_passages, retrieve
 from .schema import ICONS, LessonPlan, ScenePlan, normalize
 
 log = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ Example code scene: {{"template":"code","heading":"A for loop","narration":"The 
 
 Rules:
 - narration is what the teacher says aloud: simple, warm, 2-3 sentences of about 25 words in total per scene (never fewer than 15 words), no lists, no markdown, no emojis.
+- Every scene teaches something new. Never repeat the same points in two scenes.
+- diagram items are labelled parts or ingredients (nouns), never steps; steps belong in a flow scene.
 - heading max 6 words. Each item max 5 words.
 - Write the narration so it walks through the items in the same order they appear.
 - For code and graph scenes the narration must follow the same order as items and highlights.
@@ -63,26 +67,159 @@ Rules:
 - Write everything in English (it is translated later)."""
 
 
-def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, context: str = "",
-                on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None) -> LessonPlan:
+PAGE_REQUEST = re.compile(r"\b(chapter|ch\.?|unit|lesson|section|page|pages|pp?\.)\s*\d", re.I)
+
+
+def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upload: str | None = None, focus: str = "",
+                on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None) -> tuple[LessonPlan, list[dict]]:
+    """Returns the lesson plan and the sources it was grounded in.
+
+    - concept only: search the knowledge base / library.
+    - concept + upload: search that PDF first, then the library.
+    - upload with no concept, a `focus`, or a concept like "explain chapter 4": teach that part of
+      the PDF from its passages in reading order."""
     if config.LLM_BACKEND == "mock":
-        return normalize(sample_for(concept))
+        return normalize(sample_for(concept)), []
+    page_mode = bool(upload) and (not concept or bool(focus) or bool(PAGE_REQUEST.search(concept)))
+    passages: list[Passage] = []
+    if page_mode:
+        passages = pages_passages(upload, focus or (concept if PAGE_REQUEST.search(concept) else ""))
+    if not passages:
+        page_mode = False
+        passages = retrieve(concept or focus, upload=upload)
+    sources = _page_sources(passages) if page_mode else _sources(passages)
+    reference = _condensed_block(passages) if page_mode else _reference_block(passages)
+    if upload and not focus and not concept.strip():
+        from .ocr import digest                      # a whole PDF: plan from its study notes (a few KB), not from every page
+        from .ocr.ingest import upload_dir
+        reference = digest.reference(upload_dir(upload)) or reference
+    if page_mode:
+        book = passages[0].title
+        part = focus or (concept if PAGE_REQUEST.search(concept) else "") or passages[0].section or "this chapter"
+        concept = f"the main ideas of {part} from the textbook \"{book}\"" + (f" ({concept})" if concept and
+                                                                               not PAGE_REQUEST.search(concept) else "")
     last_error = ""
-    for attempt in range(2):
+    best: LessonPlan | None = None
+    for attempt in range(3):
         try:
             try:
-                raw = _ollama_chat(concept, last_error, level, duration_s, context, on_progress, wps, series)
+                raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
                     f"Start it with `ollama serve` and `ollama pull {config.OLLAMA_MODEL}`. ({e})"
                 ) from e
-            return normalize(LessonPlan.model_validate_json(raw))
+            plan = normalize(LessonPlan.model_validate_json(raw))
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
-            last_error = str(e)[:500]
+            last_error = f"invalid JSON: {str(e)[:400]}"
             log.warning("Plan attempt %d invalid: %s", attempt + 1, last_error)
-    log.error("LLM failed twice; using fallback plan")
-    return normalize(fallback_plan(concept))
+            continue
+        issue = quality_issue(plan)
+        if not issue:
+            return plan, sources
+        log.info("Plan attempt %d needs work: %s", attempt + 1, issue)
+        if best is None or _words(best) < _words(plan):
+            best = plan
+        last_error = issue
+    if best:
+        return best, sources          # imperfect but usable beats the generic fallback
+    log.error("LLM never produced a valid plan; using fallback plan")
+    return normalize(fallback_plan(concept)), sources
+
+
+def _words(plan: LessonPlan) -> int:
+    return sum(len(s.narration.split()) for s in plan.scenes)
+
+
+def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3) -> str | None:
+    """Cheap checks for the ways small models write weak lessons. Returns feedback for a retry.
+    Narration length is NOT checked here: the writer agent in review.py lengthens short scenes."""
+    if len(plan.scenes) < 4:
+        return "use 5-7 scenes: a hook, 2-4 teaching scenes, a quiz and a summary"
+    lists = [set(i.lower() for i in s.items) for s in plan.scenes if s.template not in ("summary", "quiz") and s.items]
+    for a in range(len(lists)):
+        for b in range(a + 1, len(lists)):
+            if lists[a] and len(lists[a] & lists[b]) >= max(2, len(lists[a]) // 2):
+                return "two scenes repeat the same items; each scene must teach something different"
+    return None
+
+
+def _reference_block(passages: list[Passage], budget: int = 4000) -> str:
+    """Retrieved passages, most relevant first, within a character budget."""
+    parts, used = [], 0
+    for i, p in enumerate(passages, 1):
+        head = p.title + (f" ({p.section})" if p.section else "")
+        piece = f"[{i}] {head}: {p.text}"
+        if used + len(piece) > budget:
+            break
+        parts.append(piece)
+        used += len(piece)
+    return "\n\n".join(parts)
+
+
+def _condensed_block(passages: list[Passage], budget: int = 9000) -> str:
+    """A whole chapter can be 80 passages (~50k characters). Keep reading order and coverage:
+    sample evenly if there are too many, then trim each passage at a sentence boundary."""
+    per_min = 280
+    if len(passages) * per_min > budget:
+        n = budget // per_min
+        step = len(passages) / n
+        passages = [passages[int(i * step)] for i in range(n)]
+    per = max(per_min, budget // max(len(passages), 1))
+    parts = []
+    for p in passages:
+        text = p.text if len(p.text) <= per else p.text[:per].rsplit(". ", 1)[0] + "."
+        parts.append(f"[{p.section or p.title}] {text}")
+    return "\n\n".join(parts)
+
+
+def _sources(passages: list[Passage]) -> list[dict]:
+    """One entry per article or PDF, most relevant first. PDF entries get the page span of
+    all their retrieved passages, not just the first one's."""
+    groups: dict[str, list[Passage]] = {}
+    for p in passages:
+        groups.setdefault(p.title, []).append(p)
+    out = []
+    for title, ps in groups.items():
+        first = ps[0]
+        pages = _page_numbers(ps)
+        if pages:
+            chapters = {_chapter(p.section) for p in ps}
+            chapter = chapters.pop() if len(chapters) == 1 else ""   # don't label a span with one chapter
+            section = ", ".join(x for x in (chapter, _span(pages)) if x)
+        else:
+            section = first.section
+        out.append({"title": title, "section": section, "url": first.url, "source": first.source,
+                    "score": max(p.score for p in ps)})
+    return out
+
+
+def _page_sources(passages: list[Passage]) -> list[dict]:
+    """One source for a page-range lesson: the book, its chapter and the full page span."""
+    first = passages[0]
+    section = ", ".join(x for x in (_chapter(first.section), _span(_page_numbers(passages))) if x)
+    return [{"title": first.title, "section": section, "url": first.url, "source": first.source, "score": 1.0}]
+
+
+def _page_numbers(passages: list[Passage]) -> list[int]:
+    pages: set[int] = set()
+    for p in passages:
+        if m := re.search(r"#page=(\d+)", p.url):
+            pages.add(int(m.group(1)))
+        if m := re.search(r"pp?\.\s*(\d+)(?:\s*[–-]\s*(\d+))?", p.section):   # "pp. 214–219" carries the end page
+            pages.update(int(x) for x in m.groups() if x)
+    return sorted(pages)
+
+
+def _chapter(section: str) -> str:
+    """The section label without its page part: "Ch 3, pp. 214–219" -> "Ch 3"."""
+    return re.sub(r",?\s*pp?\.\s*[\d–-]+$", "", section).strip(", ")
+
+
+def _span(pages: list[int]) -> str:
+    if not pages:
+        return ""
+    return f"p. {pages[0]}" if pages[0] == pages[-1] else f"pp. {pages[0]}–{pages[-1]}"
 
 
 def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
@@ -105,9 +242,10 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
         else:
             user += "\nThis is the final episode: finish with a recap and one small challenge."
     if context:
-        user += f"\nTeach from this source material (use only facts found in it):\n{context[:3000]}"
+        user += ("\nReference material from the knowledge base or the uploaded PDF. Use it for correct facts, numbers and terms, "
+                 "but explain in your own simple words. Ignore anything not about the concept:\n" + context)
     if previous_error:
-        user += f"\nYour previous answer was invalid ({previous_error}). Follow the schema exactly."
+        user += f"\n\nYour previous lesson plan had a problem: {previous_error}. Write a better one."
     resp = requests.post(
         f"{config.OLLAMA_URL}/api/chat",
         json={
@@ -119,7 +257,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             "format": LessonPlan.model_json_schema(),
             "stream": True,
             "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "options": config.ollama_options({"temperature": 0.4, "num_ctx": 4096}),
+            "options": config.ollama_options({"temperature": 0.4, "num_ctx": 8192 if context else 4096}),
         },
         timeout=300,
         stream=True,
@@ -143,12 +281,12 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
     return "".join(parts)
 
 
-def ollama_generate(prompt: str) -> str:
+def ollama_generate(prompt: str, max_tokens: int = 512) -> str:
     """Plain completion, used by the 'ollama' translation backend."""
     resp = requests.post(
         f"{config.OLLAMA_URL}/api/generate",
-        json={"model": config.OLLAMA_MODEL, "prompt": prompt, "stream": False,
-              "keep_alive": "5m", "options": config.ollama_options({"temperature": 0.1})},
+        json={"model": config.OLLAMA_MODEL, "prompt": prompt, "stream": False, "keep_alive": "5m",
+              "options": config.ollama_options({"temperature": 0.1, "num_predict": max_tokens, "repeat_penalty": 1.15})},
         timeout=300,
     )
     resp.raise_for_status()

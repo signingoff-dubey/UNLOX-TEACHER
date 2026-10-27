@@ -147,6 +147,9 @@ def normalize(plan: LessonPlan) -> LessonPlan:
             continue
         _normalize_graph(s)
         _normalize_code(s)
+        if s.template == "quiz" and not all(i.isdigit() for i in s.items):
+            # Small models sometimes leak the answer index ("0") into the options.
+            s.items = [i for i in s.items if not i.isdigit()]
         if s.template == "compare" and not (s.left and s.right):
             s._wanted = s._wanted or "compare"
             s.template = "bullets" if len(s.items) >= 2 else "title"

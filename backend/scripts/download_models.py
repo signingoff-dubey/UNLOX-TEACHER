@@ -42,6 +42,7 @@ def fetch(url: str, dest: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ml", action="store_true", help="also download IndicTrans2 and Indic Parler-TTS")
+    ap.add_argument("--stt", action="store_true", help="also download the voice assistant's speech-to-text model (~460 MB)")
     args = ap.parse_args()
 
     print("Piper voices ->", config.MODELS_DIR / "piper")
@@ -55,15 +56,27 @@ def main() -> None:
     for name, path in FONTS.items():
         fetch(FONT_BASE + path, config.FONTS_DIR / name)
 
+    if args.stt:
+        from huggingface_hub import snapshot_download
+        print("Hugging Face -> Systran/faster-whisper-small ->", config.STT_MODEL)
+        snapshot_download("Systran/faster-whisper-small", local_dir=config.STT_MODEL)
+
     if args.ml:
         from huggingface_hub import snapshot_download
-        for repo in (config.INDICTRANS2_MODEL, config.PARLER_MODEL):
-            print("Hugging Face ->", repo)
-            snapshot_download(repo)
-        # Parler's description encoder is a separate model; load once to cache it.
-        from parler_tts import ParlerTTSForConditionalGeneration
-        model = ParlerTTSForConditionalGeneration.from_pretrained(config.PARLER_MODEL)
-        snapshot_download(model.config.text_encoder._name_or_path)
+        print("Hugging Face ->", config.NLLB_MODEL)
+        snapshot_download(config.NLLB_MODEL)          # weights are pytorch_model.bin, ~2.5 GB
+        if config.TRANSLATE_BACKEND == "indictrans2":
+            print("Hugging Face ->", config.INDICTRANS2_MODEL, "(gated: needs huggingface-cli login)")
+            snapshot_download(config.INDICTRANS2_MODEL)
+        try:
+            from parler_tts import ParlerTTSForConditionalGeneration
+        except ImportError:
+            print("parler-tts not installed; skipping Indic Parler-TTS")
+        else:
+            snapshot_download(config.PARLER_MODEL)
+            # Parler's description encoder is a separate model; load once to cache it.
+            model = ParlerTTSForConditionalGeneration.from_pretrained(config.PARLER_MODEL)
+            snapshot_download(model.config.text_encoder._name_or_path)
     print("Done. You can now go offline.")
 
 

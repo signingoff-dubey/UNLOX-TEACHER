@@ -1,4 +1,5 @@
-"""Tiny in-process job queue. One worker, so the GPU only ever runs one job at a time."""
+"""Tiny in-process job queues. Lessons and exports share one worker (one GPU job at a time);
+PDF uploads get their own worker so a long OCR pass never delays a lesson."""
 from __future__ import annotations
 
 import logging
@@ -10,8 +11,12 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
-_pool = ThreadPoolExecutor(max_workers=1)
-_pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1), "export": ThreadPoolExecutor(max_workers=1)}
+_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lesson")
+# Separate workers: a course in progress must not block a single lesson or an export, and a long OCR pass must not block any of them.
+_pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1, thread_name_prefix="playlist"),
+          "export": ThreadPoolExecutor(max_workers=1, thread_name_prefix="export"),
+          "upload": ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload"),
+          "studio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio")}
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
@@ -38,6 +43,12 @@ def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
 
     _pools.get(kind, _pool).submit(run)
     return job
+
+
+def active(*kinds: str) -> bool:
+    """True while any job of these kinds is waiting or running."""
+    with _lock:
+        return any(j["kind"] in kinds and j["status"] in ("queued", "running") for j in _jobs.values())
 
 
 def get(job_id: str) -> dict | None:

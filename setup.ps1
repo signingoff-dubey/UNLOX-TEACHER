@@ -45,12 +45,23 @@ npm run build
 npm run bundle
 Pop-Location
 
-Step "Local LLM"
-if (Get-Command ollama -ErrorAction SilentlyContinue) {
-    $model = ((Get-Content $envFile | Select-String '^OLLAMA_MODEL=') -replace 'OLLAMA_MODEL=', '').Trim()
-    ollama pull $model
-} else {
-    Write-Host "Ollama not found. Install it from https://ollama.com, then run: ollama pull qwen2.5:7b-instruct-q4_K_M" -ForegroundColor Yellow
+Step "Local LLM + embedding model"
+$ollama = Get-Command ollama -ErrorAction SilentlyContinue
+if (-not $ollama) {
+    $guess = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+    if (Test-Path $guess) { $ollama = $guess }
 }
+if (-not $ollama) {
+    winget install --id Ollama.Ollama -e --silent --accept-package-agreements --accept-source-agreements
+    $ollama = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+}
+$model = (((Get-Content $envFile | Select-String '^OLLAMA_MODEL=') -replace 'OLLAMA_MODEL=', '') -split ' ')[0].Trim()
+& $ollama pull $model
+& $ollama pull nomic-embed-text
+
+Step "Knowledge base for retrieval (~300 school topics from Simple English Wikipedia)"
+Push-Location (Join-Path $root "backend")
+& $py scripts\build_knowledge.py
+Pop-Location
 
 Write-Host "`nSetup complete. Start the app with .\start.ps1" -ForegroundColor Green

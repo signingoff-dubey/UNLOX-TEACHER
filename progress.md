@@ -1,7 +1,32 @@
 # Progress Log
 
-## Current Version: v0.7.0
+## Current Version: v0.8.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.8.0] — 2026-10-27
+### What's New
+- **Merged everything the team pushed** (origin/main `60f5253`): Dhiraj's PDF upload + OCR (Tesseract / Unlimited-OCR) + hybrid RAG (e5 embeddings, FTS5 + FAISS, bge reranker), offline library, NLLB translation, GPU scheduler, sources shown on lessons; Niharika's `metaverse/` (3D quiz world) and `Niharika/` voice-assistant plan; Dhiraj's `Dhiraj/` snapshot (kept as pushed; not used by the app)
+- One pipeline for both: `build_lesson(concept, languages, level, duration_s, documents, series, focus)` keeps level/length, series (courses), director and writer agents and now also grounds the plan in the PDF/library (`plan_lesson` returns plan + sources). Page-range lessons ("chapter 4") work from a PDF with an empty topic. Playlists accept a PDF too
+- Frontend: Home uses Dhiraj's `PdfUpload` (progress + OCR status + focus), lesson notes list Sources, "Metaverse quiz world" button on Home and "Quiz in the metaverse" on the lesson screen (lazy-loaded 3D chunk)
+- Tutor chat grounded with the same retrieval (`knowledge.retrieve`) instead of the earlier stub (`app/rag.py` removed: it collided with Dhiraj's `app/rag/` package)
+- **Voice assistant** (from Niharika's plan, see `docs/voice-assistant.md`): `POST /api/stt` (faster-whisper small, CPU, offline), spoken tutor replies (`speak` flag -> `audio_url`), mic + speaker buttons in the chat panel. Hands-free mode and LTX demo clips are not built (LTX not realistic on 8 GB)
+
+- **Metaverse entrance** (`web/src/components/TunnelTransition.tsx`, `MetaverseStart.tsx`): click the button and the page blurs while a tunnel of blocks assembles block by block around you; you walk down it, accelerating to light speed (~2 s, streaks); the bright light at the far end grows until it floods the screen; then the metaverse appears behind a **Start** page; Start reveals the topic screen. Canvas 2D, no extra dependency, skipped for `prefers-reduced-motion`; the 3D chunk preloads at the click
+- **Fast OCR** (`backend/app/ocr/tesseract.py`, `ingest.py`): Tesseract 5.4 installed and the 9 language packs (tessdata_fast) in `models/tessdata`. Workers open the PDF and render their own pages as grayscale pixels (no PNG round trip), one Tesseract per core with all math libraries pinned to one thread (this cut a worker from ~670 MB to ~80 MB and fixed "paging file too small" crashes at 10+ workers), blank pages skipped, no batch barriers, worker count capped by free memory (`OCR_WORKERS` to override), Latin 200 dpi / Indic 300 dpi. The student's focus pages (e.g. "chapter 4") are read first and a section is indexed as soon as its last page is read, so a lesson on that chapter can start while the rest of the book is still being read. Raw OCR: ~7 pages/s on 22 workers (1,000 dense pages in ~140 s). Unlimited-OCR still upgrades pages in the background (priority: contents, focus, worst-confidence)
+- `backend/scripts/bench_tesseract.py [pages] [workers] [--ingest]` builds a synthetic scan and times it
+
+- **Study tools** (flashcards, quiz, mind map, study guide, FAQ, glossary, timeline): built by a background queue as soon as a video exists (`studio.py`; click = jump the queue; English raw copy cached, other languages translated from it), progress from the model's token stream. Buttons in the chat panel: ready opens instantly; working buttons get a flowing multi-colour border and a steady percentage (`useSteadyProgress`: a clock keeps it moving, real progress can only pull it ahead). Mind map = Mermaid text parsed/re-emitted by the backend and drawn on-device. Flashcards redesigned (question front, View answer, 3D flip, slide-away rating, round review)
+- **Meta quiz** (`metaquiz.py`, `POST /api/metaquiz`): one metaverse world from every study tool and every video of a course; stations carry extra reading, gates ask up to 5 questions with explanations (metaverse engine extended: `Zone.more`, `info.extra`, `Quiz.why`)
+- **PDF notes in 30-page windows** (`ocr/digest.py`): written while OCR runs; 100-page scan: first notes at ~22 s, all at ~32 s; whole-PDF lessons plan from the notes; upload cap 1,000 pages; pass-1 embeddings moved to the idle GPU (OCR+index 1,002 pages: 341 s -> 171 s)
+- **Metaverse entrance made smooth**: the lag was the 3D world initialising on the main thread during the animation (up to 0.9-1.6 s freeze); now state is isolated (`MetaverseLayer`), the world starts behind a still white frame and the light clears when it has painted and frames are calm, no CSS blur / backdrop-filter, precomputed tunnel geometry, adaptive canvas resolution, chunk preloaded on hover/idle
+
+### Known Issues
+- Studio background builds queue behind each other (one local model): a video's 7 tools take about 2 minutes; opening a lesson queues its tools, and a click goes first
+- `transformers` in `backend/venv` is 4.46 (Dhiraj pins 4.57.1 for Unlimited-OCR); scanned-PDF OCR with Unlimited-OCR needs its own ~6.7 GB model and that pin, digital PDFs work without
+- Whisper small is weak on Telugu/Tamil/Kannada speech; English and Hindi are the supported voice-input languages for the demo
+- Mic needs localhost or HTTPS
 
 ---
 

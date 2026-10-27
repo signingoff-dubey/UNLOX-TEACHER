@@ -108,6 +108,21 @@ export const NotesPanel: React.FC<Props> = ({ lesson, track, current, onSeek }) 
               );
             })}
           </ol>
+          {lesson?.sources && lesson.sources.length > 0 && (
+            <div className="sources-box">
+              <div className="label">Sources</div>
+              <ul className="sources">
+                {lesson.sources.map((s) => (
+                  <li key={s.title + (s.section ?? "")}>
+                    {/^https?:/.test(s.url)
+                      ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a>
+                      : <span className="src-title">{s.title}</span>}
+                    <span className="muted"> {s.section || (s.source === "upload" ? "your PDF" : s.source)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="mine">
             <label htmlFor="mynotes" className="label">My notes</label>
             <textarea id="mynotes" value={mine} onChange={(e) => edit(e.target.value)} placeholder="Type anything you want to remember…" rows={4} />

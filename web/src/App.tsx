@@ -5,7 +5,8 @@ import {
 } from "./api";
 import { Home } from "./screens/Home";
 import { LessonScreen } from "./screens/LessonScreen";
-import type { UploadItem } from "./components/UploadArea";
+import { MetaverseLayer, preloadMetaverse } from "./components/MetaverseLayer";
+import type { World } from "metaverse";
 
 type Screen = "home" | "lesson";
 const COURSE_HASH = /^c-([a-z0-9]+)(?:-(\d+))?$/;
@@ -19,7 +20,12 @@ export default function App() {
   const [concept, setConcept] = useState("");
   const [course, setCourse] = useState(false);
   const [episodes, setEpisodes] = useState(5);
-  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [upload, setUpload] = useState<string | null>(null);   // sha of an uploaded, read PDF
+  const [focus, setFocus] = useState("");                       // e.g. "chapter 4" inside that PDF
+  // The entrance animation and the world live in MetaverseLayer (its own state), so nothing here re-renders while it plays.
+  const [mvTrigger, setMvTrigger] = useState(0);
+  const [mvWorld, setMvWorld] = useState<World | null>(null);          // set by the Meta quiz; null = the lesson itself
+  const [meta, setMeta] = useState<{ progress: number; stage: string } | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -110,7 +116,7 @@ export default function App() {
 
   async function create(topic = concept) {
     const text = topic.trim();
-    if (text.length < 2) return;
+    if (text.length < 2 && !upload) return;
     setConcept(text);
     setError("");
     setJob(null);
@@ -119,10 +125,10 @@ export default function App() {
     setEpisode(0);
     setScreen("lesson");                      // straight to the lesson screen; the video area shows progress
     const mine = ++run.current;
-    const documents = uploads.flatMap((u) => (u.state === "done" && u.doc ? [u.doc.id] : []));
+    const pdf = { upload, focus: upload ? focus.trim() : "" };
     try {
       if (course) {
-        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes, documents });
+        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes, documents: upload ? [upload] : [] });
         if (mine !== run.current) return;
         setPlaylist(started.playlist);
         window.history.replaceState(null, "", `#c-${started.playlist.id}`);
@@ -133,7 +139,7 @@ export default function App() {
         return;
       }
       const done = await runJob(
-        api<Job>("/api/lessons", { concept: text, ...settings, documents }),
+        api<Job>("/api/lessons", { concept: text, ...settings, ...pdf }),
         (j) => { if (mine === run.current) setJob(j); },
       );
       if (mine !== run.current) return;
@@ -146,6 +152,32 @@ export default function App() {
       setScreen("home");
     }
   }
+
+  const enterMetaverse = () => { setMvWorld(null); setMvTrigger((n) => n + 1); };
+
+  /** Meta quiz: every video's lesson and every study tool the AI wrote, as one world. The button shows the progress. */
+  const startMetaQuiz = async () => {
+    if (!lesson || meta) return;
+    setMeta({ progress: 0.02, stage: "Starting" });
+    const ids = playlist ? playlist.episodes.flatMap((e) => (e.status === "ready" && e.lesson_id ? [e.lesson_id] : [])) : [];
+    try {
+      const done = await runJob(
+        api<Job>("/api/metaquiz", { lesson_ids: ids.length ? ids : [lesson.id], focus: lesson.id, lang: active, title: playlist?.title ?? "" }),
+        (j) => setMeta({ progress: j.progress, stage: j.stage }),
+      );
+      setMvWorld((done.result as { world: World }).world);
+      setMvTrigger((n) => n + 1);
+    } finally {
+      setMeta(null);
+    }
+  };
+
+  // The 3D chunk loads while the browser is idle, so opening the metaverse never waits on it.
+  useEffect(() => {
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    const id = idle ? idle(preloadMetaverse, { timeout: 6000 }) : window.setTimeout(preloadMetaverse, 3000);
+    return () => (idle ? (window as unknown as { cancelIdleCallback: (n: number) => void }).cancelIdleCallback(id) : window.clearTimeout(id));
+  }, []);
 
   const goHome = () => {
     run.current++;
@@ -163,7 +195,8 @@ export default function App() {
     <div className={screen === "lesson" ? "app wide" : "app"}>
       {screen === "home" && (
         <Home concept={concept} onConcept={setConcept} settings={settings} onSettings={setSettings} languages={languages}
-          uploads={uploads} onUploads={(u) => setUploads(u)} recent={recent} error={error}
+          upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus} onMetaverse={enterMetaverse}
+          recent={recent} error={error}
           onCreate={create} onOpen={openLesson} onBaseChange={loadLists}
           course={course} onCourse={setCourse} episodes={episodes} onEpisodes={setEpisodes}
           courses={courses} onOpenCourse={(id) => openCourse(id)} />
@@ -171,8 +204,10 @@ export default function App() {
       {screen === "lesson" && (
         <LessonScreen lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}
           lang={active} onLang={setActive} assetBase={assetBase} onBack={goHome} onVideo={onVideo}
-          playlist={playlist} episode={episode} onEpisode={(i) => playlist && openEpisode(playlist, i)} />
+          playlist={playlist} episode={episode} onEpisode={(i) => playlist && openEpisode(playlist, i)}
+          onMetaverse={enterMetaverse} onMetaQuiz={startMetaQuiz} metaBusy={meta} />
       )}
+      <MetaverseLayer trigger={mvTrigger} lesson={lesson} lang={active} world={mvWorld} />
     </div>
   );
 }

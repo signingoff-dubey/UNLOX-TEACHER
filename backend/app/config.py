@@ -36,9 +36,19 @@ OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
 # a number = exactly that many layers, 0 = CPU only. DEVICE=cpu forces 0.
 OLLAMA_NUM_GPU = os.getenv("OLLAMA_NUM_GPU", "auto")
 
-# Translation: "indictrans2", "ollama" (LLM translates) or "none" (copy English)
-TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "indictrans2")
-INDICTRANS2_MODEL = os.getenv("INDICTRANS2_MODEL", "ai4bharat/indictrans2-en-indic-dist-200M")
+# Retrieval (RAG): ground lessons in the offline knowledge base built by scripts/build_knowledge.py
+RAG_ENABLED = os.getenv("RAG_ENABLED", "1") == "1"
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+KB_DIR = Path(os.getenv("KB_DIR", ROOT / "data" / "kb"))
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
+# nomic-embed-text: on-topic school passages score >= ~0.73, loosely related ones ~0.6.
+RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.68"))
+
+# Translation: "nllb" (Meta NLLB-200, GPU), "indictrans2" (AI4Bharat, gated), "ollama" (LLM) or "none"
+TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "nllb")
+INDICTRANS2_MODEL = os.getenv("INDICTRANS2_MODEL", "ai4bharat/indictrans2-en-indic-dist-200M")  # gated on HF
+# Not gated: works without a Hugging Face login. Same FLORES language codes as IndicTrans2.
+NLLB_MODEL = os.getenv("NLLB_MODEL", "facebook/nllb-200-distilled-600M")
 
 # Narration: "piper", "parler" (AI4Bharat Indic Parler-TTS, GPU) or "silent" (timing-only placeholder)
 TTS_ENGINE = os.getenv("TTS_ENGINE", "piper")
@@ -56,6 +66,9 @@ PARLER_DESCRIPTION = os.getenv(
 
 # Model locations. INDICTRANS2_MODEL / PARLER_MODEL may also be local folder paths.
 PIPER_DIR = Path(os.getenv("PIPER_DIR", MODELS_DIR / "piper"))
+# Speech to text for the voice assistant (faster-whisper, CPU). A folder under models/ or a size name like "small".
+STT_MODEL = os.getenv("STT_MODEL", str(MODELS_DIR / "whisper-small"))
+STT_THREADS = int(os.getenv("STT_THREADS", "4"))
 
 DEVICE = os.getenv("DEVICE", "auto")                 # auto | cuda | cpu
 # Load translation + TTS models at startup so the first lesson is fast.

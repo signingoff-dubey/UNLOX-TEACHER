@@ -12,7 +12,6 @@ from . import config
 from .captions import time_captions, to_srt
 from .languages import get as get_lang, words_per_sec
 from .planner import plan_lesson
-from .rag import retrieve_context
 from .director import direct
 from .review import review as review_plan
 from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
@@ -26,8 +25,28 @@ Progress = Callable[[str, float], None]
 
 
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
-                 documents: list[str] | None = None, series: dict | None = None,
-                 progress: Progress = lambda s, p: None) -> dict:
+                 documents: list[str] | None = None, series: dict | None = None, focus: str = "",
+                 progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
+    """Builds a lesson. `documents` holds uploaded PDFs (their sha): facts come from the first one before the
+    library; with an empty concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
+    # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
+    # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
+    with _gpu_slot():
+        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus)
+
+
+def _gpu_slot():
+    try:
+        from .gpu import big_slot
+        return big_slot.hold("planner", urgent=True)
+    except ImportError:                                   # OCR extras not installed
+        import contextlib
+        return contextlib.nullcontext()
+
+
+def _build(concept: str, languages: list[str], level: str, duration_s: int, documents: list[str],
+           series: dict | None, progress: Progress, focus: str) -> dict:
+    upload = documents[0] if documents else None
     t0 = time.perf_counter()
     langs = list(dict.fromkeys(languages))                    # English is just another option now
     if not langs:
@@ -36,11 +55,12 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
         get_lang(code)                                        # validate early
 
     # Progress bands: plan 2-55%, review 55-60%, then 60-98% shared by the languages.
-    progress("Planning the lesson", 0.02)
-    context = retrieve_context(concept, documents or [])   # empty until the RAG service is connected
+    stage = "Reading the PDF and planning the lesson" if upload else "Finding facts and planning the lesson"
+    progress(stage, 0.02)
     wps = words_per_sec(langs)
-    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context, wps=wps, series=series,
-                       on_progress=lambda f: progress("Planning the lesson", 0.02 + 0.40 * f))
+    plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
+                                series=series, on_progress=lambda f: progress(stage, 0.02 + 0.40 * f))
+    note = source_note(sources)
     progress("Designing the visuals", 0.43)
     plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
     progress("Checking the lesson", 0.57)
@@ -76,6 +96,7 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
         scenes, translator = translated[code]
         track = _narrate(scenes, code, report)
         track["translator"] = translator
+        track["source_note"] = note
         return code, track, time.perf_counter() - t2
 
     tracks: dict[str, dict] = {}
@@ -88,17 +109,25 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
 
     lesson = {
         "id": lesson_id,
-        "concept": concept,
+        "concept": concept or (f"{focus} (PDF)" if focus else plan.title),
+        "upload": upload,
+        "focus": focus,
         "created": int(time.time()),
         "plan": plan.model_dump(),                    # English source plan: context for the tutor chat
         "documents": documents or [],
         "series": series,                             # set when this lesson is an episode of a playlist
         "review": review_notes,
         "languages": tracks,
+        "sources": sources,
         "timings": timings,
         "videos": {},
     }
     save_lesson(lesson)
+    try:
+        from . import studio
+        studio.prebuild(lesson_id)             # flashcards, quiz, mind map... are written in the background from now on
+    except Exception:  # noqa: BLE001  never let study tools break a finished lesson
+        log.warning("could not queue the study tools for %s", lesson_id, exc_info=True)
     progress("Ready", 1.0)
     log.info("Lesson %s built in %.1fs %s", lesson_id, time.perf_counter() - t0, timings)
     return lesson
@@ -152,6 +181,19 @@ def _narrate(translated: tuple[str, list[dict]], lang: str, on_progress=lambda f
         "duration_s": round(start, 3),
         "tts_engines": sorted(engines),
     }
+
+
+def source_note(sources: list[dict]) -> str:
+    """One short citation line for the recap scene, e.g. "Source: Science 8, Ch 3, pp. 41–44"."""
+    if not sources:
+        return ""
+    top = sources[0]
+    if top.get("source") == "upload" or str(top.get("url", "")).startswith("upload:"):
+        where = f"{top['title']}, {top['section']}" if top.get("section") else top["title"]
+        return f"Source: {where}"
+    names = [s["title"] for s in sources[:3]]
+    site = "Wikipedia" if "wikipedia" in str(top.get("source", "")) else top.get("source", "")
+    return f"Sources: {', '.join(names)}" + (f" ({site})" if site else "")
 
 
 def _track_srt(track: dict) -> str:

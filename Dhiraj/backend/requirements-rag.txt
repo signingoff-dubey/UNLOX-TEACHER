@@ -1,0 +1,20 @@
+# OCR + RAG extras. Install torch FIRST from the CUDA 12.8 index (RTX 50-series):
+#   venv\Scripts\python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# (verified: torch 2.11.0+cu128 on the RTX 5060)
+# Unlimited-OCR pins come from its model card (tested on Python 3.12 + CUDA 12.9).
+transformers==4.57.1
+# torchvision must match torch: install it from the cu128 index with --no-deps.
+matplotlib                       # imported by Unlimited-OCR's model code
+einops==0.8.2
+addict==2.4.0
+easydict==1.13
+pymupdf==1.27.2.2
+Pillow
+pytesseract
+faiss-cpu
+sentence-transformers>=5,<6     # 6.x pulls in transformers 5, which breaks Unlimited-OCR
+rapidfuzz
+datasets
+pyarrow
+python-multipart
+pytest

@@ -14,7 +14,7 @@ import requests
 from . import config
 from .languages import get as get_lang
 from .pipeline import load_lesson
-from .rag import retrieve_context
+from .knowledge import retrieve
 from .translate import translate_batch
 
 log = logging.getLogger(__name__)
@@ -74,12 +74,19 @@ Rules:
 - Reply in English. (It is translated for the learner afterwards.)"""
 
 
+def speak(reply: str, lang: str) -> str:
+    """Voice the tutor's reply (same engines and voices as the lesson narration). Returns a /media URL."""
+    from .tts import synthesize
+    return f"/media/audio/{synthesize(reply, lang).path.name}"
+
+
 def ask(lesson_id: str, message: str, lang: str, time_s: float, history: list[dict]) -> dict:
     lesson = load_lesson(lesson_id)
     get_lang(lang)
     scene = scene_at(lesson, lang, time_s)
     system = SYSTEM + "\n\n" + lesson_context(lesson, scene)
-    docs = retrieve_context(message, lesson.get("documents", []))
+    upload = (lesson.get("documents") or [lesson.get("upload")])[0]
+    docs = "\n".join(f"- {p.title}: {p.text}" for p in retrieve(message, upload=upload)[:4])
     if docs:
         system += f"\n\nPASSAGES FROM THE LEARNER'S DOCUMENTS:\n{docs[:2500]}"
     msgs = [{"role": "system", "content": system}]

@@ -2,7 +2,8 @@ import React from "react";
 import type { Lang, LessonSettings, LessonSummary, Level, PlaylistSummary } from "../api";
 import { History } from "../components/History";
 import { StatusPanel } from "../components/StatusPanel";
-import { UploadArea, type UploadItem } from "../components/UploadArea";
+import { PdfUpload } from "../components/PdfUpload";
+import { preloadMetaverse } from "../components/MetaverseLayer";
 import { Ui } from "../components/ui-icons";
 
 const EXAMPLES = ["Teach me Python loops", "The circle in maths", "Photosynthesis", "Newton's third law", "Learn React basics"];
@@ -14,8 +15,11 @@ type Props = {
   settings: LessonSettings;
   onSettings: (s: LessonSettings) => void;
   languages: Lang[];
-  uploads: UploadItem[];
-  onUploads: (update: (items: UploadItem[]) => UploadItem[]) => void;
+  upload: string | null;
+  onUpload: (sha: string | null) => void;
+  focus: string;
+  onFocus: (focus: string) => void;
+  onMetaverse: () => void;
   recent: LessonSummary[];
   error: string;
   onCreate: (topic?: string) => void;
@@ -32,8 +36,7 @@ type Props = {
 /** Screen 1: ask for a lesson. Topic, optional documents, level, length, languages. */
 export const Home: React.FC<Props> = (p) => {
   const { settings: s } = p;
-  const uploading = p.uploads.some((u) => u.state === "uploading");
-  const docs = p.uploads.filter((u) => u.state === "done").length;
+  const canCreate = p.concept.trim().length >= 2 || !!p.upload;
   const toggleLang = (code: string) =>
     p.onSettings({ ...s, languages: s.languages.includes(code) ? s.languages.filter((c) => c !== code) : [...s.languages, code] });
   const noLang = s.languages.length === 0;
@@ -42,16 +45,21 @@ export const Home: React.FC<Props> = (p) => {
     <div className="screen home">
       <header className="hero">
         <div className="brand"><span className="mark" aria-hidden />Visual Teacher</div>
-        <div className="tag">Runs offline · English + Indian languages</div>
+        <div className="top-right">
+          <div className="tag">Runs offline · English + Indian languages</div>
+          <button type="button" className="ghost metaverse-btn" onClick={p.onMetaverse} onPointerEnter={preloadMetaverse} onFocus={preloadMetaverse}>Metaverse quiz world</button>
+        </div>
       </header>
 
       <form className="ask-card" onSubmit={(e) => { e.preventDefault(); p.onCreate(); }}>
         <h1>What do you want to learn?</h1>
         <div className="ask-row">
           <input id="concept" value={p.concept} onChange={(e) => p.onConcept(e.target.value)} autoFocus autoComplete="off"
-            maxLength={200} placeholder="e.g. Teach me Python loops" aria-label="Topic to learn" />
-          <button type="submit" className="go" disabled={p.concept.trim().length < 2 || uploading || noLang}>
-            <Ui name="sparkle" size={20} />{p.course ? `Create ${p.episodes}-video course` : "Create lesson"}
+            maxLength={200} aria-label="Topic to learn"
+            placeholder={p.upload ? "Optional: a topic in this PDF, or leave empty" : "e.g. Teach me Python loops"} />
+          <button type="submit" className="go" disabled={!canCreate || noLang}>
+            <Ui name="sparkle" size={20} />
+            {p.course ? `Create ${p.episodes}-video course` : p.upload && !p.concept.trim() ? "Create lesson from PDF" : "Create lesson"}
           </button>
         </div>
         <div className="examples">
@@ -66,8 +74,7 @@ export const Home: React.FC<Props> = (p) => {
         <section className="card" aria-labelledby="docs-h">
           <h2 id="docs-h">Learn from your documents <span className="pill">optional</span></h2>
           <p className="muted lead">Upload a PDF and the lesson is built from what is in it.</p>
-          <UploadArea items={p.uploads} onChange={p.onUploads} />
-          {docs > 0 && <div className="note ok">{docs} document{docs > 1 ? "s" : ""} will be used for this lesson.</div>}
+          <PdfUpload sha={p.upload} onSha={p.onUpload} focus={p.focus} onFocus={p.onFocus} disabled={false} />
         </section>
 
         <section className="card" aria-labelledby="set-h">

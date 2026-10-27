@@ -42,8 +42,25 @@ export type Track = {
   scenes: Scene[];
   duration_s: number;
   tts_engines: string[];
-  /** "indictrans2" | "ollama" | "none" | "untranslated" (model failed, English kept) */
+  /** "nllb" | "indictrans2" | "ollama" | "none" | "untranslated" (model failed, English kept) */
   translator?: string;
+  /** Citation shown on the recap scene, e.g. "Source: Science 8, Ch 3, pp. 41–44". */
+  source_note?: string;
+};
+
+export type Source = { title: string; section?: string; url: string; source: string; score: number };
+
+export type UploadStatus = {
+  pages: number;
+  digital: number;
+  scanned: number;
+  tesseract_done: number;
+  unlimited_done: number;
+  failed: number;
+  low_confidence: number;
+  state: "ocr" | "upgrading" | "ready";
+  /** Study notes written 30 pages at a time while the PDF is read. */
+  notes?: { total: number; done: number };
 };
 
 export type Lesson = {
@@ -51,6 +68,11 @@ export type Lesson = {
   concept: string;
   created: number;
   languages: Record<string, Track>;
+  /** Articles or PDF pages retrieved to ground the lesson (RAG). */
+  sources?: Source[];
+  /** Set when the lesson was made from an uploaded PDF. */
+  upload?: string | null;
+  focus?: string;
   timings: Record<string, number>;
   videos: Record<string, string>;
   /** English source plan (tutor context) and notes from the lesson reviewer. */

@@ -1,0 +1,47 @@
+"""Tiny in-process job queues. Lessons and exports share one worker (one GPU job at a time);
+PDF uploads get their own worker so a long OCR pass never delays a lesson."""
+from __future__ import annotations
+
+import logging
+import threading
+import traceback
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable
+
+log = logging.getLogger(__name__)
+
+_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lesson")
+_upload_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload")
+_jobs: dict[str, dict[str, Any]] = {}
+_lock = threading.Lock()
+
+
+def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
+    job_id = uuid.uuid4().hex[:12]
+    job = {"id": job_id, "kind": kind, "status": "queued", "stage": "Waiting", "progress": 0.0,
+           "result": None, "error": None}
+    with _lock:
+        _jobs[job_id] = job
+
+    def progress(stage: str, value: float) -> None:
+        with _lock:
+            job.update(stage=stage, progress=round(min(max(value, 0.0), 1.0), 3))
+
+    def run() -> None:
+        job["status"] = "running"
+        try:
+            job["result"] = fn(*args, progress)
+            job["status"] = "done"
+        except Exception as e:  # surfaced to the UI
+            log.error("Job %s failed:\n%s", job_id, traceback.format_exc())
+            job.update(status="error", error=f"{type(e).__name__}: {e}")
+
+    (_upload_pool if kind == "upload" else _pool).submit(run)
+    return job
+
+
+def get(job_id: str) -> dict | None:
+    with _lock:
+        job = _jobs.get(job_id)
+        return dict(job) if job else None

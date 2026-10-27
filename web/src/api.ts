@@ -50,6 +50,7 @@ export async function runJob(start: Promise<Job>, onUpdate: (j: Job) => void): P
 
 export type Health = {
   llm: { backend: string; model: string; ollama: { ok: boolean; models: string[] } };
+  knowledge: { enabled: boolean; ready: boolean; chunks?: number; articles?: number; error?: string };
   translate: { backend: string; model: string; toolkit_installed: boolean };
   tts: { engine: string; fallback: string; piper_voices: string[]; parler_installed: boolean; parler_model: string };
   render: { web_dir_ok: boolean; node_modules_ok: boolean };
@@ -79,27 +80,3 @@ export type PlaylistSummary = { id: string; topic: string; title: string; create
 
 export type Level = "beginner" | "intermediate";
 export type LessonSettings = { level: Level; duration_s: number; languages: string[] };
-
-/** A PDF handed to the document service (RAG + OCR). `id` is what lesson requests refer to. */
-export type DocInfo = { id: string; name: string; pages?: number };
-
-/** Thrown when the document service has not been connected to the backend yet. */
-export class DocServiceOffline extends Error {}
-
-/** POST /api/documents (multipart, field "file") -> DocInfo. Reports upload progress 0..1. */
-export function uploadDocument(file: File, onProgress: (p: number) => void): Promise<DocInfo> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url("/api/documents"));
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onerror = () => reject(new Error("Upload failed: backend unreachable"));
-    xhr.onload = () => {
-      if (xhr.status === 404 || xhr.status === 405) return reject(new DocServiceOffline());
-      if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(`Upload failed (${xhr.status})`));
-      try { resolve(JSON.parse(xhr.responseText) as DocInfo); } catch { reject(new Error("Bad upload response")); }
-    };
-    const form = new FormData();
-    form.append("file", file);
-    xhr.send(form);
-  });
-}
