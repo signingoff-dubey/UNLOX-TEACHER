@@ -62,10 +62,19 @@ class ScenePreview(
     private val english = ArrayList<SceneT>()                        // what was made, in English (to compare with the finished plan)
     private val shown = ArrayList<SceneT>()                          // the same scenes in the learner's language, with their narration files
     @Volatile private var announced = false
+    private var lastLen = 0                                          // how much of the text has been looked at (see feed)
     private var worker: Job = scope.launch(Dispatchers.Default) { run() }
 
     /** Called with the plan's text as it grows. Starts over when the planner does (a retry makes the text shorter than before). */
     fun feed(text: String) {
+        // Every token calls this with the whole text so far. A scene can only have finished when a closing brace has arrived since the last look,
+        // so most calls cost one search instead of a parse of the whole JSON (that made the phone work harder with every word).
+        synchronized(this) {
+            if (text.length < lastLen) lastLen = 0                    // the planner started over
+            val closed = text.indexOf('}', lastLen) >= 0
+            lastLen = text.length
+            if (!closed) return
+        }
         val (t, scenes) = extractScenes(text)
         synchronized(this) {
             if (t.isNotBlank()) title = t
@@ -73,6 +82,15 @@ class ScenePreview(
             val new = scenes.drop(seen)
             seen = scenes.size
             new.forEach { queue.trySend(Triple(gen, title, it)) }
+        }
+    }
+
+    /** Whole scenes that are already complete (a finished part of a long video), after everything fed so far, in order. */
+    fun addScenes(scenes: List<PlanScene>) {
+        synchronized(this) {
+            val g = gen
+            scenes.forEach { queue.trySend(Triple(g, title, it)) }
+            seen += scenes.size
         }
     }
 

@@ -17,6 +17,9 @@ Beginner/intermediate learners on CPU-only laptops; hackathon judges (primary au
 5. Audio-first timing: scene duration = narration audio length + short pause
 6. Interactive in-browser player (play/pause/seek, language switch)
 7. MP4 export: 720p H.264, voiceover + burned-in captions and/or SRT
+8. Continuous generation: scenes are made while the planner writes (first scene in about a second), long videos in 30 s parts, every episode of a course streams, extra videos can be asked for in the tutor chat (website and Android app)
+9. PDF as a source: Markdown for pages with a text layer, OCR for scans and broken fonts, llava for pictures inside the PDF, one continuous progress bar
+10. Stays responsive on an 8 GB laptop: priority, headroom gates, idle release, GPU fallbacks (docs/presentation-mode.md)
 
 ## Nice-to-Have Features
 - Support every Indian language with an offline voice (see Languages below)

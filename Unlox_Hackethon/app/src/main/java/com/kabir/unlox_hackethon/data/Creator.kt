@@ -1,5 +1,6 @@
 package com.kabir.unlox_hackethon.data
 
+import android.os.SystemClock
 import android.util.Log
 import com.kabir.unlox_hackethon.ui.screens.LessonRequest
 import kotlinx.coroutines.CancellationException
@@ -28,6 +29,9 @@ data class CreationState(
     /** The player has already been opened on this job's first video. */
     val opened: Boolean = false,
 )
+
+private const val LONG_S = 90        // a video longer than this is planned in parts
+private const val PART_S = 30        // about how long one part is (a 2 minute video is 4 parts)
 
 /** How much of one video each stage is (they add up to 1). */
 private val WEIGHT = listOf(0.02f, 0.30f, 0.20f, 0.42f, 0.06f)
@@ -63,6 +67,7 @@ class Creator(
 
     fun start(req: LessonRequest) {
         job?.cancel()
+        synchronized(this) { resetLive() }
         _state.value = CreationState(running = true, status = "Getting ready")
         job = Graph.scope.launch {
             try { make(req) } catch (e: CancellationException) { throw e } catch (e: Throwable) {
@@ -78,19 +83,37 @@ class Creator(
     fun opened() { _state.value = _state.value.copy(lessonId = null, opened = true) }
     fun reset() { if (!_state.value.running) _state.value = CreationState() else opened() }
 
-    private fun resetStages() { _state.value = _state.value.copy(pct = List(5) { 0f }, details = listOf("", "", "", "", ""), step = 0) }
+    // What the stages have really reached. The screen is told about it at most every 120 ms (or when something visible changes): the planner
+    // reports once per token, and every report used to rebuild the whole app, which is what made the phone stutter while a lesson was made.
+    private val livePct = FloatArray(5)
+    private val liveDetails = Array(5) { "" }
+    private var liveProgress = 0f
+    private var lastPublish = 0L
+    private var lastPublished = 0f
+
+    private fun resetLive(progress: Float = 0f) { livePct.fill(0f); liveDetails.fill(""); liveProgress = progress; lastPublished = progress }
+
+    private fun resetStages() {
+        synchronized(this) {
+            livePct.fill(0f); liveDetails.fill("")
+            _state.value = _state.value.copy(pct = List(5) { 0f }, details = listOf("", "", "", "", ""), step = 0)
+        }
+    }
 
     /** Updates one stage's detail line and percentage; the overall progress counts finished videos plus the weighted stages of this one, so it only moves forward. */
     @Synchronized private fun stage(step: Int, pct: Float? = null, status: String? = null, detail: String? = null) {
         val cur = _state.value
-        val d = cur.details.toMutableList()
-        if (detail != null) d[step] = detail
-        val p = cur.pct.toMutableList()
-        if (pct != null) p[step] = maxOf(p[step], pct.coerceIn(0f, 1f))
-        val within = p.indices.sumOf { (p[it] * WEIGHT[it]).toDouble() }.toFloat()
-        val firstOpen = p.indexOfFirst { it < 1f }.let { if (it < 0) 4 else it }
-        val overall = ((epIndex + within) / epCount)
-        _state.value = cur.copy(step = firstOpen, progress = maxOf(cur.progress, overall), status = status ?: cur.status, details = d, pct = p)
+        if (detail != null) liveDetails[step] = detail
+        if (pct != null) livePct[step] = maxOf(livePct[step], pct.coerceIn(0f, 1f))
+        val within = livePct.indices.sumOf { (livePct[it] * WEIGHT[it]).toDouble() }.toFloat()
+        liveProgress = maxOf(liveProgress, (epIndex + within) / epCount)
+        val now = SystemClock.uptimeMillis()
+        val visible = (status != null && status != cur.status) || (detail != null && detail != cur.details[step]) || (pct != null && pct >= 1f) || liveProgress - lastPublished >= 0.02f
+        if (!visible && now - lastPublish < 120) return
+        lastPublish = now
+        lastPublished = liveProgress
+        val firstOpen = livePct.indexOfFirst { it < 1f }.let { if (it < 0) 4 else it }
+        _state.value = cur.copy(step = firstOpen, progress = maxOf(cur.progress, liveProgress), status = status ?: cur.status, details = liveDetails.toList(), pct = livePct.toList())
     }
 
     private suspend fun make(req: LessonRequest) {
@@ -133,7 +156,8 @@ class Creator(
                 "This video teaches: ${o.second.ifBlank { o.first }}. " + (outline.getOrNull(i + 1)?.let { "The next video is \"${it.first}\"; do not cover it. " } ?: "") else ""
             val subject = if (epCount > 1) "$topic: ${o.first}" else topic
             val lesson = try {
-                makeLesson(req, codes, subject, series, pdf, o.second.ifBlank { o.first }, courseId, i, if (epCount > 1) o.first else "", announce = i == 0)
+                makeLesson(req, codes, subject, series, pdf, o.second.ifBlank { o.first }, courseId, i, if (epCount > 1) o.first else "", announce = i == 0,
+                    onEpisodeFirst = { id -> course = course?.copy(episodes = course!!.episodes.map { if (it.index == i) it.copy(lessonId = id, status = "building") else it })?.also { lessons.saveCourse(it) } })
             } catch (e: CancellationException) { throw e } catch (e: Throwable) {
                 if (epCount == 1) throw e
                 Log.e("Chanakya", "video ${i + 1} failed", e)
@@ -153,6 +177,7 @@ class Creator(
     /** One video: the first language is made scene by scene while Gemma writes the plan (so it can be watched at once); the other languages follow, in parallel. */
     private suspend fun makeLesson(
         req: LessonRequest, codes: List<String>, subject: String, series: String, pdf: PdfMeta?, focus: String, courseId: String, episode: Int, episodeTitle: String, announce: Boolean,
+        onEpisodeFirst: (String) -> Unit = {},
     ): Lesson {
         val id = UUID.randomUUID().toString().take(8)
         val sceneCount = (req.seconds / 10).coerceIn(3, 16)
@@ -162,9 +187,10 @@ class Creator(
         val firstName = LANGS.first { it.code == first }.name
         val preview = ScenePreview(Graph.scope, id, subject, first, codes, sceneCount, lessons, translator, tts, req.mode, req.source, courseId, episode, episodeTitle,
             onNarrated = { n -> stage(3, n.toFloat() / (sceneCount * codes.size).coerceAtLeast(1), "Recording $firstName narration", "Piper voices · $firstName") },
-            onFirst = { if (announce) _state.value = _state.value.copy(lessonId = id) })              // the player opens on scene 1 now
+            onFirst = { onEpisodeFirst(id); if (announce) _state.value = _state.value.copy(lessonId = id) })              // the player opens on scene 1 now (and the course lists this video)
         val (title, planScenes) = try {
-            plan(req, subject, series, material, sceneCount) { preview.feed(it) }
+            if (req.seconds > LONG_S) planParts(req, subject, series, material, preview)
+            else plan(req, subject, series, material, sceneCount) { preview.feed(it) }
         } catch (e: Throwable) { preview.cancel(); throw e }
         stage(1, 1f)
         val en = Track("en", title, planScenes)
@@ -218,9 +244,74 @@ class Creator(
         return lessons.load(id)!!
     }
 
+    /**
+     * A video longer than [LONG_S] seconds: an outline first, then one part of about 30 seconds at a time ("part k of n of ONE video"), like the website.
+     * Part 1 is made scene by scene while it is written; every later part is handed to the player whole, in order, as soon as it is finished.
+     */
+    private suspend fun planParts(req: LessonRequest, subject: String, series: String, material: String, preview: ScenePreview): Pair<String, List<SceneT>> {
+        val n = ((req.seconds + 15) / PART_S).coerceIn(2, 8)
+        stage(1, 0.02f, "Outlining $n parts", "Gemma · ${llm.backendName}")
+        val (title, parts) = curriculum(subject, n, material, "parts of ONE continuous video")
+        val raw = ArrayList<PlanScene>()
+        for (k in 0 until n) {
+            val goal = parts.getOrNull(k)?.second?.ifBlank { null } ?: parts.getOrNull(k)?.first ?: subject
+            val partSeries = series + "This is part ${k + 1} of $n of ONE continuous video titled \"$title\" about $subject. This part teaches only: $goal. " +
+                (if (k > 0) "Already covered (do NOT repeat): ${parts.take(k).joinToString("; ") { it.first }}. Do NOT start with a title scene or a greeting: continue straight on. " else "") +
+                (if (k < n - 1) "No quiz and no summary here: end with one sentence leading into \"${parts[k + 1].first}\". " else "This is the last part: end with a quiz scene and then a summary scene. ")
+            plan(req, subject, partSeries, material, if (k == n - 1) 4 else 3, part = k + 1,
+                onRaw = { scenes -> raw.addAll(scenes); if (k > 0) preview.addScenes(scenes) },
+                progress = { f -> stage(1, 0.05f + 0.95f * (k + f) / n) }) { text -> if (k == 0) preview.feed(text) }
+        }
+        return normalizePlan(PlanDoc(title, raw))
+    }
+
+    /** "Make one more video on X", asked in the tutor chat: it joins the lesson's playlist (a lesson on its own becomes video 1 of a new one) and is made scene by scene. Null while another lesson is being made. */
+    fun addVideo(base: Lesson, topic: String, seconds: Int, onFirst: (String) -> Unit, onDone: (Lesson?) -> Unit): String? {
+        if (_state.value.running) return null
+        val codes = base.tracks.map { it.lang }
+        val baseTitle = base.tracks.first().title
+        var course = base.courseId.takeIf { it.isNotEmpty() }?.let { lessons.loadCourse(it) }
+        if (course == null) {
+            val cid = UUID.randomUUID().toString().take(8)
+            course = Course(cid, base.concept, baseTitle, System.currentTimeMillis(), listOf(EpisodeRef(0, baseTitle, base.concept, base.id, "ready")))
+            lessons.saveCourse(course)
+            lessons.save(base.copy(courseId = cid, episode = 0, episodeTitle = baseTitle))
+        }
+        val index = course.episodes.size
+        val title = topic.replaceFirstChar { it.uppercase() }
+        val courseId = course.id
+        lessons.saveCourse(course.copy(episodes = course.episodes + EpisodeRef(index, title, topic, null, "pending")))
+        job?.cancel()
+        synchronized(this) { resetLive() }
+        epIndex = 0; epCount = 1
+        _state.value = CreationState(running = true, status = "Making the next video", episodeTitle = title)
+        job = Graph.scope.launch {
+            fun mark(change: (EpisodeRef) -> EpisodeRef) { lessons.loadCourse(courseId)?.let { c -> lessons.saveCourse(c.copy(episodes = c.episodes.map { if (it.index == index) change(it) else it })) } }
+            try {
+                val names = codes.map { c -> LANGS.first { it.code == c }.name }
+                val req = LessonRequest(topic, names, seconds, "", base.mode)
+                llm.warmUp()
+                stage(0, 1f, "Making the next video", "From Gemma's own knowledge, on this phone")
+                val lesson = makeLesson(req, codes, topic, "", null, topic, courseId, index, title, announce = false,
+                    onEpisodeFirst = { id -> mark { it.copy(lessonId = id, status = "building") }; onFirst(id) })
+                mark { it.copy(lessonId = lesson.id, status = "ready") }
+                rewards.award("lesson_created", codes)
+                _state.value = _state.value.copy(running = false, progress = 1f, status = "Ready", pct = List(5) { 1f })
+                onDone(lesson)
+                Graph.scope.launch { study.prebuild(lesson) }
+            } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+                Log.e("Chanakya", "extra video failed", e)
+                mark { it.copy(status = "failed", error = e.message ?: "") }
+                _state.value = _state.value.copy(running = false, error = e.message ?: e.javaClass.simpleName)
+                onDone(null)
+            }
+        }
+        return courseId
+    }
+
     /** The outline of a set of videos: one idea each, building up. `wanted` 0 lets the tutor choose how many. */
-    private suspend fun curriculum(topic: String, wanted: Int, material: String): Pair<String, List<Pair<String, String>>> {
-        val how = if (wanted > 0) "exactly $wanted videos" else "between 3 and 6 videos, one per idea the learner must understand"
+    private suspend fun curriculum(topic: String, wanted: Int, material: String, noun: String = "videos"): Pair<String, List<Pair<String, String>>> {
+        val how = if (wanted > 0) "exactly $wanted $noun" else "between 3 and 6 videos, one per idea the learner must understand"
         val system = "You design short video courses. Reply with one JSON object and nothing else."
         val user = "Design a course of $how that teaches: $topic.\nEach video teaches ONE clear idea and builds on the one before. The first gives the big picture, the last is a recap. Titles are at most 6 words and name the idea (not 'Part 2'). Each focus is one sentence.\n" +
             (if (material.isNotBlank()) "Material from the learner:\n$material\n" else "") +
@@ -236,7 +327,10 @@ class Creator(
         return topic to (steps.take(n - 1) + steps.last()).take(n).map { it to "$it of $topic" }
     }
 
-    private suspend fun plan(req: LessonRequest, subject: String, series: String, material: String, n: Int, onText: (String) -> Unit = {}): Pair<String, List<SceneT>> {
+    private suspend fun plan(
+        req: LessonRequest, subject: String, series: String, material: String, n: Int, part: Int = 0, onRaw: (List<PlanScene>) -> Unit = {},
+        progress: (Float) -> Unit = { stage(1, it) }, onText: (String) -> Unit = {},
+    ): Pair<String, List<SceneT>> {
         val hint = when (domainOf(subject)) {
             "maths" -> "This is a maths topic: use graph scenes with real, correct curves and points."
             "code" -> "This is a programming topic: use code scenes with a tiny correct snippet, plus flow or diagram scenes for ideas."
@@ -247,16 +341,17 @@ class Creator(
             append("Write a lesson about \"$subject\" in exactly $n scenes.\n")
             if (series.isNotBlank()) append(series).append('\n')
             if (material.isNotBlank()) append("Use only facts from this material from the learner's own document:\n").append(material.take(3200)).append("\n\n")
-            append(hint).append('\n').append(TEMPLATE_GUIDE).append('\n')
+            append(hint).append('\n').append(templateGuide(domainOf(subject))).append('\n')
             append("""JSON shape: {"title": "short title", "scenes": [{"template": "title", "heading": "...", "narration": "...", "icon": "lightbulb", "items": []}, ...]}""").append('\n')
-            append("Scene 1 is template \"title\". Use at least ${minOf(4, n)} different templates so it is not all bullets. The last scene is \"summary\" or \"quiz\". Be accurate. Output only the JSON.")
+            if (part == 0) append("Scene 1 is template \"title\". Use at least ${minOf(4, n)} different templates so it is not all bullets. The last scene is \"summary\" or \"quiz\". Be accurate. Output only the JSON.")
+            else append("Use different templates for the scenes so it is not all bullets. Be accurate. Output only the JSON.")
         }
         val expected = n * 430f                                              // about how many characters the JSON for n scenes comes to
         repeat(3) { attempt ->
-            val reply = llm.askStreaming(system, user, temperature = if (attempt == 0) 0.4 else 0.2) { text -> onText(text); stage(1, 0.02f + 0.95f * (text.length / expected).coerceAtMost(1f)) }
+            val reply = llm.askStreaming(system, user, temperature = if (attempt == 0) 0.4 else 0.2) { text -> onText(text); progress(0.02f + 0.95f * (text.length / expected).coerceAtMost(1f)) }
             val doc = extractJson(reply)?.let { runCatching { lenient.decodeFromString<PlanDoc>(it) }.getOrNull() }
             if (doc != null && doc.scenes.size >= 2) {
-                runCatching { return normalizePlan(PlanDoc(doc.title.ifBlank { subject }, doc.scenes)) }.onFailure { Log.w("Chanakya", "plan not usable: ${it.message}") }
+                runCatching { val done = normalizePlan(PlanDoc(doc.title.ifBlank { subject }, doc.scenes)); onRaw(doc.scenes); return done }.onFailure { Log.w("Chanakya", "plan not usable: ${it.message}") }
             }
             Log.w("Chanakya", "plan attempt $attempt not usable: ${reply.take(160)}")
         }

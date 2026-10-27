@@ -22,3 +22,6 @@ Legend: [ ] to do, [~] in progress, [x] done and tested
 ## Android
 - [x] Real engines, Figma screens, scene templates, seek bar, full screen, PDF tile, videos x length (built; install done, on-phone test pending)
 - [ ] On-phone test of the latest build (ask first, popup)
+- [x] Android: parts, streaming episodes, chat video, lag fixes (compiles; v0.15.0)
+- [ ] On-phone test of the v0.15.0 build: lag, parts, chat video, auto-advance (ask first, popup)
+- [ ] Course from a PDF on the website (chapters as episodes)

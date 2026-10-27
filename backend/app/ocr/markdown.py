@@ -63,6 +63,16 @@ def _tidy(md: str) -> str:
     return clean(md)
 
 
+RULE_ITEMS = 6                    # drawing items (lines, rectangles) from which a page may hold a ruled table or a boxed diagram
+
+
+def _has_rules(page: fitz.Page) -> bool:
+    try:
+        return len(page.get_cdrawings()) >= RULE_ITEMS
+    except Exception:  # noqa: BLE001
+        return True                  # cannot tell: take the thorough path
+
+
 def page_markdown(doc: fitz.Document, index: int) -> str:
     """Page `index` (0-based) as Markdown. Falls back to the plain text layer when the converter is missing, fails, or lost words."""
     plain = clean(doc[index].get_text("text"))
@@ -71,7 +81,11 @@ def page_markdown(doc: fitz.Document, index: int) -> str:
     except ImportError:
         return plain
     try:
-        md = _tidy(to_markdown(doc, pages=[index], ignore_images=True, write_images=False, show_progress=False, force_text=True))
+        # Vector graphics are only needed to find ruled tables, and analysing them costs 90 % of the time (385 ms a page against 32 ms,
+        # same text). A page with no meaningful drawing (most text pages) takes the fast path; a page with rules takes the full one.
+        ruled = _has_rules(doc[index])
+        fast = {} if ruled else {"ignore_graphics": True, "detect_bg_color": False}
+        md = _tidy(to_markdown(doc, pages=[index], ignore_images=True, write_images=False, show_progress=False, force_text=True, **fast))
     except Exception as e:  # noqa: BLE001  one odd page must not stop an upload
         log.warning("Markdown conversion of page %d failed (%s); using the plain text layer", index + 1, e)
         return plain

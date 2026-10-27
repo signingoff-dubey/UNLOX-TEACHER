@@ -141,7 +141,7 @@ class Tts(private val context: Context, private val models: ModelStore) {
                 tokens = File(dir, "tokens.txt").path
                 dataDir = espeakData(dir).path
             }
-            val config = OfflineTtsConfig().apply { model = OfflineTtsModelConfig().apply { this.vits = vits; numThreads = 4; provider = "cpu"; debug = true; debug = true } }
+            val config = OfflineTtsConfig().apply { model = OfflineTtsModelConfig().apply { this.vits = vits; numThreads = 3; provider = "cpu"; debug = false } }
             OfflineTts(null, config).also { Trace.done(); Trace.mark("voice ${dir.name} ready") }
         }
     }

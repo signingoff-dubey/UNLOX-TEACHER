@@ -24,11 +24,11 @@ button{cursor:pointer}
 :focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 #app{position:relative;height:100%;overflow:hidden;background:var(--ink)}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.glass{background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);box-shadow:0 10px 40px rgba(6,2,24,.45)}
+.glass{background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);box-shadow:0 10px 40px rgba(6,2,24,.45),inset 0 1px 0 rgba(255,255,255,.09)}
 .eyebrow{font:600 11px/1 var(--f-d);letter-spacing:.18em;text-transform:uppercase;color:var(--amber)}
 .key{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--line);border-bottom-width:3px;border-radius:6px;font:600 12px var(--f-d);color:var(--text);background:rgba(255,255,255,.06)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 20px;border:0;border-radius:12px;background:var(--amber);color:#2a1300;font:700 15px var(--f-d);letter-spacing:.02em;box-shadow:0 6px 0 #b8741f;transition:transform .08s,box-shadow .08s}
-.btn:hover:not(:disabled){transform:translateY(-1px)}
+.btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.06)}
 .btn:active:not(:disabled){transform:translateY(4px);box-shadow:0 2px 0 #b8741f}
 .btn:disabled{background:rgba(255,255,255,.1);color:var(--dim);box-shadow:none;cursor:default}
 .btn.ghost{background:rgba(255,255,255,.08);color:var(--text);box-shadow:0 6px 0 rgba(0,0,0,.35);border:1px solid var(--line)}
@@ -38,7 +38,10 @@ button{cursor:pointer}
 
 #topic{position:absolute;inset:0;display:grid;place-items:center;padding:24px var(--gr) 24px var(--gl);background:radial-gradient(ellipse at 50% 40%,rgba(14,10,36,.15),rgba(14,10,36,.65));transition:opacity .6s,visibility .6s}
 #topic.gone{opacity:0;visibility:hidden;pointer-events:none}
-.tcard{width:min(620px,100%);padding:34px 34px 28px;display:grid;gap:18px}
+.tcard{width:min(620px,100%);padding:34px 34px 28px;display:grid;gap:18px;position:relative;overflow:hidden}
+.tcard::before{content:"";position:absolute;inset:-60%;background:conic-gradient(from 0deg,transparent 0 72%,rgba(255,180,84,.22) 86%,rgba(255,111,168,.18) 92%,transparent);animation:sweep 11s linear infinite;pointer-events:none}
+.tcard>*{position:relative}
+@keyframes sweep{to{transform:rotate(360deg)}}
 .tcard h1{margin:0;font:700 clamp(30px,5.4vw,46px)/1.05 var(--f-d);text-wrap:balance}
 .tcard h1 span{color:var(--amber)}
 .tcard p{margin:0;color:var(--dim);max-width:52ch}
@@ -48,7 +51,8 @@ button{cursor:pointer}
 .chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .chips small{font:600 12px var(--f-d);letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
 .chip{padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);font-size:14px}
-.chip:hover{border-color:var(--amber)}
+.chip{transition:border-color .15s,box-shadow .15s,transform .15s}
+.chip:hover{border-color:var(--amber);box-shadow:0 0 18px rgba(255,180,84,.28);transform:translateY(-1px)}
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--dim);align-items:center}
 .legend span{display:inline-flex;gap:6px;align-items:center}
 .shoprow{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px dashed var(--line)}

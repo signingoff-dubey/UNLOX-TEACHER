@@ -53,8 +53,23 @@ def schema_text(cls: type[BaseModel]) -> str:
     return json.dumps(_shape(schema, schema.get("$defs", {})), separators=(",", ":"), ensure_ascii=False)
 
 
-def with_schema(system: str, cls: type[BaseModel]) -> str:
-    return f"{system}\n\n{RULE}{schema_text(cls)}" if system else f"{RULE}{schema_text(cls)}"
+def _without(node, drop: frozenset[str]):
+    if isinstance(node, dict):
+        return {k: _without(v, drop) for k, v in node.items() if k not in drop}
+    if isinstance(node, list):
+        return [_without(v, drop) for v in node]
+    return node
+
+
+@lru_cache(maxsize=64)
+def slim_schema_text(cls: type[BaseModel], drop: frozenset[str]) -> str:
+    """schema_text without some field names (at any depth): every field left out is prompt the model does not have to read."""
+    return json.dumps(_without(json.loads(schema_text(cls)), drop), separators=(",", ":"), ensure_ascii=False)
+
+
+def with_schema(system: str, cls: type[BaseModel], drop: frozenset[str] = frozenset()) -> str:
+    shape = slim_schema_text(cls, drop) if drop else schema_text(cls)
+    return f"{system}\n\n{RULE}{shape}" if system else f"{RULE}{shape}"
 
 
 def extract_json(text: str) -> str:

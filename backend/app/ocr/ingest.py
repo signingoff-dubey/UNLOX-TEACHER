@@ -49,6 +49,11 @@ FRONT_PAGES = 15         # scanned books without bookmarks: OCR their contents p
 FOCUS_MATCH = 80
 FORMAT = 2               # PageRecord.fmt of a digital page stored as Markdown
 
+# The progress bar of an upload is one continuous run, split into bands that follow the real work:
+READ_HI = 0.30           # 0.02 - 0.30   reading every page (text layer to Markdown, or marking it for OCR), one step per page
+OCR_HI = 0.80            # 0.30 - 0.80   OCR of scanned pages, one step per page (skipped when the PDF has none)
+INDEX_HI = 0.97          # then          indexing section by section; the last steps look for pictures
+
 Progress = Callable[[str, float], None]
 
 
@@ -287,8 +292,10 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
                     rec = PageRecord(p, "scanned")
                 save_page(sha, rec)
             records[p] = rec
+            progress(f"Reading page {p} of {n}", 0.02 + (READ_HI - 0.02) * p / n)
 
         scanned = [p for p in records if records[p].kind == "scanned"]
+        index_lo = OCR_HI if scanned else READ_HI              # no scanned pages: no OCR band, indexing follows reading directly
         todo = [p for p in scanned if records[p].status == "pending"]
         done = len(scanned) - len(todo)
         prev = read_info(sha) or {}
@@ -316,17 +323,19 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
                 if not waiting[s[0]]:
                     _reindex(col, sha, meta, s, records, embedder.count_tokens)
                     indexed.add(s[0])
-                progress(f"OCR {done} / {len(scanned)} pages (Tesseract)", 0.05 + 0.85 * done / max(len(scanned), 1))
+                progress(f"OCR {done} / {len(scanned)} pages (Tesseract)", READ_HI + (OCR_HI - READ_HI) * done / max(len(scanned), 1))
 
             front = [] if toc else list(range(1, min(FRONT_PAGES, n) + 1))
             _tesseract_pass(src, doc, _read_order(todo, early_focus, front), langs, tess_dpi(lang), records, sha, on_page)
-        else:
-            progress(f"OCR {done} / {len(scanned)} pages (cached)", 0.9)
+        elif scanned:
+            progress(f"OCR {done} / {len(scanned)} pages (cached)", OCR_HI)       # (a PDF with no scanned pages has no OCR band at all)
 
-        for s in sections:
-            if s[0] not in indexed:
-                _reindex(col, sha, meta, s, records, embedder.count_tokens)
-                indexed.add(s[0])
+        rest = [s for s in sections if s[0] not in indexed]
+        for k, s in enumerate(rest, 1):
+            _reindex(col, sha, meta, s, records, embedder.count_tokens)
+            indexed.add(s[0])
+            progress(f"Indexing section {k} of {len(rest)}", index_lo + (INDEX_HI - 0.01 - index_lo) * k / len(rest))
+        progress("Looking for pictures", INDEX_HI - 0.01)
         figs = figures.find(doc) if describer is not False and (describer is not None or config.PDF_FIGURES) else []
 
     if fast is not None:                         # pass 1 is done: hand the collection back to the CPU embedder, free the GPU

@@ -283,13 +283,20 @@ private fun FullPlayer(
 }
 
 enum class Who { TUTOR, STUDENT }
-data class Message(val who: Who, val text: String, val time: String)
+data class Message(val who: Who, val text: String, val time: String, val video: VideoRef? = null)
+
+/** A video the learner asked for in the chat; its live state is in [VideoState], looked up by `key`. */
+data class VideoRef(val key: String)
+
+/** Where a video asked for in the chat has got to: its first scene (the picture on the card), how many scenes exist, and whether the rest is still being made. */
+data class VideoState(val title: String, val lessonId: String?, val scenes: Int, val building: Boolean, val seconds: Int, val first: com.kabir.unlox_hackethon.data.SceneT?)
 
 /** 06 Tutor chat: opened from the "Ask the tutor" button with a ripple. Replies come from the on-device tutor; nothing waits on the main thread. */
 @Composable
 fun TutorChatScreen(
     sceneLabel: String, messages: SnapshotStateList<Message>, thinking: Boolean, speaking: Boolean, onSpeaker: () -> Unit,
     onSend: (String) -> Unit, onVoice: (Offset) -> Unit, onBack: () -> Unit,
+    videos: Map<String, VideoState> = emptyMap(), onPlayVideo: (String) -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     val mic = remember { mutableStateOf(Offset.Zero) }
@@ -308,7 +315,7 @@ fun TutorChatScreen(
             IconBtn(R.drawable.ic_volume, if (speaking) "Spoken answers on" else "Spoken answers off", bg = U.Raised, tint = if (speaking) U.TextPrimary else U.TextTertiary, onClick = onSpeaker)
         }
         LazyColumn(Modifier.weight(1f), state = list, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(messages) { Bubble(it) }
+            items(messages) { Bubble(it, it.video?.let { v -> videos[v.key] }, onPlayVideo) }
             if (thinking) item { TypingBubble() }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -329,8 +336,29 @@ fun TutorChatScreen(
     }
 }
 
+/** The video in the chat: a spinner while it is planned, then its first frame with a play button as soon as the first scene exists, and a line that counts scenes while the rest is made. */
 @Composable
-private fun Bubble(m: Message) {
+private fun VideoCard(v: VideoState?, onPlay: () -> Unit) {
+    val ready = v?.lessonId != null && v.scenes > 0
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(U.Surface).padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1B1B1F)), contentAlignment = Alignment.Center) {
+            val first = v?.first
+            if (first != null) {
+                val t = remember { mutableFloatStateOf(1.6f) }                                          // a still: the scene a moment after it has settled
+                SceneArt(first, v.title, t, 6f, Modifier.fillMaxWidth())
+            } else androidx.compose.material3.CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+            if (ready) IconBtn(R.drawable.ic_play, "Play ${v?.title}", bg = U.Inverse, size = 48.dp, iconSize = 24.dp) { onPlay() }
+        }
+        Text(v?.title ?: "", style = T.Body, color = U.TextPrimary, maxLines = 1)
+        Text(
+            when { v == null -> ""; !ready -> "Making it, about ${v.seconds} s"; v.building -> "${v.scenes} scenes ready, the rest is on its way"; else -> "Ready · ${v.scenes} scenes · added to the playlist" },
+            style = T.Caption, color = U.TextTertiary,
+        )
+    }
+}
+
+@Composable
+private fun Bubble(m: Message, video: VideoState? = null, onPlayVideo: (String) -> Unit = {}) {
     val tutor = m.who == Who.TUTOR
     val shape = if (tutor) RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp) else RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (tutor) Arrangement.Start else Arrangement.End) {
@@ -339,6 +367,7 @@ private fun Bubble(m: Message) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(m.text, style = T.Body, color = if (tutor) U.TextPrimary else U.OnInverse)
+            if (m.video != null) VideoCard(video) { video?.lessonId?.let(onPlayVideo) }
             Text(m.time, style = T.Caption, color = (if (tutor) U.TextTertiary else U.OnInverse).copy(alpha = 0.6f))
         }
     }

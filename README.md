@@ -295,3 +295,9 @@ Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_h
 ## What is new in v0.14.4
 - **PDFs**: pages with a text layer are read as Markdown (headings, lists, tables kept) instead of OCR; broken fonts are detected and sent to OCR; pictures inside the PDF are described by llava (`PDF_FIGURES=1`, `PDF_MAX_FIGURES=40`) and searched with their page. New dependency: `pymupdf4llm==1.27.2.2` (`pip install -r backend/requirements-rag.txt`).
 - **Speed**: translation batches by length, other-language translations pre-cached while a lesson is being planned, speech recognition results cached, embedding and speech models pre-warmed when idle.
+
+## What is new in v0.15.0
+- **Faster, steadier first scene**: the planner prompt is built for the subject (first scene about 1.2 s warm, was about 3.2 s with a wide spread).
+- **PDF upload**: one continuous progress bar, much faster Markdown reading.
+- **Android**: long videos in 30 s parts, every video of a set opens as soon as its first scene exists and plays on to the next, "make one more video on ..." in the tutor chat, and lag fixes.
+- **Learnverse**: new sky, wind, sparks, colour grade, livelier avatar.

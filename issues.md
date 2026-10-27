@@ -307,3 +307,33 @@
 **Fix:** `ocr/figures.py` finds embedded pictures, `ingest._describe_figures` describes them with llava in the background and indexes the description with the page; page records are updated through `update_page` (one lock, fresh copy) so the OCR upgrade and the figure pass cannot overwrite each other
 **Files Changed:** backend/app/ocr/figures.py, ingest.py, types.py, vision.py
 **Status:** Resolved (vector drawings are not covered)
+
+---
+
+## [ISSUE-036] — 2026-10-28
+**Title:** First scene came after 3 s sometimes and 6 s other times
+**Symptom:** the first video of a session started fast, the next one noticeably later
+**Root Cause:** every call sent the same 1,700-token system prompt that covers maths graphs and code scenes, plus up to 4,000 characters of reference text; the read time of that prompt (0.7 to 0.95 s, more when the model's prompt cache missed) and the length of the answer's first scene varied between topics
+**Fix:** a prompt built for the subject (790 tokens for a general topic), smaller reference block for short lessons. Measured 3.2 s (2.1 to 4.0) to 1.2 s (0.9 to 1.3)
+**Files Changed:** backend/app/planner.py, llm.py, tests/test_planner_prompt.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-037] — 2026-10-28
+**Title:** PDF upload bar was slow, stuck and went backwards
+**Symptom:** the bar sat at 2 % while pages were read, jumped, went back to 2 % when the upload ended and reading began, and stopped during indexing
+**Root Cause:** no progress reports in the page-reading and indexing loops; Markdown conversion analysed vector graphics on every page (385 ms); the browser showed upload and reading progress as two separate bars from zero; the bar had no easing
+**Fix:** per-page and per-section reports in bands, graphics analysis only for pages with rules, one continuous eased bar. A no-scanned-pages PDF reported OCR at 80 % and then indexing from 30 %: fixed (test)
+**Files Changed:** backend/app/ocr/ingest.py, markdown.py, web/src/components/PdfUpload.tsx, api.ts, tests/test_upload_progress.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-038] — 2026-10-28
+**Title:** The Android app lagged while a lesson was being made
+**Symptom:** stutter on every screen during generation
+**Root Cause:** `Creator.stage()` published a new state for every streamed token and the root composable rebuilt the whole app each time; `ScenePreview.feed` parsed the whole JSON for every token; the lesson polled while building was reassigned every 1.2 s even when unchanged; the voice engine ran with debug logging
+**Fix:** publish at most every 120 ms (or on a visible change), parse only after a closing brace, assign only on change, TTS debug off and 3 threads
+**Files Changed:** data/Creator.kt, StreamScenes.kt, Engines.kt, ui/UnloxApp.kt
+**Status:** Resolved in code; to be measured on the phone

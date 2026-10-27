@@ -25,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +46,8 @@ import com.kabir.unlox_hackethon.data.Graph
 import com.kabir.unlox_hackethon.data.LANGS
 import com.kabir.unlox_hackethon.data.Lesson
 import com.kabir.unlox_hackethon.data.LessonMeta
+import com.kabir.unlox_hackethon.data.VideoIntent
+import com.kabir.unlox_hackethon.data.VideoRequest
 import com.kabir.unlox_hackethon.data.detectLanguage
 import com.kabir.unlox_hackethon.ui.components.RippleReveal
 import com.kabir.unlox_hackethon.ui.components.TabBar
@@ -70,6 +73,8 @@ import com.kabir.unlox_hackethon.ui.screens.RewardsScreen
 import com.kabir.unlox_hackethon.ui.screens.PartRef
 import com.kabir.unlox_hackethon.ui.screens.SettingsScreen
 import com.kabir.unlox_hackethon.ui.screens.Stage
+import com.kabir.unlox_hackethon.ui.screens.VideoRef
+import com.kabir.unlox_hackethon.ui.screens.VideoState
 import com.kabir.unlox_hackethon.ui.screens.StageState
 import com.kabir.unlox_hackethon.ui.screens.StudyHubScreen
 import com.kabir.unlox_hackethon.ui.screens.StudyKind
@@ -81,6 +86,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -115,6 +121,11 @@ private fun decode(s: String): Route {
         else -> Route.Onboarding
     }
 }
+
+/** True when a freshly read lesson has nothing new on screen (same scenes, languages and state): assigning it would only rebuild the player for nothing. */
+private fun sameProgress(a: Lesson, b: Lesson) =
+    a.building == b.building && a.scenesTotal == b.scenesTotal && a.pending == b.pending && a.tracks.size == b.tracks.size &&
+        a.tracks.indices.all { a.tracks[it].scenes.size == b.tracks[it].scenes.size && a.tracks[it].title == b.tracks[it].title }
 
 private val TIME = DateTimeFormatter.ofPattern("HH:mm")
 private fun now() = LocalTime.now().format(TIME)
@@ -174,8 +185,10 @@ fun UnloxApp() {
             val cur = lesson ?: return@LaunchedEffect
             if (cur.id != id) return@LaunchedEffect
             val code = cur.tracks.getOrNull(language)?.lang
-            lesson = fresh
-            if (code != null) language = fresh.tracks.indexOfFirst { it.lang == code }.coerceAtLeast(0)
+            if (!sameProgress(cur, fresh)) {                                           // nothing new: leave the screen alone
+                lesson = fresh
+                if (code != null) language = fresh.tracks.indexOfFirst { it.lang == code }.coerceAtLeast(0)
+            }
             if (!fresh.building) break
         }
     }
@@ -214,7 +227,19 @@ fun UnloxApp() {
             else {
                 // caught up with the scenes made so far: wait for the next one instead of ending
                 while (lesson?.building == true && known() <= scene + 1) delay(400)
-                if (known() > scene + 1) { scene += 1; sceneMs = 0 } else { playing = false; sceneMs = 0; Graph.rewards.award("lesson_complete") }
+                if (known() > scene + 1) { scene += 1; sceneMs = 0 }
+                else {
+                    Graph.rewards.award("lesson_complete")
+                    // a set of videos goes on to the next video by itself, waiting for it while it is still being made
+                    fun nextVideoId(): String? = course?.takeIf { it.id == lesson?.courseId }?.episodes?.getOrNull((lesson?.episode ?: -1) + 1)?.lessonId
+                    fun nextComing() = course?.episodes?.getOrNull((lesson?.episode ?: -1) + 1)?.status.let { it == "pending" || it == "building" }
+                    var next = nextVideoId()
+                    var waited = 0
+                    while (next == null && nextComing() && waited < 120_000) { delay(500); waited += 500; next = nextVideoId() }
+                    val nl = next?.let { withContext(Dispatchers.IO) { Graph.lessons.load(it) } }
+                    if (nl != null) { Graph.player.stop(); started[0] = -1; lesson = nl; scene = 0; sceneMs = 0; language = 0; playing = true }
+                    else { playing = false; sceneMs = 0 }
+                }
             }
         }
     }
@@ -233,13 +258,52 @@ fun UnloxApp() {
     /** The lesson the study tools work on: the one on screen, else the newest. */
     suspend fun studyLesson(): Lesson? = lesson ?: withContext(Dispatchers.IO) { Graph.lessons.list().firstOrNull()?.let { Graph.lessons.load(it.id) } }.also { if (it != null) lesson = it }
 
+    // videos asked for in the tutor chat: "make one more video on ...". Each is a card in the chat (first frame, play button) and joins the playlist.
+    val videos = remember { mutableStateMapOf<String, VideoState>() }
+    LaunchedEffect(videos.values.count { it.building } * 2 + videos.values.count { it.lessonId != null }) {
+        while (videos.values.any { it.building && it.lessonId != null }) {
+            delay(1500)
+            videos.entries.filter { it.value.building && it.value.lessonId != null }.map { it.key to it.value }.forEach { (k, v) ->
+                val l = withContext(Dispatchers.IO) { Graph.lessons.load(v.lessonId!!) } ?: return@forEach
+                val tr = l.tracks.firstOrNull()
+                videos[k] = v.copy(scenes = tr?.scenes?.size ?: v.scenes, first = v.first ?: tr?.scenes?.firstOrNull(), building = l.building)
+            }
+        }
+    }
+    fun playVideo(id: String) = scope.launch {
+        val l = withContext(Dispatchers.IO) { Graph.lessons.load(id) } ?: return@launch
+        openLessonObj(l)
+        chatOpen = false
+        if (stack.last() != Route.Player) push(Route.Player)
+        playing = true
+    }
+
     // tutor
     val messages = remember { mutableStateListOf(Message(Who.TUTOR, "Hi ${Graph.profile.callName}! Ask me anything about the lesson. I know every scene.", now())) }
     var thinking by remember { mutableStateOf(false) }
+    fun makeVideoFromChat(wish: VideoIntent) {
+        val base = lesson ?: return
+        val seconds = wish.seconds ?: (base.tracks.first().scenes.sumOf { it.seconds.toDouble() }.toInt() / 30 * 30).coerceIn(30, 240)
+        val topic = wish.topic.ifBlank { base.concept }
+        val key = UUID.randomUUID().toString().take(8)
+        videos[key] = VideoState(topic.replaceFirstChar { it.uppercase() }, null, 0, true, seconds, null)
+        val cid = Graph.creator.addVideo(base, topic, seconds,
+            onFirst = { id -> scope.launch {
+                val l = withContext(Dispatchers.IO) { Graph.lessons.load(id) }
+                val tr = l?.tracks?.firstOrNull()
+                videos[key]?.let { v -> videos[key] = v.copy(lessonId = id, scenes = tr?.scenes?.size ?: 0, first = tr?.scenes?.firstOrNull()) }
+            } },
+            onDone = { l -> scope.launch { videos[key]?.let { v -> videos[key] = v.copy(building = false, scenes = l?.tracks?.firstOrNull()?.scenes?.size ?: v.scenes) } } })
+        if (cid == null) { videos.remove(key); messages.add(Message(Who.TUTOR, "I am still making something else. Ask again in a moment.", now())); return }
+        if (base.courseId.isEmpty()) lesson = base.copy(courseId = cid, episode = 0, episodeTitle = base.tracks.first().title)        // the playlist now shows both videos
+        messages.add(Message(Who.TUTOR, "Making a $seconds second video about $topic. It appears below with a play button as soon as its first scenes are ready, and it is added to the playlist.", now(), VideoRef(key)))
+    }
     fun ask(q: String) {
         if (q.isBlank() || thinking) return
         playing = false
         messages.add(Message(Who.STUDENT, q, now()))
+        val wish = lesson?.let { VideoRequest.detect(q) }
+        if (wish != null) { makeVideoFromChat(wish); return }              // "generate one more video on ...": no tutor answer, a new video is started
         thinking = true
         val history = messages.dropLast(1).drop(1).chunked(2).mapNotNull { if (it.size == 2 && it[0].who == Who.STUDENT) it[0].text to it[1].text else null }
         scope.launch {
@@ -355,6 +419,7 @@ fun UnloxApp() {
                     if (!on) Graph.player.stop()                                  // muting also silences what is being said now
                 }, ::ask,
                 onVoice = { o -> voiceOrigin = o; voiceForChat = true; voiceOpen = true }, onBack = { chatOpen = false },
+                videos = videos, onPlayVideo = { playVideo(it) },
             )
         }
         if (!introDone) Intro { introDone = true }

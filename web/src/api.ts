@@ -36,11 +36,11 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
 }
 
 /** Poll a backend job until it finishes, reporting progress along the way. */
-export async function runJob(start: Promise<Job>, onUpdate: (j: Job) => void): Promise<Job> {
+export async function runJob(start: Promise<Job>, onUpdate: (j: Job) => void, intervalMs = 600): Promise<Job> {
   let job = await start;
   while (job.status === "queued" || job.status === "running") {
     onUpdate(job);
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, intervalMs));
     job = await api<Job>(`/api/jobs/${job.id}`);
   }
   onUpdate(job);

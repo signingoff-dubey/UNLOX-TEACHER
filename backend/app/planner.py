@@ -67,6 +67,77 @@ Rules:
 - Write everything in English (it is translated later)."""
 
 
+# The prompt above is written for every subject. Most lessons are neither maths nor programming, and then three quarters of it (the graph and
+# code templates, their examples and rules, and their fields in the schema) is prompt the model has to read for nothing: it is read again
+# for every part of a long video and every episode of a course, and a longer prompt also means a later first scene. system_prompt() leaves
+# out what the topic cannot use. The text is carved out of SYSTEM_PROMPT, so there is still one place to edit the wording.
+_FULL = SYSTEM_PROMPT
+
+
+def _between(a: str, b: str | None) -> str:
+    i = _FULL.index(a)
+    return _FULL[i:_FULL.index(b, i)] if b else _FULL[i:]
+
+
+_HEAD = _FULL[:_FULL.index("- graph:")]
+_GRAPH_T = _between("- graph:", "- code:")
+_CODE_T = _between("- code:", "\nChoose the scenes by subject:")
+_MATH_S = _between("- MATHS", "- PROGRAMMING")
+_CODE_S = _between("- PROGRAMMING", "- REQUIRED:")
+_REQ_MATH, _REQ_CODE = _between("- REQUIRED:", "- Coordinate geometry").split("\n  A programming topic", 1)
+_REQ_CODE = "- REQUIRED: a programming topic" + _REQ_CODE
+_GEOM = _between("- Coordinate geometry", "- VARIETY")
+_VARIETY = _between("- VARIETY", "Example graph scene:")
+_EX_GRAPH = _between("Example graph scene:", "Example code scene:")
+_EX_CODE = _between("Example code scene:", "Rules:")
+_RULES = _between("Rules:", None)
+
+MATH_WORDS = re.compile(r"\b(maths?|mathematics|algebra|geometry|graphs?|plot\w*|functions?|circles?|parabolas?|lines?|equations?|trigonometry|sine|cosine|"
+                        r"quadratic|cubic|calculus|derivatives?|integrals?|exponential|physics|motion|velocity|slope|curves?|coordinates?|ellipse|angles?|"
+                        r"triangles?|statistics|probability|sqrt|logarithm\w*)\b", re.I)
+CODE_WORDS = re.compile(r"\b(python|java|javascript|typescript|rust|golang|go lang|c\+\+|c#|sql|react|jsx|html|css|node|code|coding|programming?|"
+                        r"loops?|arrays?|algorithms?|recursion|variables?|syntax|api|database|git|linux|bash|shell|compilers?|classes|objects?|pointers?)\b", re.I)
+SUBJECT_DROP = {"graph": frozenset({"curves", "marks", "equation", "x_range", "y_range"}),
+                "code": frozenset({"code_lang", "code", "highlights", "output"})}
+
+
+def subject_of(concept: str) -> tuple[bool, bool]:
+    """(needs graph scenes, needs code scenes). An unknown subject (a whole PDF, a photo) keeps both."""
+    c = (concept or "").strip()
+    if not c or len(c) > 120:
+        return True, True
+    return bool(MATH_WORDS.search(c)), bool(CODE_WORDS.search(c))
+
+
+def system_prompt(concept: str = "") -> tuple[str, frozenset[str]]:
+    """The system prompt for this concept and the schema fields to leave out of the example."""
+    math, code = subject_of(concept)
+    parts = [_HEAD]
+    if math:
+        parts.append(_GRAPH_T)
+    if code:
+        parts.append(_CODE_T)
+    parts.append("\n\nChoose the scenes by subject:\n")
+    if math:
+        parts += [_MATH_S, _REQ_MATH.rstrip("\n") + "\n", _GEOM]
+    if code:
+        parts += [_CODE_S, _REQ_CODE.rstrip("\n") + "\n"]
+    variety = _VARIETY
+    if not math:
+        variety = variety.replace("graph, ", "")
+    if not code:
+        variety = variety.replace("code, ", "")
+    parts.append(variety)
+    if math:
+        parts.append(_EX_GRAPH)
+    if code:
+        parts.append(_EX_CODE)
+    rules = _RULES if (math or code) else re.sub(r"^- For code and graph scenes[^\n]*\n", "", _RULES, flags=re.M)         # (that rule is about graph and code scenes only)
+    parts.append(rules)
+    drop = frozenset().union(*(SUBJECT_DROP[k] for k, need in (("graph", math), ("code", code)) if not need))
+    return "".join(parts), drop
+
+
 PAGE_REQUEST = re.compile(r"\b(chapter|ch\.?|unit|lesson|section|page|pages|pp?\.)\s*\d", re.I)
 
 
@@ -99,7 +170,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
         page_mode = False
         passages = retrieve(concept or focus or extra[:200], upload=upload)
     sources = _page_sources(passages) if page_mode else _sources(passages)
-    reference = _condensed_block(passages) if page_mode else _reference_block(passages)
+    reference = _condensed_block(passages) if page_mode else _reference_block(passages, budget=2400 if duration_s <= 75 else 3600)      # less to read, an earlier first scene
     if upload and not focus and not concept.strip():
         from .ocr import digest                      # a whole PDF: plan from its study notes (a few KB), not from every page
         from .ocr.ingest import upload_dir
@@ -289,7 +360,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
         user += f"\n\nYour previous lesson plan had a problem: {previous_error}. Write a better one."
     # No Ollama `format`: constrained decoding made this call 2-4x slower (see llm.py). The schema goes in the prompt instead.
     return llm.stream_chat(
-        [{"role": "system", "content": llm.with_schema(SYSTEM_PROMPT, LessonPlan)}, {"role": "user", "content": user}],
+        [{"role": "system", "content": llm.with_schema(*(lambda sp: (sp[0], LessonPlan, sp[1]))(system_prompt(concept)))}, {"role": "user", "content": user}],
         {"temperature": 0.4}, expected_tokens=max(350, duration_s * 12), on_progress=on_progress, on_text=on_text)
 
 

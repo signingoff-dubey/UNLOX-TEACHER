@@ -1,7 +1,22 @@
 # Progress Log
 
-## Current Version: v0.14.4
+## Current Version: v0.15.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.15.0] — 2026-10-28
+### What's New
+- **First scene sooner, and the same every time**: the planner's system prompt was about 1,700 tokens for every lesson, most of it graph and code templates, examples and rules that only maths and programming topics use. It is now built for the subject (`planner.system_prompt`, `llm.slim_schema_text`): a general topic gets 790 tokens (the reference block is also smaller for short lessons). Measured on the real model, alternating topics: time to the first finished scene 3.2 s on average (2.1 to 4.0 s, the 3-4 s against 6 s you saw) before, 1.2 s (0.9 to 1.3 s) now; prompt read 0.95 s to 0.30 s. Maths and programming topics keep exactly what they had; an unknown subject (a PDF, a photo) keeps everything
+- **PDF upload bar is continuous and fast**: reading pages reported nothing until OCR started, indexing reported nothing, and the Markdown conversion made it 10x slower (385 ms a page). Now: vector-graphics analysis only for pages that have rules (38 ms a page, same text, ruled tables still found), a progress step for every page, one band per phase (reading to 30 %, OCR to 80 %, indexing section by section to 97 %, pictures), the bar in the browser is one run from the first byte (sending is the first 12 %, it used to jump back to 2 %), eased and creeping between reports, polled every 300 ms. A test found and fixed a jump backwards for PDFs without scanned pages
+- **Android: the same continuous generation as the website**: videos over 90 s are planned in parts of about 30 s (outline first, part 1 streamed token by token, later parts handed to the player whole, in order); every video of a set is listed in the player as soon as its first scene exists, and the player moves on to the next video by itself (waiting for it while it is made); "make one more video on X" in the tutor chat (same recognition rules as the website) adds a video to the lesson's playlist and shows a card with its first frame and a play button; the planner prompt only carries the template docs the topic needs
+- **Android: lag fixes**: the creator told the screen about progress on every streamed token (dozens of times a second, each rebuilding the whole app) and re-parsed the whole growing JSON for every token; now progress is published at most every 120 ms or when something visible changes, the JSON is parsed only when a closing brace has arrived, the lesson that is polled while it is made is only assigned when something changed, and the voice engine no longer runs with debug logging on four threads (3 threads, no debug). It builds; not yet measured on the phone
+- **Learnverse graphics**: GPU sky with slow aurora curtains and a palette that drifts from sunset to twilight and back, twinkling stars, trees that sway in the wind (instanced vertex shader), colour sparks rising from every station, pulsing crystals and path, a colour-grade pass with vignette (stronger with speed) and film grain on high quality, a livelier avatar (breathing, squash and stretch on jump, dust on landing and while running), glass panels with an inner highlight, an animated sweep on the topic card
+
+### Known Issues
+- The Android changes compile but are not tested on the phone (lag, parts, chat video, auto-advance)
+- Phone: only one extra video is made at a time, and not while another lesson is being made
+- The planner still writes about 90 s of narration for a 120 s request
 
 ---
 

@@ -49,6 +49,18 @@ const val TEMPLATE_GUIDE = """Templates (pick the one that SHOWS the idea):
 - summary: items = 3-4 key takeaways.   - bullets: items = 2-5 key points (only when nothing visual fits).
 Every scene also has: heading (at most 6 words), narration (what the teacher says, about 22 words, plain sentences), icon (one of lightbulb sun leaf water atom cell heart brain earth bolt gear book flask cloud magnet rocket), and items as short labels (at most 5 words each)."""
 
+/** TEMPLATE_GUIDE without the graph or code templates when the topic cannot use them: a shorter prompt is read sooner, so the first scene comes sooner. */
+fun templateGuide(domain: String): String {
+    val out = ArrayList<String>()
+    var skipping = false
+    for (line in TEMPLATE_GUIDE.lines()) {
+        if (line.startsWith("- ")) skipping = (line.startsWith("- graph:") && domain != "maths") || (line.startsWith("- code:") && domain != "code")
+        else if (!line.startsWith(" ")) skipping = false                       // a line that continues the last template stays with it; anything else is shared
+        if (!skipping) out.add(line)
+    }
+    return out.joinToString("\n")
+}
+
 private fun finite(vararg v: Double) = v.all { it.isFinite() && kotlin.math.abs(it) < 1e6 }
 
 private fun pointsFrom(narration: String, limit: Int = 4): List<String> =
