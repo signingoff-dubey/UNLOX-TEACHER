@@ -89,6 +89,20 @@ def read_info(sha: str) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+_JUNK_TITLE = re.compile(r"(?i)^(microsoft\b|untitled\b|document\d*$)|\.(docx?|pptx?|odt|pdf|tex|indd)$")
+
+
+def _title(doc: fitz.Document, path: Path, sha: str) -> str:
+    """The PDF's own title if it is a real one, else the uploaded file's name (saved by the upload route)."""
+    meta = ((doc.metadata or {}).get("title") or "").strip()
+    if meta and not _JUNK_TITLE.search(meta):
+        return meta
+    name = upload_dir(sha) / "name.txt"
+    if name.exists() and name.read_text(encoding="utf-8").strip():
+        return name.read_text(encoding="utf-8").strip()
+    return path.stem
+
+
 def validate_pdf(path: Path) -> int:
     if path.stat().st_size > MAX_BYTES:
         raise UploadError("PDF is larger than 2 GB")
@@ -234,7 +248,7 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
     with fitz.open(src) as doc:
         toc = read_toc(doc)
         sections = sections_from_toc(n, toc)
-        title = (doc.metadata or {}).get("title") or path.stem
+        title = _title(doc, path, sha)
         meta = {"doc_id": sha, "title": title, "lang": lang or "", "source": "upload", "license": "",
                 "url": f"upload:{sha}"}
         progress("Reading the PDF", 0.02)

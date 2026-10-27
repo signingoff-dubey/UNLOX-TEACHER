@@ -6,6 +6,7 @@ import re
 import shutil
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -41,6 +42,9 @@ def upload_pdf(file: UploadFile = File(...), lang: str | None = Form(None), focu
             raise HTTPException(400, str(e)) from None
         dest = upload_dir(file_sha(tmp)) / "source.pdf"
         dest.parent.mkdir(parents=True, exist_ok=True)
+        name = Path(file.filename or "").stem.strip()[:200]
+        if name:
+            (dest.parent / "name.txt").write_text(name, encoding="utf-8")
         if dest.exists():
             tmp.unlink()
         else:

@@ -36,6 +36,7 @@ def test_upload_returns_job(client, tmp_path):
     kind, (path, lang, focus) = client.calls[0]
     assert kind == "upload" and lang == "hi" and focus == "chapter 2"
     assert path.name == "source.pdf" and path.exists()
+    assert (path.parent / "name.txt").read_text(encoding="utf-8") == "bio"
     assert not list((tmp_path / "uploads").glob("tmp-*"))
 
 

@@ -149,3 +149,24 @@ def test_toc_used_for_sections(tmp_path):
     assert [t["title"] for t in info["toc"]] == ["Mechanics", "Biology"]
     hits = S.search("chlorophyll light", f"upload:{info['sha']}", embedder=E, reranker=R)
     assert hits[0].chunk.section == "Biology"
+
+
+def test_title_from_original_filename(tmp_path):
+    path = six_page_pdf(tmp_path)
+    sha = I.file_sha(path)
+    I.upload_dir(sha).mkdir(parents=True)
+    (I.upload_dir(sha) / "name.txt").write_text("Class 8 Science", encoding="utf-8")
+    info, _ = ingest(path)
+    assert info["title"] == "Class 8 Science"
+
+
+def test_title_prefers_real_pdf_metadata(tmp_path):
+    path = six_page_pdf(tmp_path)
+    for meta, want in [("Biology for Grade 9", "Biology for Grade 9"), ("Microsoft Word - ch1.docx", "doc")]:
+        doc = fitz.open(path)
+        doc.set_metadata({"title": meta})
+        out = tmp_path / f"m{len(meta)}.pdf"
+        doc.save(out)
+        doc.close()
+        info, _ = ingest(out)
+        assert info["title"] == (want if want != "doc" else out.stem)
