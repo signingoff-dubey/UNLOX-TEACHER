@@ -146,7 +146,7 @@ export default function App() {
 
           {busy && job && (
             <div className="progress" role="status">
-              <div className="bar"><div style={{ width: `${Math.round(job.progress * 100)}%` }} /></div>
+              <div className="bar"><div style={{ transform: `scaleX(${job.progress})` }} /></div>
               <div className="muted">{job.stage}…</div>
             </div>
           )}
