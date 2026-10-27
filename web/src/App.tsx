@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { Job, Lesson } from "./types";
 import { api, getApiBase, runJob, url, type Lang, type LessonSummary } from "./api";
@@ -7,6 +7,9 @@ import { FPS, H, W } from "./remotion/theme";
 import { StatusPanel } from "./components/StatusPanel";
 import { SceneList } from "./components/SceneList";
 import { History } from "./components/History";
+
+// The 3D metaverse is a separate chunk: it only loads when the student opens it.
+const Metaverse = lazy(() => import("metaverse"));
 
 const EXAMPLES = ["Photosynthesis", "The water cycle", "Newton's third law", "How a rainbow forms", "Fractions"];
 const DEFAULT_LANGS = ["hi", "te"];
@@ -21,6 +24,7 @@ export default function App() {
   const [active, setActive] = useState("en");
   const [exports, setExports] = useState<Record<string, Job>>({});
   const [error, setError] = useState("");
+  const [metaverse, setMetaverse] = useState(false);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [assetBase, setAssetBase] = useState(getApiBase());
   const player = useRef<PlayerRef>(null);
@@ -111,7 +115,10 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="brand"><span className="mark" aria-hidden />Visual Teacher</div>
-        <div className="tag">Runs offline · English + Indian languages</div>
+        <div className="top-right">
+          <div className="tag">Runs offline · English + Indian languages</div>
+          <button type="button" className="ghost metaverse-btn" onClick={() => setMetaverse(true)}>Metaverse</button>
+        </div>
       </header>
 
       <main className="layout">
@@ -260,6 +267,14 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {metaverse && (
+        <div className="mv-overlay" role="dialog" aria-label="Metaverse">
+          <Suspense fallback={<div className="mv-loading">Loading the metaverse…</div>}>
+            <Metaverse lesson={lesson} lang={active} onExit={() => setMetaverse(false)} />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }
