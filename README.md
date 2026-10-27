@@ -173,3 +173,8 @@ See `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md`, `issues.md`, `d
 - Test offline without a model: `LLM_BACKEND=mock` with a concept containing "circle" or "python".
 - Export size: `POST /api/lessons/{id}/export` takes `"height": 720` (default) or `1080`.
 - GPU/CPU: `OLLAMA_NUM_GPU=auto|N|0`, `DEVICE=auto|cuda|cpu`; see `/api/health` -> `gpu`.
+
+## Screens and document upload
+
+- Home: topic, optional PDFs, level, length, languages. Creating: progress. Lesson: player, scenes, downloads.
+- Document service contract (friend's RAG/OCR): `POST /api/documents` (multipart field `file`) -> `{"id", "name", "pages"?}`; then implement `backend/app/rag.py: retrieve_context(concept, document_ids) -> str` (top passages as plain text). Lesson requests already carry `documents: [ids]`.

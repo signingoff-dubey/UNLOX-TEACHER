@@ -1,7 +1,26 @@
 # Progress Log
 
-## Current Version: v0.3.0
+## Current Version: v0.4.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.4.0] — 2026-10-27
+### What's New
+- Merged teammate's frontend (status panel, history, remote backend)
+- **Screen-by-screen UI** (`web/src/screens/`): Home (topic box, PDF upload area, level, length 30/60/90 s, languages, recent lessons, system status) -> Creating (live progress, steps) -> Lesson (player)
+- **Player screen**: custom controls: seek bar with scene ticks, tap or drag to seek, hover preview (time + scene), time readout, play/pause, +-5 s, previous/next scene, volume, captions toggle, settings (language, speed 0.75-1.5x, captions, download quality 720p/1080p), full screen; double-tap left/right third of the video = -/+5 s; keyboard (space, arrows, M, C, F); language switch keeps your position; scene list tap-to-jump; MP4 + SRT download
+- `POST /api/lessons` now takes `level`, `duration_s` (30-90) and `documents` (ids); prompt adapts to level and length
+- `backend/app/rag.py`: single hook `retrieve_context(concept, document_ids) -> str` for the RAG/OCR service; UI uploads to `POST /api/documents` (multipart `file` -> `{id, name, pages?}`) and shows "document service not connected yet" until it exists
+- Hash routing fixed (Back/forward and pasted `#id` links open the lesson)
+
+### Known Issues
+- Document upload has no backend yet (friend's RAG/OCR service); `documents` ids are accepted but ignored
+- Dev-only React warning from Remotion's AbsoluteFill in the Player (pre-existing, harmless)
+- Chrome extension was not reachable; UI verified with headless Chrome (screenshots in `output/ui/`)
+
+### Ideas evaluated
+- **LTX-2.5 (Lightricks) generative video**: not adopted for the core pipeline. 22B params (int8 21.5 GB + text encoder 15.4 GB, NVFP4 18.7 GB) vs this laptop's 8 GB VRAM / 15 GB RAM; far beyond the 8-16 GB CPU target; cannot render exact Indic text or follow our audio-sets-length rule; gated + community licence. Possible only as an optional, pre-generated b-roll step on a GPU machine
 
 ---
 

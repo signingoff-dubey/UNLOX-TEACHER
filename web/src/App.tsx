@@ -1,29 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Player, type PlayerRef } from "@remotion/player";
+import React, { useCallback, useEffect, useState } from "react";
 import type { Job, Lesson } from "./types";
-import { api, getApiBase, runJob, url, type Lang, type LessonSummary } from "./api";
-import { LessonVideo, lessonFrames } from "./remotion/Lesson";
-import { FPS, H, W } from "./remotion/theme";
-import { StatusPanel } from "./components/StatusPanel";
-import { SceneList } from "./components/SceneList";
-import { History } from "./components/History";
+import { api, getApiBase, runJob, type Lang, type LessonSettings, type LessonSummary } from "./api";
+import { Home } from "./screens/Home";
+import { Creating } from "./screens/Creating";
+import { LessonScreen } from "./screens/LessonScreen";
+import type { UploadItem } from "./components/UploadArea";
 
-const EXAMPLES = ["Photosynthesis", "The water cycle", "Newton's third law", "How a rainbow forms", "Fractions"];
-const DEFAULT_LANGS = ["hi", "te"];
+type Screen = "home" | "creating" | "lesson";
 
+/** Three screens: Home (ask) -> Creating (progress) -> Lesson (player). A lesson id in the URL hash opens it directly. */
 export default function App() {
+  const [screen, setScreen] = useState<Screen>("home");
   const [languages, setLanguages] = useState<Lang[]>([]);
-  const [selected, setSelected] = useState<string[]>(DEFAULT_LANGS);
+  const [settings, setSettings] = useState<LessonSettings>({ level: "beginner", duration_s: 60, languages: ["hi", "te"] });
   const [concept, setConcept] = useState("");
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [recent, setRecent] = useState<LessonSummary[]>([]);
   const [active, setActive] = useState("en");
-  const [exports, setExports] = useState<Record<string, Job>>({});
+  const [recent, setRecent] = useState<LessonSummary[]>([]);
   const [error, setError] = useState("");
-  const [sceneIndex, setSceneIndex] = useState(0);
   const [assetBase, setAssetBase] = useState(getApiBase());
-  const player = useRef<PlayerRef>(null);
+  const run = React.useRef(0);                      // ignore results of a lesson the user already left
 
   const loadLists = useCallback(() => {
     setAssetBase(getApiBase());
@@ -31,222 +29,82 @@ export default function App() {
     api<LessonSummary[]>("/api/lessons").then(setRecent).catch(() => setRecent([]));
   }, []);
 
+  const show = useCallback((l: Lesson, preferred?: string[]) => {
+    setLesson(l);
+    setActive((preferred ?? []).find((c) => c in l.languages) ?? Object.keys(l.languages).find((c) => c !== "en") ?? "en");
+    setScreen("lesson");
+    window.history.replaceState(null, "", `#${l.id}`);
+  }, []);
+
   const openLesson = useCallback((id: string) => {
     setError("");
-    api<Lesson>(`/api/lessons/${id}`)
-      .then((l) => {
-        setLesson(l);
-        setExports({});
-        setActive((cur) => (cur in l.languages ? cur : Object.keys(l.languages).find((c) => c !== "en") ?? "en"));
-        window.history.replaceState(null, "", `#${l.id}`);
-      })
-      .catch(() => setError("That lesson could not be loaded."));
-  }, []);
+    api<Lesson>(`/api/lessons/${id}`).then((l) => show(l)).catch(() => {
+      setError("That lesson could not be loaded.");
+      setScreen("home");
+    });
+  }, [show]);
 
   useEffect(() => {
     loadLists();
     const id = location.hash.slice(1);
     if (id) openLesson(id);
+    // Back/forward and pasted links change only the hash. (replaceState, which we use, does not fire this.)
+    const onHash = () => {
+      const next = location.hash.slice(1);
+      if (next) openLesson(next);
+      else { run.current++; setScreen("home"); }
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, [loadLists, openLesson]);
 
-  const busy = job?.status === "queued" || job?.status === "running";
-
-  async function generate(topic = concept) {
-    if (!topic.trim() || busy) return;
-    setConcept(topic);
+  async function create(topic = concept) {
+    const text = topic.trim();
+    if (text.length < 2) return;
+    setConcept(text);
     setError("");
+    setJob(null);
+    setScreen("creating");
+    const mine = ++run.current;
+    const documents = uploads.flatMap((u) => (u.state === "done" && u.doc ? [u.doc.id] : []));
     try {
-      const done = await runJob(api<Job>("/api/lessons", { concept: topic, languages: selected }), setJob);
-      const l = done.result as Lesson;
-      setLesson(l);
-      setExports({});
-      setActive(selected.find((c) => c in l.languages) ?? "en");
-      window.history.replaceState(null, "", `#${l.id}`);
+      const done = await runJob(
+        api<Job>("/api/lessons", { concept: text, ...settings, documents }),
+        (j) => { if (mine === run.current) setJob(j); },
+      );
+      if (mine !== run.current) return;
+      show(done.result as Lesson, settings.languages);
       loadLists();
     } catch (e) {
+      if (mine !== run.current) return;
       setError((e as Error).message);
+      setScreen("home");
     }
   }
 
-  async function exportMp4(lang: string) {
-    if (!lesson) return;
-    setError("");
-    try {
-      const done = await runJob(api<Job>(`/api/lessons/${lesson.id}/export`, { lang }),
-        (j) => setExports((x) => ({ ...x, [lang]: j })));
-      setLesson((l) => l && { ...l, videos: { ...l.videos, [lang]: done.result.url } });
-      loadLists();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  const track = lesson?.languages[active];
-  const inputProps = useMemo(() => track && { track, assetBase }, [track, assetBase]);
-
-  // Follow playback so the scene list highlights the current scene.
-  useEffect(() => {
-    const p = player.current;
-    if (!p || !track) return;
-    setSceneIndex(0);
-    const onFrame = (e: { detail: { frame: number } }) => {
-      const t = e.detail.frame / FPS;
-      const i = track.scenes.findIndex((s) => t >= s.start_s && t < s.start_s + s.duration_s);
-      if (i >= 0) setSceneIndex(i);
-    };
-    p.addEventListener("frameupdate", onFrame);
-    return () => p.removeEventListener("frameupdate", onFrame);
-  }, [track]);
-
-  const seek = (seconds: number) => {
-    player.current?.seekTo(Math.round(seconds * FPS));
-    player.current?.play();
+  const goHome = () => {
+    run.current++;
+    setScreen("home");
+    window.history.replaceState(null, "", location.pathname);
+    loadLists();
   };
 
-  const exportJob = exports[active];
-  const exporting = exportJob && (exportJob.status === "queued" || exportJob.status === "running");
-  const totalTime = lesson ? Object.values(lesson.timings).reduce((a, b) => a + b, 0) : 0;
+  const onVideo = (key: string, path: string) => {
+    setLesson((l) => l && { ...l, videos: { ...l.videos, [key]: path } });
+    loadLists();
+  };
 
   return (
     <div className="app">
-      <header className="top">
-        <div className="brand"><span className="mark" aria-hidden />Visual Teacher</div>
-        <div className="tag">Runs offline · English + Indian languages</div>
-      </header>
-
-      <main className="layout">
-        <aside className="panel">
-          <form onSubmit={(e) => { e.preventDefault(); generate(); }}>
-            <label htmlFor="concept" className="label">What do you want to learn?</label>
-            <div className="ask">
-              <input id="concept" value={concept} onChange={(e) => setConcept(e.target.value)}
-                placeholder="e.g. Photosynthesis" autoComplete="off" disabled={busy} maxLength={200} />
-              <button type="submit" disabled={busy || !concept.trim()}>{busy ? "Creating…" : "Create lesson"}</button>
-            </div>
-          </form>
-          <div className="examples">
-            {EXAMPLES.map((ex) => (
-              <button key={ex} className="chip" disabled={busy} onClick={() => generate(ex)}>{ex}</button>
-            ))}
-          </div>
-
-          <div className="label">Languages <span className="muted">(English is always included)</span></div>
-          <div className="langs">
-            {languages.filter((l) => l.code !== "en").map((l) => {
-              const on = selected.includes(l.code);
-              return (
-                <button key={l.code} className={`lang ${on ? "on" : ""}`} disabled={busy} aria-pressed={on}
-                  onClick={() => setSelected((s) => (on ? s.filter((c) => c !== l.code) : [...s, l.code]))}>
-                  <span className="native">{l.native}</span>
-                  <span className="muted">{l.name}{l.piper ? "" : " · GPU voice"}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {busy && job && (
-            <div className="progress" role="status">
-              <div className="bar"><div style={{ transform: `scaleX(${job.progress})` }} /></div>
-              <div className="muted">{job.stage}…</div>
-            </div>
-          )}
-          {error && <div className="error" role="alert">{error}</div>}
-
-          <History items={recent} activeId={lesson?.id} onOpen={openLesson} />
-          <StatusPanel onBaseChange={loadLists} />
-        </aside>
-
-        <section className="stage">
-          {lesson && track && inputProps ? (
-            <>
-              <div className="stage-head">
-                <h1>{track.title}</h1>
-                <div className="tabs" role="tablist" aria-label="Lesson language">
-                  {Object.values(lesson.languages).map((t) => (
-                    <button key={t.lang} role="tab" aria-selected={t.lang === active}
-                      className={t.lang === active ? "tab on" : "tab"} onClick={() => setActive(t.lang)}>
-                      {t.native}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="player">
-                <Player
-                  ref={player}
-                  key={`${lesson.id}-${active}-${assetBase}`}
-                  component={LessonVideo}
-                  inputProps={inputProps}
-                  durationInFrames={lessonFrames(track)}
-                  compositionWidth={W}
-                  compositionHeight={H}
-                  fps={FPS}
-                  controls
-                  autoPlay
-                  allowFullscreen
-                  clickToPlay
-                  style={{ width: "100%", aspectRatio: "16 / 9" }}
-                  acknowledgeRemotionLicense
-                />
-              </div>
-
-              {track.translator === "untranslated" && (
-                <div className="warn">Translation model unavailable; {track.name} shows the English text.</div>
-              )}
-              {track.tts_engines.includes("silent") && (
-                <div className="warn">No voice model installed for {track.name}; narration is a silent placeholder.</div>
-              )}
-
-              <div className="actions">
-                <div className="muted">
-                  {track.scenes.length} scenes · {track.duration_s.toFixed(0)} s · made in {totalTime.toFixed(1)} s
-                </div>
-                <div className="buttons">
-                  <a className="ghost" href={url(`/media/lessons/${lesson.id}/captions_${active}.srt`)} download>
-                    Captions (.srt)
-                  </a>
-                  {lesson.videos[active] ? (
-                    <a className="primary" href={url(lesson.videos[active])} download={`${lesson.concept}-${active}.mp4`}>
-                      Download MP4
-                    </a>
-                  ) : (
-                    <button className="primary" disabled={exporting} onClick={() => exportMp4(active)}>
-                      {exporting ? `${exportJob.stage} ${Math.round(exportJob.progress * 100)}%` : "Export MP4"}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="details-grid">
-                <div>
-                  <div className="label">Scenes</div>
-                  <SceneList track={track} current={sceneIndex} onSeek={seek} />
-                </div>
-                <div>
-                  <div className="label">Build time</div>
-                  <div className="stats">
-                    {Object.entries(lesson.timings).map(([k, v]) => (
-                      <div key={k} className="stat">
-                        <span>{k === "plan_s" ? "Lesson plan" : `${lesson.languages[k.replace(/_s$/, "")]?.name ?? k} translation + voice`}</span>
-                        <b>{v.toFixed(1)} s</b>
-                      </div>
-                    ))}
-                  </div>
-                  <details className="json">
-                    <summary>Lesson data (JSON)</summary>
-                    <pre>{JSON.stringify(track.scenes.map(({ captions, audio_url, ...s }) => s), null, 2)}</pre>
-                  </details>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="empty">
-              <div className="empty-art" aria-hidden><span /><span /><span /></div>
-              <p>Type a concept and get a narrated, animated lesson in English and Indian languages, made entirely on this laptop.</p>
-            </div>
-          )}
-        </section>
-      </main>
+      {screen === "home" && (
+        <Home concept={concept} onConcept={setConcept} settings={settings} onSettings={setSettings} languages={languages}
+          uploads={uploads} onUploads={(u) => setUploads(u)} recent={recent} error={error}
+          onCreate={create} onOpen={openLesson} onBaseChange={loadLists} />
+      )}
+      {screen === "creating" && <Creating concept={concept} job={job} languages={settings.languages} onCancel={goHome} />}
+      {screen === "lesson" && lesson && (
+        <LessonScreen lesson={lesson} lang={active} onLang={setActive} assetBase={assetBase} onBack={goHome} onVideo={onVideo} />
+      )}
     </div>
   );
 }

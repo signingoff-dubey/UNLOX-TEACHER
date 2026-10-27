@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from typing import Literal
 
 import requests
 from contextlib import asynccontextmanager
@@ -42,6 +43,10 @@ app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_meth
 class LessonRequest(BaseModel):
     concept: str = Field(min_length=2, max_length=200)
     languages: list[str] = ["hi", "te"]
+    level: Literal["beginner", "intermediate"] = "beginner"
+    duration_s: int = Field(60, ge=30, le=90)      # target video length
+    # Reserved for the document (RAG/OCR) service: ids of uploaded PDFs to teach from.
+    documents: list[str] = []
 
 
 class ExportRequest(BaseModel):
@@ -94,7 +99,7 @@ def create_lesson(req: LessonRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    return jobs.submit("lesson", build_lesson, req.concept.strip(), req.languages)
+    return jobs.submit("lesson", build_lesson, req.concept.strip(), req.languages, req.level, req.duration_s, req.documents)
 
 
 @app.get("/api/jobs/{job_id}")

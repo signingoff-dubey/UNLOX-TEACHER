@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 SYSTEM_PROMPT = f"""You are an expert school teacher who designs short animated video lessons.
 Return ONLY a JSON lesson plan. You never write code; you choose a scene template and fill its fields.
 
-Lesson shape (5-7 scenes, 140-200 spoken words in total, about 60 seconds):
+Lesson shape (5-7 scenes; the length and level are given in the request):
 1. "title" scene: hook the student with a question or surprising fact.
 2-5. Teach the core idea step by step, using the best-fitting templates.
    Include one everyday example or analogy that an Indian school student knows.
@@ -58,14 +58,14 @@ Rules:
 - Write everything in English (it is translated later)."""
 
 
-def plan_lesson(concept: str) -> LessonPlan:
+def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, context: str = "") -> LessonPlan:
     if config.LLM_BACKEND == "mock":
         return normalize(sample_for(concept))
     last_error = ""
     for attempt in range(2):
         try:
             try:
-                raw = _ollama_chat(concept, last_error)
+                raw = _ollama_chat(concept, last_error, level, duration_s, context)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
@@ -79,8 +79,17 @@ def plan_lesson(concept: str) -> LessonPlan:
     return normalize(fallback_plan(concept))
 
 
-def _ollama_chat(concept: str, previous_error: str) -> str:
-    user = f"Create a lesson plan that explains: {concept}"
+def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
+                 context: str = "") -> str:
+    words = round(duration_s * 2.3 / 10) * 10                 # ~2.3 spoken words per second
+    scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
+    audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
+                else "an intermediate learner: assume the basics, add the why and one deeper detail or edge case")
+    user = (f"Create a lesson plan that explains: {concept}\n"
+            f"Audience: {audience}.\n"
+            f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
+    if context:
+        user += f"\nTeach from this source material (use only facts found in it):\n{context[:3000]}"
     if previous_error:
         user += f"\nYour previous answer was invalid ({previous_error}). Follow the schema exactly."
     resp = requests.post(

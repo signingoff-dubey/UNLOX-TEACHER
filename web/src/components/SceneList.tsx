@@ -3,7 +3,7 @@ import type { Track } from "../types";
 
 const LABELS: Record<string, string> = {
   title: "Hook", bullets: "Key points", flow: "Steps", cycle: "Cycle", compare: "Compare",
-  diagram: "Diagram", quiz: "Quiz", summary: "Recap",
+  diagram: "Diagram", quiz: "Quiz", summary: "Recap", graph: "Graph", code: "Code",
 };
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

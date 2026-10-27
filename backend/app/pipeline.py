@@ -11,6 +11,7 @@ from . import config
 from .captions import time_captions, to_srt
 from .languages import get as get_lang
 from .planner import plan_lesson
+from .rag import retrieve_context
 from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
 from .translate import translate_batch
 from .tts import synthesize
@@ -21,14 +22,16 @@ LESSONS_DIR = config.MEDIA_DIR / "lessons"
 Progress = Callable[[str, float], None]
 
 
-def build_lesson(concept: str, languages: list[str], progress: Progress = lambda s, p: None) -> dict:
+def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
+                 documents: list[str] | None = None, progress: Progress = lambda s, p: None) -> dict:
     t0 = time.perf_counter()
     langs = list(dict.fromkeys(["en", *languages]))          # English is always included
     for code in langs:
         get_lang(code)                                        # validate early
 
     progress("Planning the lesson", 0.05)
-    plan = plan_lesson(concept)
+    context = retrieve_context(concept, documents or [])   # empty until the RAG service is connected
+    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context)
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]

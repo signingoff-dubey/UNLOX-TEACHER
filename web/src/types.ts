@@ -59,6 +59,8 @@ export type LessonProps = {
   track: Track;
   /** Prefix for audio and font URLs: "" in the browser, the backend URL when rendering MP4. */
   assetBase: string;
+  /** Show burned-in captions. Defaults to true; the in-browser player can turn them off. */
+  captions?: boolean;
 };
 
 export type Job = {

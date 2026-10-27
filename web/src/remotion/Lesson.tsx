@@ -9,7 +9,7 @@ import { C, FONT_STACK, FPS, STAGE, W, fit } from "./theme";
 export const lessonFrames = (track: Track, fps = FPS) =>
   Math.max(1, Math.round(track.duration_s * fps));
 
-export const LessonVideo: React.FC<LessonProps> = ({ track, assetBase }) => {
+export const LessonVideo: React.FC<LessonProps> = ({ track, assetBase, captions = true }) => {
   const { fps } = useVideoConfig();
   useFonts(assetBase);
   return (
@@ -24,7 +24,7 @@ export const LessonVideo: React.FC<LessonProps> = ({ track, assetBase }) => {
         const to = Math.round((scene.start_s + scene.duration_s) * fps);
         return (
           <Sequence key={i} from={from} durationInFrames={Math.max(1, to - from)} name={`${i + 1}. ${scene.template}`}>
-            <SceneFrame scene={scene} index={i} track={track} assetBase={assetBase} />
+            <SceneFrame scene={scene} index={i} track={track} assetBase={assetBase} captions={captions} />
           </Sequence>
         );
       })}
@@ -32,8 +32,8 @@ export const LessonVideo: React.FC<LessonProps> = ({ track, assetBase }) => {
   );
 };
 
-const SceneFrame: React.FC<{ scene: Scene; index: number; track: Track; assetBase: string }> = (
-  { scene, index, track, assetBase },
+const SceneFrame: React.FC<{ scene: Scene; index: number; track: Track; assetBase: string; captions: boolean }> = (
+  { scene, index, track, assetBase, captions },
 ) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -49,7 +49,7 @@ const SceneFrame: React.FC<{ scene: Scene; index: number; track: Track; assetBas
       <AbsoluteFill style={{ opacity: fade }}>
         <Template scene={scene} speechFrames={speechFrames} lessonTitle={track.title} />
       </AbsoluteFill>
-      <Captions scene={scene} />
+      {captions ? <Captions scene={scene} /> : null}
     </AbsoluteFill>
   );
 };
