@@ -35,7 +35,21 @@ WIKI_LICENSE = "CC BY-SA 4.0"
 ARCHIVE_CAP_BYTES = 5 * 1024 ** 3
 PAGES_PER_RECORD = 10
 
-_LETTERS = re.compile(r"\w", re.UNICODE)
+
+
+def _session() -> requests.Session:
+    """Retries with backoff: ncert.nic.in and archive.org drop connections under load."""
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    s = requests.Session()
+    retry = Retry(total=6, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504],
+                  allowed_methods=["GET"], raise_on_status=False)
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.headers.update(UA)
+    return s
+
+
+http = _session()
 
 
 # ---------------------------------------------------------------- filters
@@ -102,14 +116,16 @@ def wiki_rows(config: str) -> Iterator[dict]:
 
 def vital_titles() -> set[str]:
     cache = LIBRARY_DIR / "vital_titles.txt"
-    if cache.exists():
+    if cache.exists() and cache.stat().st_size:
         return set(cache.read_text(encoding="utf-8").splitlines())
     api = "https://en.wikipedia.org/w/api.php"
     pages, params = [], {"action": "query", "list": "allpages", "apnamespace": 4,
-                         "apprefix": "Vital articles/Level/5/", "aplimit": "max", "format": "json"}
+                         "apprefix": "Vital articles/Level 5/", "apfilterredir": "nonredirects",
+                         "aplimit": "max", "format": "json"}
     while True:
-        r = requests.get(api, params=params, headers=UA, timeout=60).json()
-        pages += [p["title"] for p in r["query"]["allpages"]]
+        r = http.get(api, params=params, headers=UA, timeout=60).json()
+        pages += [p["title"] for p in r["query"]["allpages"]
+                  if "Article alerts" not in p["title"] and "Archive" not in p["title"]]
         if "continue" not in r:
             break
         params.update(r["continue"])
@@ -118,13 +134,15 @@ def vital_titles() -> set[str]:
         params = {"action": "query", "prop": "links", "titles": "|".join(pages[i:i + 20]),
                   "plnamespace": 0, "pllimit": "max", "format": "json"}
         while True:
-            r = requests.get(api, params=params, headers=UA, timeout=60).json()
+            r = http.get(api, params=params, headers=UA, timeout=60).json()
             for page in r["query"]["pages"].values():
                 titles.update(link["title"] for link in page.get("links", []))
             if "continue" not in r:
                 break
             params.update(r["continue"])
         print(f"vital: {len(titles)} titles from {min(i + 20, len(pages))}/{len(pages)} list pages", flush=True)
+    if not titles:
+        raise SystemExit("No Vital Articles titles found; the list pages may have moved again")
     cache.write_text("\n".join(sorted(titles)), encoding="utf-8")
     return titles
 
@@ -175,7 +193,7 @@ def pdf_records(data: bytes, doc_id: str, title: str, lang: str, url: str, licen
 
 
 def ncert_codes() -> list[str]:
-    html = requests.get("https://ncert.nic.in/textbook.php", headers=UA, timeout=60).text
+    html = http.get("https://ncert.nic.in/textbook.php", headers=UA, timeout=60).text
     codes = sorted({m for m in re.findall(r"textbook\.php\?([a-z]+[0-9])=\d+-\d+", html)})
     return [c for c in codes if c[0] in "fghijkl" and c[1] in "eh"]          # classes 6-12, English/Hindi
 
@@ -186,7 +204,7 @@ def fetch_ncert(sink: Sink, limit: int | None) -> None:
             continue
         url = f"https://ncert.nic.in/textbook/pdf/{code}dd.zip"
         try:
-            z = zipfile.ZipFile(io.BytesIO(requests.get(url, headers=UA, timeout=600).content))
+            z = zipfile.ZipFile(io.BytesIO(http.get(url, headers=UA, timeout=600).content))
         except Exception as e:
             print(f"ncert {code}: download failed ({e})")
             continue
@@ -208,14 +226,14 @@ def fetch_ncert(sink: Sink, limit: int | None) -> None:
 def fetch_openstax(sink: Sink, limit: int | None) -> None:
     api = ("https://openstax.org/apps/cms/api/v2/pages/?type=books.Book"
            "&fields=title,book_state,high_resolution_pdf_url&limit=200")
-    books = [b for b in requests.get(api, headers=UA, timeout=60).json()["items"]
+    books = [b for b in http.get(api, headers=UA, timeout=60).json()["items"]
              if b.get("book_state") == "live" and b.get("high_resolution_pdf_url")]
     for n, b in enumerate(books, 1):
         slug = re.sub(r"\W+", "-", b["title"].lower()).strip("-")
         if any(d.startswith(f"openstax-{slug}-p") for d in sink.seen):
             continue
         try:
-            data = requests.get(b["high_resolution_pdf_url"], headers=UA, timeout=900).content
+            data = http.get(b["high_resolution_pdf_url"], headers=UA, timeout=900).content
         except Exception as e:
             print(f"openstax {b['title']}: download failed ({e})")
             continue
@@ -259,7 +277,7 @@ def fetch_archive(sink: Sink, limit: int | None) -> None:
     while total < ARCHIVE_CAP_BYTES:
         params = {"q": q, "fl[]": ["identifier", "title", "licenseurl", "language"], "rows": 500,
                   "page": page, "output": "json", "sort[]": "downloads desc"}
-        docs = requests.get("https://archive.org/advancedsearch.php", params=params, headers=UA,
+        docs = http.get("https://archive.org/advancedsearch.php", params=params, headers=UA,
                             timeout=120).json()["response"]["docs"]
         if not docs:
             break
@@ -269,7 +287,7 @@ def fetch_archive(sink: Sink, limit: int | None) -> None:
                 continue
             url = f"https://archive.org/download/{d['identifier']}/{d['identifier']}_djvu.txt"
             try:
-                r = requests.get(url, headers=UA, timeout=300)
+                r = http.get(url, headers=UA, timeout=300)
                 r.raise_for_status()
                 text = r.text
             except Exception:

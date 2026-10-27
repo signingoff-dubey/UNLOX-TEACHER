@@ -53,13 +53,16 @@ def collection_path(scope: str):
     raise ValueError(f"unknown scope {scope!r}")
 
 
-def open_collection(scope: str, embedder) -> Collection | None:
+def open_collection(scope: str, embedder=None) -> Collection | None:
     path = collection_path(scope)
     with _cache_lock:
         col = _cache.get(scope)
         if col is None:
             if not (path / "chunks.sqlite").exists():
                 return None
+            if embedder is None:
+                from .embed import shared_embedder
+                embedder = shared_embedder()
             col = _cache[scope] = Collection(path, embedder)
         return col
 

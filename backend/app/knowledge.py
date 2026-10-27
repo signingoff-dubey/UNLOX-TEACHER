@@ -110,19 +110,85 @@ class KnowledgeBase:
         return out
 
 
-def retrieve(concept: str) -> list[Passage]:
-    """Best-effort retrieval: returns [] if RAG is off, the index is missing, or embedding fails."""
+def retrieve(concept: str, upload: str | None = None) -> list[Passage]:
+    """Best-effort retrieval: returns [] if RAG is off, the index is missing, or embedding fails.
+
+    With the offline library (data/library/index) or an uploaded PDF (upload=<sha>), uses hybrid search
+    + reranking (app/rag); the uploaded PDF's passages come first. Falls back to the data/kb index."""
     if not config.RAG_ENABLED:
         return []
     try:
+        if _new_search_available(upload):
+            from .rag import search as rag_search
+            hits = rag_search.search(concept, f"both:{upload}" if upload else "library", k=config.RAG_TOP_K)
+            if hits:
+                return [_to_passage(h.chunk, h.score) for h in hits]
         kb = KnowledgeBase.get()
         return kb.search(concept) if kb else []
-    except (requests.RequestException, RuntimeError, KeyError, ValueError) as e:
+    except Exception as e:  # retrieval must never break lesson generation
         log.warning("Retrieval skipped: %s", e)
         return []
 
 
+MAX_PAGE_PASSAGES = 80
+
+
+def pages_passages(upload: str, focus: str) -> list[Passage]:
+    """Passages for "explain chapter 4" / "pages 120-135" requests, in reading order. An empty focus
+    picks the book's longest chapter (overview lesson). The planner condenses long ranges itself."""
+    try:
+        from .ocr.ingest import read_info, resolve_focus
+        from .ocr.types import TocEntry
+        from .rag import search as rag_search
+        from .rag.chunker import sections_from_toc
+
+        info = read_info(upload) if upload.isalnum() else None
+        if not info:
+            return []
+        toc = [TocEntry(**t) for t in info["toc"]]
+        n = info["pages"]
+        if focus.strip():
+            pages = resolve_focus(toc, n, focus)
+        else:
+            chapters = [s for s in sections_from_toc(n, toc) if s[1] != "Front matter"]
+            longest = max(chapters, key=lambda s: s[3] - s[2])
+            pages = list(range(longest[2], longest[3] + 1))
+        col = rag_search.open_collection(f"upload:{upload}")
+        if not pages or col is None:
+            return []
+        chunks = col.section_chunks(upload, pages[0], pages[-1])[:MAX_PAGE_PASSAGES]
+        return [_to_passage(c, 1.0) for c in chunks]
+    except Exception as e:
+        log.warning("Page retrieval skipped: %s", e)
+        return []
+
+
+def _new_search_available(upload: str | None) -> bool:
+    from .rag.search import collection_path
+    if (collection_path("library") / "chunks.sqlite").exists():
+        return True
+    return bool(upload) and upload.isalnum() and (collection_path(f"upload:{upload}") / "chunks.sqlite").exists()
+
+
+def _to_passage(chunk, score: float) -> Passage:
+    """Map a rag Chunk onto the Passage the planner already understands. Uploaded PDFs cite pages."""
+    if chunk.page_start:
+        pages = f"p. {chunk.page_start}" if chunk.page_start == chunk.page_end else \
+            f"pp. {chunk.page_start}–{chunk.page_end}"
+    else:
+        pages = ""
+    section = ", ".join(x for x in (chunk.section if chunk.section != chunk.title else "", pages) if x)
+    url = f"upload:{chunk.doc_id}#page={chunk.page_start}" if chunk.source == "upload" else chunk.url
+    return Passage(chunk.title, section, chunk.text, url, chunk.source, round(float(score), 3))
+
+
 def status() -> dict:
+    out = _kb_status()
+    out.update(_library_status())
+    return out
+
+
+def _kb_status() -> dict:
     kb = None
     try:
         kb = KnowledgeBase.get()
@@ -132,3 +198,18 @@ def status() -> dict:
         return {"enabled": config.RAG_ENABLED, "ready": False, "chunks": 0, "articles": 0}
     return {"enabled": config.RAG_ENABLED, "ready": True, "chunks": len(kb.chunks), "articles": kb.articles,
             "embed_model": kb.meta.get("embed_model"), "built": kb.meta.get("built")}
+
+
+def _library_status() -> dict:
+    """The offline library and uploaded PDFs (app/rag), read from their meta files without loading models."""
+    try:
+        from .rag.paths import LIBRARY_DIR, UPLOADS_DIR
+        meta_file = LIBRARY_DIR / "index" / "meta.json"
+        library = None
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            library = {k: meta.get(k) for k in ("count", "sources", "built", "embed_model", "index")}
+        uploads = sum(1 for d in UPLOADS_DIR.glob("*/info.json")) if UPLOADS_DIR.exists() else 0
+        return {"library": library, "uploads": uploads}
+    except Exception as e:
+        return {"library": None, "uploads": 0, "library_error": str(e)}
