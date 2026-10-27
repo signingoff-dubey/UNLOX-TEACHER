@@ -1,7 +1,7 @@
 // Mirrors the JSON produced by backend/app/pipeline.py
 
 export type TemplateName =
-  | "title" | "bullets" | "flow" | "cycle" | "compare" | "diagram" | "quiz" | "summary" | "graph" | "code";
+  | "title" | "bullets" | "flow" | "cycle" | "compare" | "diagram" | "quiz" | "summary" | "graph" | "code" | "network";
 
 export type Caption = { start: number; end: number; text: string };
 
@@ -27,6 +27,10 @@ export type Scene = {
   code?: string[];
   highlights?: number[];
   output?: string[];
+  /** network scenes: boxes and arrows; `positions` ([x, y] of each node in a 1000 x 420 box) is computed by the backend */
+  nodes?: string[];
+  edges?: { src: number; dst: number }[];
+  positions?: number[][];
   audio_url?: string;
   speech_s: number;
   duration_s: number;
@@ -70,6 +74,9 @@ export type Lesson = {
   languages: Record<string, Track>;
   /** Languages still being made (one by one) and the ones that failed. */
   pending?: { code: string; name: string; native: string }[];
+  /** True while the first scenes can already be watched and the rest are still being made; `scenes_total` is about how many there will be. */
+  building?: boolean;
+  scenes_total?: number;
   failed?: { code: string; name: string; error: string }[];
   /** Articles or PDF pages retrieved to ground the lesson (RAG). */
   sources?: Source[];
@@ -99,4 +106,6 @@ export type Job = {
   progress: number;
   result: any;
   error: string | null;
+  /** Set once the first scenes of a lesson are ready to watch (the lesson is still being made). */
+  lesson_id?: string;
 };

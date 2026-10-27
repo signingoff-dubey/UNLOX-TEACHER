@@ -36,7 +36,8 @@ object Graph {
     val translator by lazy { Translator(llm) }
     val lessons by lazy { LessonStore(app) }
     val rewards by lazy { Rewards(app) }
-    val creator by lazy { Creator(llm, translator, tts, lessons, rewards, profile) }
+    val pdfs by lazy { PdfStore(app) }
+    val creator by lazy { Creator(llm, translator, tts, lessons, rewards, profile, pdfs, study) }
     val tutor by lazy { LlmTutor(llm, profile) }
     val study by lazy { StudyBuilder(llm, lessons) }
     val homework by lazy { LlmHomework(app, llm, profile) }

@@ -1,7 +1,37 @@
 # Progress Log
 
-## Current Version: v0.13.0
+## Current Version: v0.14.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.14.0] — 2026-10-27
+### What's New
+- **Scenes play while they are made** (web and phone). Before, the lesson was planned, narrated and saved whole, so nothing could be watched until the end. Now the planner's JSON is read as it streams (`streaming.py`): each finished scene is cleaned, translated, voiced and published to `lesson.json` (marked `building`), the player starts on scene 1 and the rest is added as it arrives. Measured: scene 1 watchable about 6 s after the click (a whole 60 s lesson took about 18 s), scenes 2-6 within 3 s of it. The player waits at the end of what exists and carries on by itself. Phone: `ScenePreview` does the same with Gemma (`StreamScenes.kt`)
+- **Progress per stage** on the website (Plan, Design the visuals, Translate, Narrate, Finish; one row per video for a course), as on the phone
+- **Study tools build in parallel** (3 workers, `STUDIO_WORKERS`): flashcards, quiz, mind map, study guide, FAQ, glossary and timeline overlap instead of queueing
+- **Profile page** with name and age; the age shapes the planner's and the tutor's wording (`learner.py`)
+- **Spaced repetition** (`srs.py`, SQLite): SM-2 over every flashcard and quiz question; Review page, "due today" card, rewards on remembered cards
+- **Weak spots and Revise mode**: wrong quiz answers are logged per topic, right ones clear them; a Revise lesson gets the topics as the planner's focus
+- **Misconception scene**: the planner's `common_mistakes` become one compare scene before the closing quiz
+- **Network scene**: the model lists boxes and arrows, `layout.py` places them (layered, deterministic); drawn by a new Remotion template
+- **Language fidelity** (`fidelity.py`): after translation each text is checked for the right script (mixed or Latin text is re-translated by the local model) and, with NLLB, back-translated and compared with the original; each scene carries its report
+- **Glossary "Hear it"**, **subtitle-only** (srt, vtt, transcript) and **narration-only** (mp3 or wav) exports
+- **Offline lesson file** (`bundle.py`): `.chanakya.zip` with the lesson, audio, captions and a standalone `player.html`; import on another computer from Library
+- **Worksheet and question paper** (`paper.py`): MCQ, short, long, fixed marks, student and teacher copies, printable with the Noto fonts
+- **Teach it back** (`teachback.py`): explain in your own words (typed or spoken); embedding similarity gives a score and the missed points. Threshold measured on a real lesson (off-topic 0.56 at most, paraphrase 0.75, cut at 0.62)
+- **Resumable jobs** (`resume.py`): jobs are kept in SQLite; after a restart, lessons with languages still to make are finished from their saved plan, cut-off lessons and courses are closed cleanly (verified live)
+- **Android**: animated scene templates, seek bar, full screen, PDF tile, videos x length, per-stage progress, progressive scenes, Piper voices working (sherpa-onnx 1.13.8)
+
+### Known Issues
+- The finished plan is checked (director, reviewer) and can lengthen narration, so scenes already shown may change when the final lesson replaces the preview (50 s vs 33 s in one test)
+- Scenes preview only for single lessons up to 90 s (longer ones are planned in parts, and course episodes are made whole)
+- Paper generation takes about 90 s on the 7B model; teach-back needs English explanations (the embedding model is English)
+- Course from a PDF on the website (chapters as episodes) is not built; the phone has it
+- The progressive-scene phone build is not tested on the device
+
+### Future Scope
+- Course from a PDF on the website; MiniLM search, MP4 export on the phone
 
 ---
 

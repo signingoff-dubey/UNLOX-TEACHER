@@ -4,6 +4,7 @@ import { DotNumber } from "../ds/DotNumber";
 import { Glyph } from "../ds/Glyph";
 import { useRewards } from "../rewards/RewardsContext";
 import { BadgeGrid, WeekRow } from "./RewardsPage";
+import { ReviewCard } from "./ReviewPage";
 
 const TONES = ["green", "orange", "pink", "blue"] as const;
 
@@ -15,6 +16,7 @@ type Props = {
   onNew: () => void;
   onRewards: () => void;
   onLibrary: () => void;
+  onReview?: () => void;
 };
 
 /** The dashboard under the prompt box: streak and score first, because a visible streak is what brings a student back tomorrow. */
@@ -91,6 +93,8 @@ export const Dashboard: React.FC<Props> = (p) => {
           </section>
         </div>
       </div>
+
+      {p.onReview && <ReviewCard onReview={p.onReview} />}
 
       <section className="section">
         <div className="section-head">

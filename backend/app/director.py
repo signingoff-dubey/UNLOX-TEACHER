@@ -43,6 +43,8 @@ GUIDE = """Templates (pick the one that SHOWS the idea):
   circles also take center, radius, diameter, chord, tangent. A graph can have only points (no curves), e.g. to teach plotting coordinates.
   equation: the formula shown beside it. items: one short label per curve, then one per mark, in that order (e.g. "A(2, 3)").
 - code: code_lang, code (3-10 lines under 45 chars), highlights (0-based lines in narration order), items (one note per highlight), output (optional).
+- network: nodes (3-8 labels of at most 4 words) and edges [{"src": 0, "dst": 2}, ...] (arrows between node positions) for a process that branches or joins,
+  e.g. a food web or how data moves between parts. heading = the title. Do not write coordinates.
 - flow: items = 3-5 ordered steps.   - cycle: items = 3-5 stages that repeat.
 - diagram: heading = the central thing, items = 3-5 labelled parts around it.
 - compare: left_title, left (2-4), right_title, right (2-4).

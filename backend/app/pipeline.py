@@ -62,14 +62,33 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
 
     # Progress bands: plan 2-55%, review 55-60%, then 60-98% shared by the languages.
     stage = "Reading the PDF and planning the lesson" if upload else "Finding facts and planning the lesson"
+    last = [stage, 0.02]
+    raw_progress = progress
+
+    def progress(s: str, v: float, **extra) -> None:          # noqa: F811  remembers where it got to, so the job can be tagged later
+        last[0], last[1] = s, v
+        raw_progress(s, v, **extra) if extra else raw_progress(s, v)
+
     progress(stage, 0.02)
     wps = words_per_sec(langs)
     on_plan = lambda f: progress(stage, 0.02 + 0.40 * f)  # noqa: E731
+    lesson_id = uuid.uuid4().hex[:10]
+    out_dir = LESSONS_DIR / lesson_id
+
+    # The first scenes are made while the planner is still writing, so the player can start at once (see streaming.py).
+    preview = None
+    on_text = None
+    if progressive and series is None and duration_s <= LONG_MIN and config.LLM_BACKEND != "mock":
+        from .planner import scene_target
+        from .streaming import ScenePreview
+        preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, scene_target(duration_s), lesson_path(lesson_id),
+                               on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id))
+        on_text = preview.feed
     if duration_s > LONG_MIN and config.LLM_BACKEND != "mock":
         plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode)      # 1.5-4 min: planned in parts
     else:
         plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
-                                    series=series, on_progress=on_plan, extra=extra, mode=mode)
+                                    series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
     note = source_note(sources)
     progress("Designing the visuals", 0.43)
     plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
@@ -78,9 +97,9 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     review_notes = director_notes + review_notes
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
-    lesson_id = uuid.uuid4().hex[:10]
-    out_dir = LESSONS_DIR / lesson_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    if preview is not None:
+        preview.close()                                       # the scene being made finishes; from here the final save is the only writer
 
     note = source_note(sources)
 
@@ -169,6 +188,29 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     return lesson
 
 
+def resume_languages(lesson_id: str, progress: Progress = lambda s, p: None) -> dict:
+    """After a restart: make the languages a saved lesson is still missing, from the English plan stored inside it. Each one is added as it is done."""
+    lesson = load_lesson(lesson_id)
+    codes = [p["code"] for p in lesson.get("pending", [])]
+    if not codes or not lesson.get("plan"):
+        return {"id": lesson_id}
+    plan = LessonPlan.model_validate(lesson["plan"])
+    note = source_note(lesson.get("sources", []))
+    out_dir = LESSONS_DIR / lesson_id
+
+    def make_track(code: str, report=lambda f: None) -> tuple[dict, float]:
+        t1 = time.perf_counter()
+        scenes, translator = _translated_scenes(plan, code)
+        track = _narrate(scenes, code, report, voice_lang="en" if translator == "untranslated" else code)
+        track["translator"] = translator
+        track["source_note"] = note
+        (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
+        return track, time.perf_counter() - t1
+
+    log.info("Resuming lesson %s: %s", lesson_id, codes)
+    return finish_languages(lesson_id, codes, make_track, progress)
+
+
 _lesson_lock = threading.Lock()
 
 
@@ -214,12 +256,24 @@ def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dic
             for j, item in enumerate(s[f]):
                 slots.append((i, f, j)); texts.append(item)
     translated, engine = translate_batch(texts, lang)
+    reports: list[dict] | None = None
+    if engine not in ("none", "untranslated") and lang != "en":
+        # Catch the wrong script (mixed or Latin text) and a meaning that did not survive; repair what can be repaired.
+        from . import fidelity
+        from .translate import back_translate, retranslate_with_llm
+        narration = {k for k, slot in enumerate(slots) if len(slot) == 2 and slot[1] == "narration"}
+        translated, reports = fidelity.verify(
+            texts, translated, lang, narration=narration,
+            retranslate=lambda bad: retranslate_with_llm(bad, lang),
+            back=(lambda t: back_translate(t, lang)) if config.BACKCHECK else None)
     title = plan.title
-    for slot, value in zip(slots, translated):
+    for k, (slot, value) in enumerate(zip(slots, translated)):
         if slot == ("title",):
             title = value
         elif len(slot) == 2:
             scenes[slot[0]][slot[1]] = value
+            if reports is not None and slot[1] == "narration":
+                scenes[slot[0]]["fidelity"] = reports[k]
         else:
             scenes[slot[0]][slot[1]][slot[2]] = value
     return (title, scenes), engine
@@ -278,7 +332,10 @@ def lesson_path(lesson_id: str):
 
 
 def save_lesson(lesson: dict) -> None:
-    lesson_path(lesson["id"]).write_text(json.dumps(lesson, ensure_ascii=False, indent=1), encoding="utf-8")
+    path = lesson_path(lesson["id"])
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(lesson, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)                                          # pages that poll the lesson never read half a file
 
 
 def load_lesson(lesson_id: str) -> dict:

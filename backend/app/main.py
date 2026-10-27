@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 import logging
 import threading
 import time
@@ -55,6 +56,11 @@ async def lifespan(_: FastAPI):
         log.error("Knowledge base failed to load: %s", e)
     if config.PRELOAD:
         threading.Thread(target=_warm_up, name="warm-up", daemon=True).start()      # the server answers while the models load
+    try:
+        from . import resume
+        resume.on_startup()                                                       # finish what a crash or a dead battery cut short
+    except Exception as e:  # noqa: BLE001  never stop the server over it
+        log.error("Resume after restart failed: %s", e)
     yield
 
 
@@ -74,7 +80,7 @@ class LessonRequest(BaseModel):
     focus: str = Field("", max_length=100)
     documents: list[str] = []
     images: list[str] = Field(default_factory=list, max_length=4)       # ids from POST /api/images
-    mode: Literal["study", "homework", "explain"] = "explain"
+    mode: Literal["study", "homework", "explain", "revise"] = "explain"
 
 
 class PlaylistRequest(BaseModel):
@@ -396,6 +402,223 @@ def rewards_history(day: str = "", days: int = 126) -> list[dict]:
     """Per-day XP and activity, oldest first, for the progress page."""
     from . import rewards
     return rewards.history(day, days)
+
+
+# ------------------------------------------------------------------ light exports, bundles, papers, teach-back
+class PodcastRequest(BaseModel):
+    lang: str = "en"
+    format: Literal["mp3", "wav"] = "mp3"
+
+
+@app.get("/api/lessons/{lesson_id}/subtitles")
+def subtitles_download(lesson_id: str, lang: str = "en", fmt: Literal["srt", "vtt", "txt"] = "srt"):
+    """The captions on their own (srt or vtt), or the narration as a plain transcript. Tiny files for slow connections."""
+    from fastapi.responses import Response
+    from . import exports
+    get_lesson(lesson_id)
+    try:
+        text, kind, name = exports.subtitles(lesson_id, lang, fmt)
+    except KeyError:
+        raise HTTPException(404, f"This lesson has no '{lang}' version")
+    return Response(text, media_type=kind, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/lessons/{lesson_id}/podcast")
+def podcast(lesson_id: str, req: PodcastRequest) -> dict:
+    """The narration of one language as one audio file (mp3 or wav). A job: poll /api/jobs/{id}; its result has the url."""
+    from . import exports
+    lesson = get_lesson(lesson_id)
+    if req.lang not in lesson["languages"]:
+        raise HTTPException(404, f"This lesson has no '{req.lang}' version")
+    return jobs.submit("export", exports.podcast, lesson_id, req.lang, req.format)
+
+
+class SayRequest(BaseModel):
+    term: str = Field(max_length=120)
+    lang: str = "en"
+
+
+@app.post("/api/lessons/{lesson_id}/say")
+def say(lesson_id: str, req: SayRequest) -> dict:
+    """A spoken clip of one word or term in the lesson's language (the glossary's "hear it" button). Cached, so asking again is instant."""
+    from . import exports
+    get_lesson(lesson_id)
+    _lang(req.lang)
+    try:
+        return exports.say_term(req.term, req.lang)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/lessons/{lesson_id}/bundle")
+def bundle_download(lesson_id: str):
+    """The whole lesson as one `.chanakya.zip`: the lesson, its narration, captions and a player that opens in any browser with no server."""
+    from fastapi.responses import FileResponse
+    from . import bundle
+    get_lesson(lesson_id)
+    try:
+        path = bundle.export_bundle(lesson_id)
+    except bundle.BundleError as e:
+        raise HTTPException(409, str(e))
+    return FileResponse(path, media_type="application/zip", filename=f"{lesson_id}.chanakya.zip")
+
+
+@app.post("/api/bundle/import")
+async def bundle_import(file: UploadFile = File(...)) -> dict:
+    """Add a lesson from a `.chanakya.zip` made on another computer."""
+    import tempfile
+    from . import bundle
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        total = 0
+        while chunk := await file.read(1 << 20):
+            total += len(chunk)
+            if total > bundle.MAX_BYTES:
+                raise HTTPException(413, "The bundle is too large.")
+            tmp.write(chunk)
+    try:
+        return {"id": bundle.import_bundle(Path(tmp.name))}
+    except bundle.BundleError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
+
+
+class PaperRequest(BaseModel):
+    lesson_id: str
+    mcq: int = Field(8, ge=0, le=25)
+    short: int = Field(4, ge=0, le=25)
+    long: int = Field(1, ge=0, le=25)
+    level: Literal["beginner", "intermediate"] = "beginner"
+    lang: str = "en"
+    title: str = Field("", max_length=120)
+
+
+@app.post("/api/papers")
+def create_paper(req: PaperRequest) -> dict:
+    """A question paper (or, with fewer questions, a worksheet) from a lesson. A job: its result is the paper; open /api/papers/{id}/html to print it."""
+    from . import paper
+    get_lesson(req.lesson_id)
+    _lang(req.lang)
+    if not (req.mcq + req.short + req.long):
+        raise HTTPException(400, "Ask for at least one question")
+    return jobs.submit("export", paper.generate, req.lesson_id, {"mcq": req.mcq, "short": req.short, "long": req.long}, req.level, req.lang, req.title)
+
+
+@app.get("/api/papers/{paper_id}")
+def get_paper(paper_id: str) -> dict:
+    from . import paper
+    try:
+        return paper.load(paper_id)
+    except (OSError, ValueError):
+        raise HTTPException(404, "No such paper")
+
+
+@app.get("/api/papers/{paper_id}/html")
+def paper_html(paper_id: str, key: bool = False):
+    """The printable page: the student's copy, or with key=true the teacher's copy with the answers."""
+    from fastapi.responses import HTMLResponse
+    from . import paper
+    try:
+        return HTMLResponse(paper.render_html(paper.load(paper_id), key))
+    except (OSError, ValueError):
+        raise HTTPException(404, "No such paper")
+
+
+class TeachBackRequest(BaseModel):
+    text: str = Field(max_length=4000)
+
+
+@app.post("/api/lessons/{lesson_id}/teachback")
+def teachback_check(lesson_id: str, req: TeachBackRequest) -> dict:
+    """The learner explains the lesson back; returns a score and the key points they missed (embedding similarity, no judging model)."""
+    from . import teachback
+    get_lesson(lesson_id)
+    try:
+        return teachback.check(lesson_id, req.text)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/jobs")
+def recent_jobs(limit: int = 20) -> list[dict]:
+    """The latest jobs, kept across restarts (what was interrupted shows as such)."""
+    from . import resume
+    return resume.recent(max(1, min(limit, 100)))
+
+
+class ReviewAnswer(BaseModel):
+    card_id: str
+    quality: int = Field(4, ge=0, le=5)
+    day: str = ""
+
+
+@app.get("/api/review/due")
+def review_due(day: str = "", limit: int = 20) -> dict:
+    """The cards (flashcards and quiz questions of every lesson) to review today, scheduled by SM-2."""
+    from . import srs
+    return srs.due(day or None, limit)
+
+
+@app.get("/api/review/stats")
+def review_stats(day: str = "") -> dict:
+    from . import srs
+    return srs.stats(day or None)
+
+
+@app.post("/api/review/answer")
+def review_answer(req: ReviewAnswer) -> dict:
+    """How well the learner remembered a card (0 forgot ... 5 easy). Returns when it comes back."""
+    from . import srs
+    try:
+        return srs.review(req.card_id, req.quality, req.day or None)
+    except KeyError:
+        raise HTTPException(404, "No such card")
+
+
+class WeakAnswer(BaseModel):
+    lesson_id: str
+    question: str = Field(max_length=400)
+    correct: bool
+    day: str = ""
+
+
+@app.post("/api/weak/answer")
+def weak_answer(req: WeakAnswer) -> dict:
+    """A quiz answer. Wrong ones are remembered per topic; right ones clear them. A "Revise" lesson then focuses on what is left."""
+    from . import srs
+    if req.correct:
+        srs.log_right(req.lesson_id, req.question)
+    else:
+        try:
+            topic = load_lesson(req.lesson_id).get("concept", "")
+        except (OSError, ValueError):
+            topic = ""
+        srs.log_wrong(req.lesson_id, req.question, topic, req.day or None)
+    return {"weak": srs.weak_spots()}
+
+
+@app.get("/api/weak")
+def weak_list() -> dict:
+    from . import srs
+    return {"weak": srs.weak_spots(8)}
+
+
+class ProfileRequest(BaseModel):
+    name: str | None = Field(None, max_length=30)
+    age: int | None = Field(None, ge=0, le=120)
+
+
+@app.get("/api/profile")
+def get_profile() -> dict:
+    from . import rewards
+    return rewards.profile()
+
+
+@app.post("/api/profile")
+def set_profile(req: ProfileRequest) -> dict:
+    """The learner's name and age. The age is used to pitch lessons and tutor answers; it stays on this computer."""
+    from . import rewards
+    return rewards.set_profile(req.name, req.age)
 
 
 class GoalRequest(BaseModel):

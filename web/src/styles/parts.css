@@ -192,3 +192,60 @@ button.chip:hover { background: var(--white); color: var(--ink); }
 .switch i { position: absolute; left: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s cubic-bezier(0.3, 0.8, 0.3, 1); }
 .switch.on { background: var(--ink); }
 .switch.on i { transform: translateX(20px); }
+
+/* ---------- creating a lesson: each stage with its own percentage ---------- */
+.stages { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 11px; }
+.stages li { display: grid; grid-template-columns: 22px minmax(0, 1.1fr) minmax(0, 1.4fr) 44px; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+.stages li.on, .stages li.done { color: var(--ink); }
+.st-dot { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--line); color: #fff; }
+.stages li.done .st-dot { background: var(--ink); }
+.stages li.on .st-dot { background: var(--lime); box-shadow: 0 0 0 4px rgba(199, 212, 61, 0.28); animation: st-pulse 1.4s ease-in-out infinite; }
+.st-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.st-name b { font-weight: 600; }
+.st-name small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.st-bar i { display: block; height: 100%; border-radius: inherit; background: var(--lime); transition: width 0.45s linear; }
+.stages li.done .st-bar i { background: var(--ink); }
+.st-pct { text-align: right; font-variant-numeric: tabular-nums; }
+@keyframes st-pulse { 50% { box-shadow: 0 0 0 7px rgba(199, 212, 61, 0.1); } }
+@media (prefers-reduced-motion: reduce) { .stages li.on .st-dot { animation: none; } .st-bar i { transition: none; } }
+
+.building-note { display: flex; align-items: center; gap: 8px; margin: -4px 0 10px; font-size: 13px; color: rgba(255, 255, 255, 0.92); }
+.building-note .tab-spin { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+
+/* ---------- review (spaced repetition) and profile ---------- */
+.rv { max-width: 720px; display: grid; gap: 16px; }
+.rv-count { font-size: 14px; color: var(--muted); }
+.rv-card { min-height: 260px; padding: 32px 34px; border-radius: var(--r-card); background: var(--white); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 18px; justify-content: center; animation: rv-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.rv-kind { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.rv-front { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; }
+.rv-back { padding-top: 18px; border-top: 2px dashed var(--line); font-size: 20px; line-height: 1.45; color: var(--ink-2); animation: rv-in 0.3s ease both; }
+.rv-show kbd, .rv-btn kbd { margin-left: 8px; padding: 1px 7px; border-radius: 6px; background: rgba(0, 0, 0, 0.1); font: 600 11px system-ui; }
+.rv-rate { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.rv-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 14px 8px; border: 0; border-radius: 22px; background: var(--surface); box-shadow: var(--shadow); transition: transform 0.12s; }
+.rv-btn:active { transform: scale(0.96); }
+.rv-btn b { font-size: 16px; } .rv-btn span { font-size: 12px; color: var(--muted); }
+.rv-btn.q1 b { color: #b3261e; } .rv-btn.q5 b { color: var(--green); }
+.rv-done { text-align: center; }
+.review-card h3 { margin: 4px 0 6px; }
+.profile-card { display: grid; gap: 4px; }
+.profile-card .avatar { width: 64px; height: 64px; margin-bottom: 8px; display: grid; place-items: center; border-radius: 50%; background: var(--lime); color: var(--ink); font-size: 28px; font-weight: 700; }
+.profile-card .row { display: flex; gap: 10px; margin-top: 10px; }
+@keyframes rv-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .rv-card, .rv-back { animation: none; } }
+
+/* ---------- take away, teach back, library import ---------- */
+.takeaway .glass-btn.disabled { opacity: 0.5; pointer-events: none; }
+.teachback { display: grid; gap: 10px; }
+.tb-box { position: relative; }
+.tb-box textarea { width: 100%; padding: 12px 46px 12px 14px; border: 0; border-radius: 18px; background: var(--surface); font: inherit; resize: vertical; }
+.tb-box textarea:focus { outline: 2px solid var(--ink); }
+.tb-box .icon-btn { position: absolute; right: 8px; top: 8px; }
+.teachback .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.tb-score { display: flex; align-items: baseline; gap: 8px; margin: 6px 0; }
+.tb-score b { font-size: 44px; letter-spacing: -0.03em; } .tb-score span { color: var(--muted); } .tb-score em { margin-left: 8px; font-style: normal; font-weight: 600; }
+.tb-list { margin: 6px 0 10px; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.tb-list.ok li::marker { color: var(--green); content: "✓  "; } .tb-list.miss li::marker { color: #b3261e; content: "•  "; }
+.tb-list li .small { margin-left: 8px; }
+.import-btn { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
+.gloss-row .small { margin-left: 6px; }

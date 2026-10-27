@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useRewards } from "../rewards/RewardsContext";
+import { api, url } from "../api";
+import { localDay, useRewards } from "../rewards/RewardsContext";
 import type { MapBranch, MapChild, Question, StudioData, StudioKind } from "./types";
 
 /** Every viewer gets `ask`: close the studio and ask the tutor about something on screen. */
@@ -31,6 +32,7 @@ export const Quiz: React.FC<{ data: StudioData["quiz"]; lessonId: string }> = ({
   const choose = (k: number) => {
     if (pick !== null) return;
     setPick(k);
+    api("/api/weak/answer", { lesson_id: lessonId, question: q.question, correct: k === q.answer_index, day: localDay() }).catch(() => undefined);   // remembered for a "Revise" lesson
     if (k === q.answer_index) {
       setScore((s) => s + 1);
       award({ type: "quiz_correct", first_try: !retrying, lesson_id: lessonId, card_id: `q${data.questions.indexOf(q)}` });
@@ -141,8 +143,21 @@ export const Faq: React.FC<{ data: StudioData["faq"]; ask: Ask }> = ({ data, ask
   </div>
 );
 
-export const Glossary: React.FC<{ data: StudioData["glossary"]; ask: Ask }> = ({ data, ask }) => {
+export const Glossary: React.FC<{ data: StudioData["glossary"]; ask: Ask; lessonId?: string; lang?: string }> = ({ data, ask, lessonId, lang = "en" }) => {
   const [q, setQ] = useState("");
+  const [saying, setSaying] = useState("");
+  const player = React.useRef<HTMLAudioElement | null>(null);
+  /** Hear one term in the lesson's language (the backend voices it once and keeps the clip). */
+  const hear = async (term: string) => {
+    if (!lessonId) return;
+    setSaying(term);
+    try {
+      const r = await api<{ url: string }>(`/api/lessons/${lessonId}/say`, { term, lang });
+      player.current?.pause();
+      player.current = new Audio(url(r.url));
+      await player.current.play();
+    } catch { /* no sound: the button simply stops spinning */ } finally { setSaying(""); }
+  };
   const shown = data.terms.filter((t) => (t.term + t.meaning).toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="gloss">
@@ -151,6 +166,7 @@ export const Glossary: React.FC<{ data: StudioData["glossary"]; ask: Ask }> = ({
         {shown.map((t, i) => (
           <div key={i} className="gloss-row">
             <dt>{t.term}</dt><dd>{t.meaning}</dd>
+            {lessonId && <button type="button" className="ghost small" onClick={() => void hear(t.term)} disabled={saying === t.term} aria-label={`Hear ${t.term}`}>{saying === t.term ? "…" : "Hear it"}</button>}
             <button type="button" className="ghost small" onClick={() => ask(`What does "${t.term}" mean? Give me an example.`)}>Explain more</button>
           </div>
         ))}

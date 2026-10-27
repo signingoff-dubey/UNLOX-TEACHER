@@ -235,6 +235,23 @@ def set_goal(goal: int) -> dict:
         return summary(p, date.today().isoformat())
 
 
+def set_profile(name: str | None = None, age: int | None = None) -> dict:
+    """The learner's name and age. The age is only used to pitch explanations (see learner.py); it never leaves this computer."""
+    with _lock:
+        p = load()
+        if name is not None:
+            p["name"] = " ".join(name.split())[:30] or "Learner"
+        if age is not None:
+            p["age"] = max(0, min(int(age), 120))
+        _save(p)
+        return {"name": p["name"], "age": p.get("age", 0)}
+
+
+def profile() -> dict:
+    p = load()
+    return {"name": p["name"], "age": p.get("age", 0)}
+
+
 def set_name(name: str) -> dict:
     with _lock:
         p = load()
@@ -274,7 +291,7 @@ def summary(p: dict | None = None, day: str | None = None) -> dict:
         week.append({"day": d, "xp": xp, "done": xp >= QUALIFY, "today": d == day})
     stats = _stats(p)
     return {
-        "name": p["name"], "xp": p["xp"], "level": level, "level_xp": level_floor(level), "next_xp": level_floor(level + 1),
+        "name": p["name"], "age": p.get("age", 0), "xp": p["xp"], "level": level, "level_xp": level_floor(level), "next_xp": level_floor(level + 1),
         "streak": {"current": s["current"] if alive else 0, "best": s["best"], "shields": s["shields"],
                    "today_done": today["xp"] >= QUALIFY, "at_risk": alive and s["last_day"] != day and today["xp"] < QUALIFY},
         "today": {"xp": today["xp"], "goal": p["goal"], "lessons": today.get("lessons", 0), "quiz": today.get("quiz", 0),

@@ -50,6 +50,7 @@ RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.68"))
 
 # Translation: "nllb" (Meta NLLB-200, GPU), "indictrans2" (AI4Bharat, gated), "ollama" (LLM) or "none"
 TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "nllb")
+BACKCHECK = os.getenv("BACKCHECK", "1") == "1"        # translate narration back to English and compare (needs the NLLB model; about 1 s per scene on the GPU)
 INDICTRANS2_MODEL = os.getenv("INDICTRANS2_MODEL", "ai4bharat/indictrans2-en-indic-dist-200M")  # gated on HF
 # Not gated: works without a Hugging Face login. Same FLORES language codes as IndicTrans2.
 NLLB_MODEL = os.getenv("NLLB_MODEL", "facebook/nllb-200-distilled-600M")

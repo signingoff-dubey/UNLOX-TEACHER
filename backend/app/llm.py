@@ -65,7 +65,7 @@ def extract_json(text: str) -> str:
 
 
 def stream_chat(messages: list[dict], options: dict | None = None, *, timeout: float = 300, expected_tokens: int = 400,
-                on_progress: Callable[[float], None] | None = None) -> str:
+                on_progress: Callable[[float], None] | None = None, on_text: Callable[[str], None] | None = None) -> str:
     """One streamed chat call (no `format`). Progress is tokens so far over what an answer of this kind usually needs."""
     r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
         "model": config.OLLAMA_MODEL, "messages": messages, "stream": True, "keep_alive": config.OLLAMA_KEEP_ALIVE,
@@ -82,10 +82,14 @@ def stream_chat(messages: list[dict], options: dict | None = None, *, timeout: f
         n += 1
         if on_progress and n % 5 == 0:
             on_progress(min(n / max(expected_tokens, 1), 0.97))
+        if on_text and n % 8 == 0:
+            on_text("".join(parts))                      # the text so far, for whoever shows it as it is written
         if chunk.get("done"):
             break
     if on_progress:
         on_progress(1.0)
+    if on_text:
+        on_text("".join(parts))
     return "".join(parts)
 
 

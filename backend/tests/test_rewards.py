@@ -129,3 +129,12 @@ def test_history_lists_every_day_oldest_first_with_what_was_done():
     assert len(h) == 10 and h[-1]["day"] == day() and h[0]["day"] == day(-9)
     assert h[-1]["lessons"] == 1 and h[-1]["xp"] == 30 and all(d["xp"] == 0 for d in h[:-1])
     assert len(R.history(day(), 9999)) == 400                                       # capped
+
+
+def test_profile_keeps_name_and_age_and_the_age_hint_follows(tmp_path):
+    from app import learner
+    assert R.profile()["age"] == 0 and learner.age_hint() == ""
+    assert R.set_profile("  Priya  Sharma ", 12) == {"name": "Priya Sharma", "age": 12}
+    assert "12 years old" in learner.age_hint() and "child" in learner.age_hint()
+    assert R.set_profile(age=40)["age"] == 40 and "adult" in learner.age_hint()
+    assert R.set_profile(age=999)["age"] == 120 and R.summary()["age"] == 120

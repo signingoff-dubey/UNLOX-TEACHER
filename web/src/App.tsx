@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { World } from "metaverse";
-import type { Job, Lesson } from "./types";
+import type { Job, Lesson, Track } from "./types";
 import {
   api, getApiBase, runJob, type Lang, type LessonSettings, type LessonSummary, type Playlist, type PlaylistSummary,
 } from "./api";
@@ -12,17 +12,19 @@ import { Library } from "./pages/Library";
 import { LessonPage } from "./pages/LessonPage";
 import { RewardsPage } from "./pages/RewardsPage";
 import { ProgressPage } from "./pages/ProgressPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { CreatingPill, type Creation } from "./shell/CreatingPill";
 import { Sidebar } from "./shell/Sidebar";
 import { useScrollbars } from "./shell/useScrollbars";
 
-type Screen = "home" | "lesson" | "library" | "rewards" | "homework" | "progress" | "settings";
+type Screen = "home" | "lesson" | "library" | "rewards" | "homework" | "progress" | "settings" | "profile" | "review";
 const HOMEWORK_HASH = /^\/homework\/([a-z0-9]+)$/;
 const COURSE_HASH = /^c-([a-z0-9]+)(?:-(\d+))?$/;
 
 /** Chanakya. A sidebar (create, library, your streak and score) and a main page: dashboard, lesson, library or rewards.
- *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, the others are `#/library`, `#/rewards`, `#/progress` and `#/settings`. */
+ *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, the others are `#/library`, `#/rewards`, `#/progress`, `#/review`, `#/profile` and `#/settings`. */
 export default function App() {
   useScrollbars();
   const [screen, setScreen] = useState<Screen>("home");
@@ -114,6 +116,8 @@ export default function App() {
     else if (h === "/rewards") setScreen("rewards");
     else if (h === "/progress") setScreen("progress");
     else if (h === "/settings") setScreen("settings");
+    else if (h === "/profile") setScreen("profile");
+    else if (h === "/review") setScreen("review");
     else if (h && h !== "/") openLesson(h);
     else setScreen("home");
   }, [openCourse, openLesson]);
@@ -161,19 +165,22 @@ export default function App() {
   const removePhoto = (key: string) => setPhotos((cur) => { cur.filter((x) => x.key === key).forEach((x) => URL.revokeObjectURL(x.preview)); return cur.filter((x) => x.key !== key); });
 
   // The other languages of a lesson are made one by one after the first is ready: poll until each has arrived.
+  // A lesson that is still being made (scenes added one by one, then the other languages): poll until it is complete.
   const pendingCount = lesson?.pending?.length ?? 0;
+  const building = !!lesson?.building;
   const lessonId = lesson?.id;
   useEffect(() => {
-    if (!lessonId || !pendingCount) return;
+    if (!lessonId || !(pendingCount || building)) return;
     const t = setInterval(() => {
       api<Lesson>(`/api/lessons/${lessonId}`).then((fresh) => setLesson((cur) => {
         if (!cur || cur.id !== fresh.id) return cur;
-        // Keep the track objects the player already has, so a new language does not restart the video.
-        return { ...fresh, languages: Object.fromEntries(Object.entries(fresh.languages).map(([k, v]) => [k, cur.languages[k] ?? v])) };
+        // Keep the track objects the player already has when nothing in them changed, so a new language does not restart the video.
+        const same = (a?: Track, b?: Track) => !!a && !!b && a.scenes.length === b.scenes.length && a.duration_s === b.duration_s;
+        return { ...fresh, languages: Object.fromEntries(Object.entries(fresh.languages).map(([k, v]) => [k, same(cur.languages[k], v) ? cur.languages[k] : v])) };
       })).catch(() => undefined);
-    }, 2500);
+    }, building ? 1200 : 2500);
     return () => clearInterval(t);
-  }, [lessonId, pendingCount]);
+  }, [lessonId, pendingCount, building]);
 
   const busy = job?.status === "queued" || job?.status === "running";
 
@@ -193,6 +200,7 @@ export default function App() {
     watch(true);
     setCreation({ status: "running", kind: course ? "course" : "lesson", concept: text || "Your photo" });
     const pdf = { upload, focus: upload ? focus.trim() : "" };
+    let early = "";                           // id of the lesson once its first scenes can be watched (the rest is still being made)
     if (mode === "homework" && (upload || images.length)) {           // the answer file is written alongside the lessons
       api<{ homework: HomeworkMeta }>("/api/homework", { concept: text, documents: upload ? [upload] : [], images })
         .then((r) => { setHomework((cur) => [r.homework, ...cur]); })
@@ -219,12 +227,22 @@ export default function App() {
       }
       const done = await runJob(
         api<Job>("/api/lessons", { concept: text, ...settings, ...pdf, images, mode }),
-        (j) => { if (mine === run.current) setJob(j); },
+        (j) => {
+          if (mine !== run.current) return;
+          setJob(j);
+          if (j.lesson_id && !early) {            // the first scenes are ready: start the player now, the rest is added as it is made
+            early = j.lesson_id;
+            api<Lesson>(`/api/lessons/${early}`).then((l) => {
+              if (mine === run.current && watchingRef.current) { show(l, settings.languages); window.history.replaceState(null, "", `#${l.id}`); }
+            }).catch(() => { early = ""; });
+          }
+        },
       );
       if (mine !== run.current) return;
       const made = done.result as Lesson;
       setCreation({ status: "done", kind: "lesson", concept: text, hash: made.id });
-      if (watchingRef.current) {                  // still on the progress screen: open it; otherwise the pill says "Created"
+      if (early === made.id) setLesson((cur) => (cur && cur.id === made.id ? made : cur));      // the player is already on it: swap in the finished lesson
+      else if (watchingRef.current) {             // still on the progress screen: open it; otherwise the pill says "Created"
         show(made, settings.languages);
         window.history.replaceState(null, "", `#${made.id}`);
       }
@@ -287,22 +305,24 @@ export default function App() {
         screen={screen} recent={recent} courses={courses} activeId={activeId}
         onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)}
         homework={homework} onOpenHomework={(id) => go(`/homework/${id}`)}
-        onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onProgress={() => go("/progress")} onSettings={() => go("/settings")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
+        onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onProgress={() => go("/progress")} onSettings={() => go("/settings")} onProfile={() => go("/profile")} onReview={() => go("/review")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
       />
 
       {screen === "home" && (
         <Home concept={concept} onConcept={setConcept} settings={settings} onSettings={setSettings} languages={languages}
           videos={videos} onVideos={setVideos} mode={mode} onMode={setMode} photos={photos} onAddPhotos={addPhotos} onRemovePhoto={removePhoto} upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus}
           busy={busy} error={error} onCreate={create} recent={recent} courses={courses}
-          onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} onRewards={() => go("/rewards")} onLibrary={() => go("/library")} />
+          onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} onRewards={() => go("/rewards")} onLibrary={() => go("/library")} onReview={() => go("/review")} />
       )}
-      {screen === "library" && <Library recent={recent} courses={courses} onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} />}
+      {screen === "library" && <Library recent={recent} courses={courses} onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} onImported={() => loadLists()} />}
       {screen === "rewards" && <RewardsPage />}
       {screen === "progress" && <ProgressPage />}
       {screen === "settings" && <SettingsPage />}
+      {screen === "profile" && <ProfilePage onSettings={() => go("/settings")} />}
+      {screen === "review" && <ReviewPage />}
       {screen === "homework" && <HomeworkPage id={homeworkId} />}
       {screen === "lesson" && (
-        <LessonPage lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}
+        <LessonPage lesson={lesson} generating={!lesson || lesson.building ? { concept, job, languages: settings.languages } : undefined}
           lang={active} onLang={setActive} assetBase={assetBase} onVideo={onVideo}
           playlist={playlist} episode={episode} onEpisode={(i) => playlist && openEpisode(playlist, i)}
           onMetaverse={enterMetaverse} onMetaQuiz={startMetaQuiz} metaBusy={meta} />

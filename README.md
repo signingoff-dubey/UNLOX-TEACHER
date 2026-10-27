@@ -267,3 +267,12 @@ Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on so
 
 Screens follow the Figma file "NOTES - Kabir Edition" (onboarding, home, create, generating, player, tutor chat, progress, library) plus study tools, homework, rewards, settings and a profile with name and age. The opening animation and the ripple and wave of the voice screen are the website's.
 Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_hackethon/files/models/` (`llm/`, `stt/`, `tts/`, `embeddings/`); Settings > On this phone shows what is found. Build: `cd Unlox_Hackethon && gradlew :app:assembleDebug`. A debug APK is attached to the GitHub release.
+
+## What is new in v0.14.0
+- **Scenes play while they are made**: the player opens on scene 1 about 6 s after you ask, the rest arrives behind it.
+- **Review** (spaced repetition), **Revise** mode (your weak spots), **Profile** (name and age), **Teach it back**.
+- **Take it away**: subtitles only, narration only (mp3), the whole lesson as one `.chanakya.zip` with its own player (copy it to a USB stick, import it from Library), worksheets and question papers to print, "Hear it" for glossary terms.
+- **Safer translation** (script and back-translation checks), **network diagrams**, **misconception scenes**, **jobs that resume after a crash**.
+- New pages: `#/review`, `#/profile`. New API: `/api/review/*`, `/api/weak*`, `/api/profile`, `/api/papers*`, `/api/lessons/{id}/{subtitles,podcast,say,bundle,teachback}`, `/api/bundle/import`, `/api/jobs`.
+- Environment: `STUDIO_WORKERS` (3), `BACKCHECK` (1: translate narration back to English and compare).
+- New backend files: `streaming.py`, `srs.py`, `learner.py`, `fidelity.py`, `exports.py`, `bundle.py`, `paper.py`, `teachback.py`, `layout.py`, `resume.py`.

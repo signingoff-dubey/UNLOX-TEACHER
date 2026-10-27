@@ -63,7 +63,7 @@ class Llm(private val models: ModelStore, private val cacheDir: File) {
         engine?.let { return it }
         val file = models.llmFile
         require(file.exists()) { "The language model is not on this phone yet. Copy it in Settings > On this phone." }
-        val e = Engine(EngineConfig(modelPath = file.path, backend = Backend.CPU(), maxNumTokens = 4096, cacheDir = cacheDir.path))
+        val e = Engine(EngineConfig(modelPath = file.path, backend = Backend.CPU(), maxNumTokens = 8192, cacheDir = cacheDir.path))
         e.initialize()
         backendName = "CPU"
         engine = e
@@ -74,8 +74,8 @@ class Llm(private val models: ModelStore, private val cacheDir: File) {
     /** Load the model now (takes several seconds) so the first question is quick. */
     suspend fun warmUp() = mutex.withLock { withContext(Dispatchers.IO) { runCatching { ensure() }.onFailure { Log.w(TAG, "warm-up: ${it.message}") } } }
 
-    /** Like [ask], but `onText` is told how much has been written so far, so a long answer can show real progress. */
-    suspend fun askStreaming(system: String, user: String, temperature: Double = 0.4, onText: (Int) -> Unit): String =
+    /** Like [ask], but `onText` hears the whole answer so far each time more arrives, so a long answer can show real progress and be used early. */
+    suspend fun askStreaming(system: String, user: String, temperature: Double = 0.4, onText: (String) -> Unit): String =
         mutex.withLock {
             withContext(Dispatchers.IO) {
                 val e = ensure()
@@ -85,7 +85,7 @@ class Llm(private val models: ModelStore, private val cacheDir: File) {
                     conv.sendMessageAsync(user).collect { m ->
                         val part = m.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
                         acc = if (part.startsWith(acc)) part else acc + part               // a message is either the text so far or the next piece
-                        onText(acc.length)
+                        onText(acc)
                     }
                     acc.trim()
                 }
@@ -321,11 +321,11 @@ class Translator(private val llm: Llm) {
 class ScenePlayer(private val context: Context) {
     private var mp: MediaPlayer? = null
 
-    fun play(file: File, onDone: () -> Unit) {
+    fun play(file: File, startMs: Int = 0, onDone: () -> Unit) {
         stop()
         mp = MediaPlayer().apply {
             setDataSource(file.path)
-            setOnPreparedListener { it.start() }
+            setOnPreparedListener { if (startMs > 0) it.seekTo(startMs); it.start() }
             setOnCompletionListener { onDone() }
             setOnErrorListener { _, _, _ -> onDone(); true }
             prepareAsync()

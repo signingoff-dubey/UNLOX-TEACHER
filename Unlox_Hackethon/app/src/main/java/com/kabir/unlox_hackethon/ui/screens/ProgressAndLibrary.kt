@@ -21,6 +21,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -127,6 +129,10 @@ fun LibraryScreen(lessons: List<LessonMeta>, bottomInset: Dp, onOpenLesson: (Str
     var filter by rememberSaveable { mutableIntStateOf(0) }
     val filters = listOf("All", "Lessons", "My PDFs")
     val shown = if (filter == 2) emptyList() else lessons.filter { it.title.contains(query, ignoreCase = true) }
+    var pdfs by remember { mutableStateOf(Graph.pdfs.list()) }
+    val reading = Graph.pdfs.reading
+    androidx.compose.runtime.LaunchedEffect(reading.toMap()) { pdfs = Graph.pdfs.list() }
+    val shownPdfs = if (filter == 1) emptyList() else pdfs.filter { it.name.contains(query, ignoreCase = true) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomInset),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -156,9 +162,27 @@ fun LibraryScreen(lessons: List<LessonMeta>, bottomInset: Dp, onOpenLesson: (Str
                     LessonRow(l.title, "$names · ${ago(l.created)}", "${l.seconds} s") { onOpenLesson(l.id) }
                 }
             }
-        } else {
+        }
+        if (shownPdfs.isNotEmpty()) {
+            SectionHeader("My PDFs", trailing = "${shownPdfs.size}")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                shownPdfs.forEach { p ->
+                    val done = reading[p.id]
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(U.Raised).clickable(onClick = onAdd).padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        IconWell(R.drawable.ic_file, if (done != null) U.Accent else U.Glass, 44.dp, 20.dp)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(p.name, style = T.Body, color = U.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(if (done != null) "Reading pages · $done of ${p.pages}" else "${p.pages} pages · ready", style = T.Sub, color = U.TextTertiary, maxLines = 1)
+                            if (done != null) com.kabir.unlox_hackethon.ui.components.ProgressTrack(done.toFloat() / p.pages.coerceAtLeast(1), track = U.Glass)
+                        }
+                        Glyph(R.drawable.ic_chevron_right, tint = U.TextTertiary, size = 20.dp)
+                    }
+                }
+            }
+        }
+        if (shown.isEmpty() && shownPdfs.isEmpty()) {
             Text(
-                when { filter == 2 -> "PDFs you add will show here."; lessons.isEmpty() -> "No lessons yet. Tap + to make your first one."; else -> "Nothing matches. Try another word." },
+                when { filter == 2 -> "PDFs you add show here. Add one from the Create screen."; lessons.isEmpty() -> "No lessons yet. Tap + to make your first one."; else -> "Nothing matches. Try another word." },
                 style = T.Body, color = U.TextTertiary,
             )
         }

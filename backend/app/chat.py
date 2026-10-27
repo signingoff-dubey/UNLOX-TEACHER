@@ -88,7 +88,8 @@ def ask(lesson_id: str, message: str, lang: str, time_s: float, history: list[di
         lang = detect_text_language(message, prefer=watching)
     get_lang(lang)
     scene = scene_at(lesson, watching if watching in lesson["languages"] else lang, time_s)
-    system = SYSTEM + "\n\n" + lesson_context(lesson, scene)
+    from .learner import age_hint
+    system = SYSTEM + ("\n" + age_hint() if age_hint() else "") + "\n\n" + lesson_context(lesson, scene)
     upload = (lesson.get("documents") or [lesson.get("upload")])[0]
     docs = "\n".join(f"- {p.title}: {p.text}" for p in retrieve(message, upload=upload)[:4])
     if docs:

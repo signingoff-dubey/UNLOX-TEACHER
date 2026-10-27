@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-Template = Literal["title", "bullets", "flow", "cycle", "compare", "diagram", "quiz", "summary", "graph", "code"]
+Template = Literal["title", "bullets", "flow", "cycle", "compare", "diagram", "quiz", "summary", "graph", "code", "network"]
 CurveType = Literal["line", "parabola", "cubic", "sine", "cosine", "exp", "abs", "sqrt", "reciprocal", "circle", "ellipse"]
 MarkKind = Literal["center", "radius", "diameter", "chord", "tangent", "point", "link"]
 Icon = Literal[
@@ -39,6 +39,12 @@ class Mark(BaseModel):
     y: float = 0
 
 
+class Edge(BaseModel):
+    """An arrow from node `src` to node `dst` (0-based positions in `nodes`)."""
+    src: int = 0
+    dst: int = 0
+
+
 class ScenePlan(BaseModel):
     template: Template = "bullets"
     heading: str = Field("", description="Short on-screen heading, max 6 words")
@@ -62,6 +68,33 @@ class ScenePlan(BaseModel):
     code: list[str] = Field(default_factory=list, description="code scenes: 3-10 short lines of code")
     highlights: list[int] = Field(default_factory=list, description="code scenes: 0-based line numbers, in narration order")
     output: list[str] = Field(default_factory=list, description="code scenes: what the program prints (optional)")
+    # network scenes: the model lists the boxes and the arrows; positions are computed (layout.py), never written by the model
+    nodes: list[str] = Field(default_factory=list, description="network scenes: 3-8 short labels, max 4 words each")
+    edges: list[Edge] = Field(default_factory=list, description="network scenes: arrows {src, dst} as positions in nodes")
+    positions: list[list[float]] = Field(default_factory=list, description="computed: [x, y] of every node")
+
+    @field_validator("edges", mode="before")
+    @classmethod
+    def _edges(cls, v):
+        """Arrows as {"src": 0, "dst": 1}, {"from": 0, "to": 1} or [0, 1]; anything else is dropped."""
+        out = []
+        for e in v if isinstance(v, list) else []:
+            try:
+                if isinstance(e, dict):
+                    a, b = e.get("src", e.get("from")), e.get("dst", e.get("to"))
+                elif isinstance(e, (list, tuple)) and len(e) >= 2:
+                    a, b = e[0], e[1]
+                else:
+                    continue
+                out.append({"src": int(a), "dst": int(b)})
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @field_validator("nodes", mode="before")
+    @classmethod
+    def _nodes(cls, v):
+        return [str(x) for x in v if isinstance(x, (str, int, float))] if isinstance(v, list) else []
 
     # Small models slip on types (an icon that is not in the list, code as one string, a range that is not a pair).
     # The plan is asked for as plain JSON text, without Ollama's slow constrained decoding, so these are repaired here.
@@ -141,9 +174,22 @@ class ScenePlan(BaseModel):
         return [m for m in v if isinstance(m, dict) and m.get("kind") in kinds] if isinstance(v, list) else []
 
 
+class Mistake(BaseModel):
+    wrong: str = Field("", description="a common wrong belief, max 14 words")
+    right: str = Field("", description="the correct fact, max 14 words")
+
+
 class LessonPlan(BaseModel):
     title: str = ""
     scenes: list[ScenePlan] = []
+    common_mistakes: list[Mistake] = Field(default_factory=list, description="0-2 common wrong beliefs with the correction; shown as a compare scene")
+
+    @field_validator("common_mistakes", mode="before")
+    @classmethod
+    def _mistakes(cls, v):
+        if not isinstance(v, list):
+            return []
+        return [m for m in v if isinstance(m, dict) and str(m.get("wrong", "")).strip() and str(m.get("right", "")).strip()][:3]
 
     @field_validator("title", mode="before")
     @classmethod
@@ -163,7 +209,7 @@ class LessonPlan(BaseModel):
 
 # Which fields hold text a viewer sees or hears (and so must be translated).
 TEXT_FIELDS = ("heading", "narration", "left_title", "right_title")
-LIST_FIELDS = ("items", "left", "right")
+LIST_FIELDS = ("items", "left", "right", "nodes")
 
 MIN_ITEMS = {"bullets": 2, "flow": 2, "cycle": 3, "diagram": 2, "quiz": 2, "summary": 2}
 MAX_CODE_LINES, MAX_CODE_COLS = 11, 72
@@ -216,6 +262,33 @@ def _normalize_code(s: ScenePlan) -> None:
         s.code, s.output, s.highlights, s.code_lang = [], [], [], ""
 
 
+def _normalize_network(s: ScenePlan) -> None:
+    """Clean the boxes and arrows, and compute where everything goes. A network that cannot be drawn becomes a flow of its boxes."""
+    from .layout import layered
+    nodes: list[str] = []
+    remap: dict[int, int] = {}
+    for i, label in enumerate(s.nodes[:12]):
+        label = " ".join(label.split())[:40]
+        if label and label.lower() not in [n.lower() for n in nodes]:
+            remap[i] = len(nodes)
+            nodes.append(label)
+    seen: set[tuple[int, int]] = set()
+    edges: list[Edge] = []
+    for e in s.edges:
+        a, b = remap.get(e.src), remap.get(e.dst)
+        if a is not None and b is not None and a != b and (a, b) not in seen:
+            seen.add((a, b))
+            edges.append(Edge(src=a, dst=b))
+    nodes, edges = nodes[:8], [e for e in edges if e.src < 8 and e.dst < 8][:14]
+    if s.template == "network" and (len(nodes) < 3 or not edges):
+        s._wanted = s._wanted or "network"
+        s.items = s.items or nodes
+        s.template = "flow" if len(s.items) >= 2 else "bullets"
+        nodes, edges = [], []
+    s.nodes, s.edges = (nodes, edges) if s.template == "network" else ([], [])
+    s.positions = layered(len(s.nodes), [(e.src, e.dst) for e in s.edges]) if s.template == "network" else []
+
+
 def points_from_narration(narration: str, limit: int = 4) -> list[str]:
     """Short labels (max 5 words) from the sentences of a narration, used when the model gave no points."""
     out: list[str] = []
@@ -239,6 +312,7 @@ def normalize(plan: LessonPlan) -> LessonPlan:
             continue
         _normalize_graph(s)
         _normalize_code(s)
+        _normalize_network(s)
         if s.template == "quiz" and not all(i.isdigit() for i in s.items):
             # Small models sometimes leak the answer index ("0") into the options.
             s.items = [i for i in s.items if not i.isdigit()]
@@ -264,5 +338,24 @@ def normalize(plan: LessonPlan) -> LessonPlan:
     if scenes[0].template != "title":
         scenes.insert(0, ScenePlan(template="title", heading=plan.title,
                                    narration=f"Let's learn about {plan.title}.", icon=scenes[0].icon))
+    _add_misconceptions(plan, scenes)
     plan.scenes = scenes
     return plan
+
+
+def _add_misconceptions(plan: LessonPlan, scenes: list[ScenePlan]) -> None:
+    """The planner's common_mistakes become one compare scene (wrong belief on the left, the fact on the right), placed before the closing
+    quiz or summary. No new template: it is an ordinary compare scene. Skipped when the lesson is too short or already compares."""
+    pairs = [m for m in plan.common_mistakes if m.wrong.strip() and m.right.strip()][:2]
+    if not pairs or len(scenes) < 4 or any(s.template == "compare" for s in scenes):
+        return
+    first = pairs[0]
+    spoken = f"A common mistake: many people think {first.wrong.strip().rstrip('.')}. In fact, {first.right.strip().rstrip('.')}."
+    if len(pairs) > 1:
+        spoken += f" Another one: {pairs[1].wrong.strip().rstrip('.')}. But {pairs[1].right.strip().rstrip('.')}."
+    scene = ScenePlan(template="compare", heading="Common mistakes", narration=spoken, left_title="What people think", right_title="What is true",
+                      left=[p.wrong.strip() for p in pairs], right=[p.right.strip() for p in pairs], icon="lightbulb")
+    at = len(scenes) - 1 if scenes[-1].template in ("quiz", "summary") else len(scenes)
+    if len(scenes) >= 2 and scenes[-1].template == "quiz" and scenes[-2].template == "summary":
+        at = len(scenes) - 2
+    scenes.insert(at, scene)

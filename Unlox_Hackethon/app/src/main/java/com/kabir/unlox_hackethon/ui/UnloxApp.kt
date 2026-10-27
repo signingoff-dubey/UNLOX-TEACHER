@@ -67,7 +67,7 @@ import com.kabir.unlox_hackethon.ui.screens.ProfileScreen
 import com.kabir.unlox_hackethon.ui.screens.ProgressScreen
 import com.kabir.unlox_hackethon.ui.screens.QuizScreen
 import com.kabir.unlox_hackethon.ui.screens.RewardsScreen
-import com.kabir.unlox_hackethon.ui.screens.Scene
+import com.kabir.unlox_hackethon.ui.screens.PartRef
 import com.kabir.unlox_hackethon.ui.screens.SettingsScreen
 import com.kabir.unlox_hackethon.ui.screens.Stage
 import com.kabir.unlox_hackethon.ui.screens.StageState
@@ -159,11 +159,38 @@ fun UnloxApp() {
     var playing by rememberSaveable { mutableStateOf(false) }
     var sceneMs by remember { mutableIntStateOf(0) }
     var language by rememberSaveable { mutableIntStateOf(0) }
-    val started = remember { intArrayOf(-1, -1) }                                    // [scene whose audio is loaded, language it was loaded in]
+    val started = remember { intArrayOf(-1, -1) }
+    val seekMs = remember { intArrayOf(0) }                                          // where in the scene the narration should start (after a seek)                                    // [scene whose audio is loaded, language it was loaded in]
     val track = lesson?.let { it.tracks.getOrElse(language) { _ -> it.tracks.first() } }
-    val scenes = track?.scenes?.map { Scene(it.heading, it.kind, it.seconds.toInt().coerceAtLeast(1), it.narration, it.items) }.orEmpty()
-    val elapsed = scenes.take(scene).sumOf { it.seconds } + sceneMs / 1000
-    val total = scenes.sumOf { it.seconds }
+    val scenes = track?.scenes.orEmpty()
+
+    // A lesson that is still being made: take the scenes and languages that have been added, keeping the learner on the same language.
+    LaunchedEffect(lesson?.id, lesson?.building) {
+        val id = lesson?.id ?: return@LaunchedEffect
+        if (lesson?.building != true) return@LaunchedEffect
+        while (true) {
+            delay(1200)
+            val fresh = withContext(Dispatchers.IO) { Graph.lessons.load(id) } ?: continue
+            val cur = lesson ?: return@LaunchedEffect
+            if (cur.id != id) return@LaunchedEffect
+            val code = cur.tracks.getOrNull(language)?.lang
+            lesson = fresh
+            if (code != null) language = fresh.tracks.indexOfFirst { it.lang == code }.coerceAtLeast(0)
+            if (!fresh.building) break
+        }
+    }
+
+    // a set of videos: the parts of the course this lesson belongs to (polled while the later ones are still being made)
+    var course by remember { mutableStateOf<com.kabir.unlox_hackethon.data.Course?>(null) }
+    LaunchedEffect(lesson?.courseId) {
+        val cid = lesson?.courseId.orEmpty()
+        if (cid.isEmpty()) { course = null; return@LaunchedEffect }
+        while (true) {
+            course = withContext(Dispatchers.IO) { Graph.lessons.loadCourse(cid) }
+            if (course?.episodes?.none { it.status == "pending" } == true) break
+            delay(3000)
+        }
+    }
 
     LaunchedEffect(playing, scene, language, lesson?.id, top, chatOpen) {
         val l = lesson ?: return@LaunchedEffect
@@ -173,7 +200,7 @@ fun UnloxApp() {
         val file = sc.audio?.let { File(Graph.lessons.dir(l.id), it) }?.takeIf { it.exists() }
         var finished = false
         if (file != null) {
-            if (started[0] != scene || started[1] != language) { sceneMs = 0; Graph.player.play(file) { finished = true }; started[0] = scene; started[1] = language } else Graph.player.resume()
+            if (started[0] != scene || started[1] != language) { val from = seekMs[0]; seekMs[0] = 0; sceneMs = from; Graph.player.play(file, from) { finished = true }; started[0] = scene; started[1] = language } else Graph.player.resume()
             while (!finished) { delay(200); sceneMs = Graph.player.positionMs }
         } else {                                                                      // no voice for this language: show the scene for as long as it would take to read
             started[0] = scene; started[1] = language
@@ -182,8 +209,21 @@ fun UnloxApp() {
         }
         if (finished) {
             started[0] = -1
-            if (scene + 1 < t.scenes.size) { scene += 1; sceneMs = 0 } else { playing = false; sceneMs = 0; Graph.rewards.award("lesson_complete") }
+            fun known() = lesson?.tracks?.getOrNull(language)?.scenes?.size ?: 0
+            if (scene + 1 < t.scenes.size) { scene += 1; sceneMs = 0 }
+            else {
+                // caught up with the scenes made so far: wait for the next one instead of ending
+                while (lesson?.building == true && known() <= scene + 1) delay(400)
+                if (known() > scene + 1) { scene += 1; sceneMs = 0 } else { playing = false; sceneMs = 0; Graph.rewards.award("lesson_complete") }
+            }
         }
+    }
+    /** Jump to a moment of the whole lesson (in seconds): the scene it falls in, and the place inside that scene. */
+    fun seekTo(sec: Float) {
+        var acc = 0f; var idx = scenes.lastIndex
+        for (i in scenes.indices) { val d = scenes[i].seconds.coerceAtLeast(1f); if (sec < acc + d) { idx = i; break }; acc += d }
+        scene = idx.coerceAtLeast(0); sceneMs = ((sec - acc).coerceAtLeast(0f) * 1000).toInt(); seekMs[0] = sceneMs
+        started[0] = -1; Graph.player.stop()
     }
     fun openLessonObj(l: Lesson) { Graph.player.stop(); started[0] = -1; lesson = l; scene = 0; sceneMs = 0; playing = false; language = 0 }
     fun openLesson(id: String) = scope.launch {
@@ -215,7 +255,7 @@ fun UnloxApp() {
     LaunchedEffect(creation.lessonId) {
         val id = creation.lessonId ?: return@LaunchedEffect
         val l = withContext(Dispatchers.IO) { Graph.lessons.load(id) } ?: return@LaunchedEffect
-        Graph.creator.reset()
+        Graph.creator.opened()
         openLessonObj(l)
         if (stack.last() == Route.Generating) replace(Route.Player)
     }
@@ -278,11 +318,15 @@ fun UnloxApp() {
                 })
                 Route.Generating -> GeneratingScreen(request, creation.progress, creation.error?.let { "Could not finish: $it" } ?: creation.status, stagesFor(creation)) { Graph.creator.cancel(); pop() }
                 Route.Player -> PlayerScreen(
-                    lesson?.title ?: "", scene, { scene = it; sceneMs = 0; started[0] = -1; Graph.player.stop(); playing = true },
-                    playing, { playing = it }, elapsed, language, { language = it; sceneMs = 0; started[0] = -1; Graph.player.stop() },
+                    lesson?.title ?: "", scenes, scene, { scene = it; sceneMs = 0; seekMs[0] = 0; started[0] = -1; Graph.player.stop(); playing = true },
+                    playing, { playing = it }, sceneMs, language, lesson?.tracks?.map { t -> LANGS.first { it.code == t.lang }.name }.orEmpty(),
+                    { language = it; sceneMs = 0; started[0] = -1; Graph.player.stop() },
                     onBack = { playing = false; Graph.player.stop(); started[0] = -1; pop() },
-                    onAskTutor = { o -> chatOrigin = o; chatOpen = true }, onStudy = { push(Route.Study) },
-                    scenes = scenes, languages = lesson?.tracks?.map { t -> LANGS.first { it.code == t.lang }.name }.orEmpty(),
+                    onAskTutor = { o -> chatOrigin = o; chatOpen = true }, onStudy = { push(Route.Study) }, onSeek = ::seekTo,
+                    making = lesson?.takeIf { it.building }?.let { "${creation.status.ifBlank { "Making the rest" }} · ${(creation.progress * 100).toInt()}%" },
+                    scenesTotal = lesson?.scenesTotal ?: 0,
+                    parts = course?.episodes?.map { PartRef(it.title, it.lessonId != null) }.orEmpty(), part = lesson?.episode ?: 0,
+                    onPart = { i -> course?.episodes?.getOrNull(i)?.lessonId?.let { id -> scope.launch { withContext(Dispatchers.IO) { Graph.lessons.load(id) }?.let { openLessonObj(it) } } } },
                 )
                 Route.Study -> StudyHubScreen(lesson?.title ?: lessons.firstOrNull()?.title ?: "your lesson", onBack = ::pop, onOpen = { k ->
                     scope.launch { if (studyLesson() == null) toast("Make a lesson first.") else { Graph.rewards.award("study_tool"); push(Route.Tool(k)) } }
@@ -305,7 +349,11 @@ fun UnloxApp() {
         // The tutor grows out of the "Ask the tutor" button; voice mode grows out of the mic that was tapped, over the chat if it is open.
         RippleReveal(chatOpen, chatOrigin) {
             TutorChatScreen(
-                "Scene ${scene + 1} · ${scenes.getOrNull(scene)?.title ?: ""}", messages, thinking, Graph.profile.speak, { Graph.profile.setPref("speak", !Graph.profile.speak) }, ::ask,
+                "Scene ${scene + 1} · ${scenes.getOrNull(scene)?.heading ?: ""}", messages, thinking, Graph.profile.speak, {
+                    val on = !Graph.profile.speak
+                    Graph.profile.setPref("speak", on)
+                    if (!on) Graph.player.stop()                                  // muting also silences what is being said now
+                }, ::ask,
                 onVoice = { o -> voiceOrigin = o; voiceForChat = true; voiceOpen = true }, onBack = { chatOpen = false },
             )
         }

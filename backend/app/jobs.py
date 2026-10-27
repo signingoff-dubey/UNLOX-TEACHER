@@ -24,25 +24,40 @@ _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
 
+def _remember(job: dict) -> None:
+    """Keeps a copy of the job on disk (resume.py), so a restart knows what was running. Best effort."""
+    try:
+        from . import resume
+        resume.record(job)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
     job_id = uuid.uuid4().hex[:12]
     job = {"id": job_id, "kind": kind, "status": "queued", "stage": "Waiting", "progress": 0.0,
            "result": None, "error": None}
     with _lock:
         _jobs[job_id] = job
+    _remember(job)
 
-    def progress(stage: str, value: float) -> None:
+    def progress(stage: str, value: float, **extra: Any) -> None:
+        """`extra` is attached to the job as it is (e.g. the id of a lesson whose first scenes can already be watched)."""
         with _lock:
-            job.update(stage=stage, progress=round(min(max(value, 0.0), 1.0), 3))
+            job.update(stage=stage, progress=round(min(max(value, 0.0), 1.0), 3), **extra)
+        if extra:
+            _remember(job)                                   # e.g. the lesson id: worth keeping at once
 
     def run() -> None:
         job["status"] = "running"
+        _remember(job)
         try:
             job["result"] = fn(*args, progress)
             job["status"] = "done"
         except Exception as e:  # surfaced to the UI
             log.error("Job %s failed:\n%s", job_id, traceback.format_exc())
             job.update(status="error", error=f"{type(e).__name__}: {e}")
+        _remember(job)
 
     _pools.get(kind, _pool).submit(run)
     return job

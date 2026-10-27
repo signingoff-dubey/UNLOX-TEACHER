@@ -72,7 +72,7 @@ export const StudioModal: React.FC<Props> = ({ lesson, lang, kind: first, title,
       case "mindmap": return <MindMap data={d as StudioData["mindmap"]} lessonId={lesson.id} lang={lang} ask={onAsk} />;
       case "studyguide": return <StudyGuide data={d as StudioData["studyguide"]} open={setKind} />;
       case "faq": return <Faq data={d as StudioData["faq"]} ask={onAsk} />;
-      case "glossary": return <Glossary data={d as StudioData["glossary"]} ask={onAsk} />;
+      case "glossary": return <Glossary data={d as StudioData["glossary"]} ask={onAsk} lessonId={lesson.id} lang={lang} />;
       default: return <Timeline data={d as StudioData["timeline"]} />;
     }
   };

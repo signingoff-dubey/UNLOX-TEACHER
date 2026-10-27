@@ -3,6 +3,11 @@ package com.kabir.unlox_hackethon.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -62,24 +68,35 @@ import kotlin.math.exp
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** What the learner picked on the Create screen; the pipeline reads it. */
+/** What the learner picked on the Create screen; the pipeline reads it. `source` is "knowledge base" or "pdf:<id>"; `videos` is Auto or a count, each `seconds` long. */
 data class LessonRequest(val concept: String, val languages: List<String>, val seconds: Int, val source: String, val mode: String = "Explanation", val videos: String = "Auto")
 
-private val LANGS = listOf("Hindi", "Telugu", "Marathi", "Tamil", "Kannada", "Bengali", "Gujarati", "Malayalam")
+private val LANG_NAMES = com.kabir.unlox_hackethon.data.LANGS.map { it.name }
 
-/** 03 Create lesson: the concept, where the facts come from, the languages and how long it should be. */
+/** 03 Create lesson: the concept, where the facts come from (the tutor's knowledge or a PDF of yours), the languages, and how many videos of what length. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CreateLessonScreen(initialConcept: String, onBack: () -> Unit, onSettings: () -> Unit, onGenerate: (LessonRequest) -> Unit) {
     var concept by rememberSaveable { mutableStateOf(initialConcept.ifBlank { "How do vaccines work?" }) }
-    var source by rememberSaveable { mutableIntStateOf(0) }
-    var picked by rememberSaveable { mutableStateOf(setOf("Hindi", "Telugu")) }
+    var source by rememberSaveable { mutableStateOf("knowledge base") }
+    var picked by rememberSaveable { mutableStateOf(setOf("English", "Hindi", "Telugu")) }
     var length by rememberSaveable { mutableIntStateOf(0) }
     var mode by rememberSaveable { mutableIntStateOf(0) }
-    var videos by rememberSaveable { mutableIntStateOf(0) }
+    var videos by rememberSaveable { mutableIntStateOf(1) }
     val modes = listOf("Explanation", "Study", "Homework")
     val counts = listOf("Auto", "1", "2", "3", "5", "8")
-    val lengths = listOf(30, 60, 90)
+    val lengths = listOf(30, 60, 90, 120, 180)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var pdfs by remember { mutableStateOf(com.kabir.unlox_hackethon.data.Graph.pdfs.list()) }
+    val reading = com.kabir.unlox_hackethon.data.Graph.pdfs.reading
+    androidx.compose.runtime.LaunchedEffect(reading.toMap()) { pdfs = com.kabir.unlox_hackethon.data.Graph.pdfs.list() }
+    var addError by remember { mutableStateOf("") }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            runCatching { com.kabir.unlox_hackethon.data.Graph.pdfs.add(uri) }.onSuccess { source = "pdf:${it.id}"; pdfs = com.kabir.unlox_hackethon.data.Graph.pdfs.list(); addError = "" }.onFailure { addError = "That file could not be opened as a PDF." }
+        }
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             IconBtn(R.drawable.ic_arrow_left, "Back", onClick = onBack)
@@ -90,40 +107,59 @@ fun CreateLessonScreen(initialConcept: String, onBack: () -> Unit, onSettings: (
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(U.Surface).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("CONCEPT", style = T.Caption, color = U.TextTertiary)
                 BasicTextField(concept, { concept = it }, textStyle = T.Headline.copy(color = U.TextPrimary), cursorBrush = SolidColor(U.TextPrimary), modifier = Modifier.fillMaxWidth())
-                Text("Or type a chapter or page range, e.g. chapter 4", style = T.Sub, color = U.TextTertiary)
+                Text(if (source.startsWith("pdf:")) "Or a chapter or page range of your PDF, e.g. chapter 4" else "Or type a chapter or page range, e.g. chapter 4", style = T.Sub, color = U.TextTertiary)
             }
             SectionHeader("Source")
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SourceTile("Knowledge base", R.drawable.ic_book, source == 0, Modifier.weight(1f)) { source = 0 }
-                SourceTile("Science 8.pdf", R.drawable.ic_file, source == 1, Modifier.weight(1f)) { source = 1 }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SourceTile("Knowledge base", "Gemma, on this phone", R.drawable.ic_book, source == "knowledge base") { source = "knowledge base" }
+                pdfs.forEach { pdf ->
+                    val done = reading[pdf.id]
+                    SourceTile(pdf.name.removeSuffix(".pdf"), if (done != null) "Reading ${done}/${pdf.pages}" else "${pdf.pages} pages", R.drawable.ic_file, source == "pdf:${pdf.id}") { source = "pdf:${pdf.id}" }
+                }
+                AddTile { pick.launch(arrayOf("application/pdf")) }
             }
-            SectionHeader("Languages", trailing = "English always included")
+            if (addError.isNotEmpty()) Text(addError, style = T.Sub, color = U.Rust)
+            if (source.startsWith("pdf:")) Text("Lessons use the pages that match your topic. With Auto videos and a book that has chapters, each chapter becomes a video.", style = T.Sub, color = U.TextTertiary)
+            SectionHeader("Languages", trailing = "pick at least one")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LANGS.forEach { l -> Chip(l, selected = l in picked) { picked = if (l in picked) picked - l else picked + l } }
+                LANG_NAMES.forEach { l -> Chip(l, selected = l in picked) { picked = if (l in picked) (if (picked.size > 1) picked - l else picked) else picked + l } }
             }
-            SectionHeader("Length")
-            Segmented(lengths.map { "$it s" }, length, { length = it })
-            SectionHeader("How to teach")
-            Segmented(modes, mode, { mode = it })
             SectionHeader("Videos", trailing = "Auto lets the tutor decide")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 counts.forEachIndexed { i, c -> Chip(c, selected = i == videos) { videos = i } }
             }
+            SectionHeader("Length of each video")
+            Segmented(lengths.map { if (it < 120) "$it s" else "${it / 60} min" }, length, { length = it })
+            Text(if (counts[videos] == "1") "One video of ${lengths[length]} seconds." else if (counts[videos] == "Auto") "As many videos as the topic needs, each ${lengths[length]} seconds long." else "${counts[videos]} videos, each ${lengths[length]} seconds long.", style = T.Sub, color = U.TextTertiary)
+            SectionHeader("How to teach")
+            Segmented(modes, mode, { mode = it })
         }
         SwipePill("Swipe to generate", R.drawable.ic_sparkles, U.Accent) {
-            onGenerate(LessonRequest(concept.trim(), listOf("English") + LANGS.filter { it in picked }, lengths[length], if (source == 0) "knowledge base" else "Science 8.pdf", modes[mode], counts[videos]))
+            onGenerate(LessonRequest(concept.trim(), LANG_NAMES.filter { it in picked }, lengths[length], source, modes[mode], counts[videos]))
         }
     }
 }
 
 @Composable
-private fun SourceTile(label: String, icon: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun SourceTile(label: String, sub: String, icon: Int, selected: Boolean, onClick: () -> Unit) {
     Column(
-        modifier.height(112.dp).clip(RoundedCornerShape(28.dp)).background(if (selected) U.Accent else U.Raised).clickable(onClick = onClick).padding(12.dp),
+        Modifier.width(158.dp).height(112.dp).clip(RoundedCornerShape(28.dp)).background(if (selected) U.Accent else U.Raised).clickable(onClick = onClick).padding(12.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        if (selected) IconWell(icon, U.Inverse, 48.dp, 24.dp, U.OnInverse) else IconWell(icon, U.BorderGlass, 48.dp, 24.dp)
-        Text(label, style = T.Body, color = U.TextPrimary, maxLines = 1)
+        if (selected) IconWell(icon, U.Inverse, 40.dp, 20.dp, U.OnInverse) else IconWell(icon, U.BorderGlass, 40.dp, 20.dp)
+        Column { Text(label, style = T.Body, color = U.TextPrimary, maxLines = 1); Text(sub, style = T.Caption, color = U.TextPrimary.copy(alpha = 0.7f), maxLines = 1) }
+    }
+}
+
+/** The plus tile: pick a PDF to make lessons from. */
+@Composable
+private fun AddTile(onClick: () -> Unit) {
+    Column(
+        Modifier.width(112.dp).height(112.dp).clip(RoundedCornerShape(28.dp)).background(U.Surface).border(1.dp, U.BorderGlass, RoundedCornerShape(28.dp)).clickable(onClick = onClick).padding(12.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        IconWell(R.drawable.ic_plus, U.Inverse, 40.dp, 20.dp, U.OnInverse)
+        Text("Add a PDF", style = T.Caption, color = U.TextSecondary)
     }
 }
 

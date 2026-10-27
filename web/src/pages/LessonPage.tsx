@@ -10,6 +10,8 @@ import { preloadMetaverse } from "../components/MetaverseLayer";
 import { NotesPanel } from "../components/NotesPanel";
 import { Pending } from "../components/Pending";
 import { PlayerControls } from "../components/PlayerControls";
+import { TakeAway } from "../components/TakeAway";
+import { TeachBack } from "../components/TeachBack";
 import { Timeline } from "../components/Timeline";
 import { Ui } from "../components/ui-icons";
 import { DotNumber } from "../ds/DotNumber";
@@ -45,6 +47,8 @@ export const LessonPage: React.FC<Props> = (
   const resume = useRef<{ frac: number; playing: boolean } | null>(null);
   const tap = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finished = useRef(false);
+  const followed = useRef("");
+  const stalledAt = useRef<number | null>(null);          // the frame where playback ran out of scenes while more were still being made
 
   const [captions, setCaptions] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -65,13 +69,13 @@ export const LessonPage: React.FC<Props> = (
   useEffect(() => {
     const p = player.current;
     if (!p || !track || !lesson) return;
-    setSceneIndex(0);
-    finished.current = false;
+    const key = `${lesson.id}-${lang}`;
+    if (followed.current !== key) { setSceneIndex(0); finished.current = false; followed.current = key; }      // only when the lesson or language changes, not as scenes are added
     const onFrame = (e: { detail: { frame: number } }) => {
       const t = e.detail.frame / FPS;
       const i = track.scenes.findIndex((s) => t >= s.start_s && t < s.start_s + s.duration_s);
       if (i >= 0) setSceneIndex(i);
-      if (!finished.current && t >= track.duration_s * 0.9) {
+      if (!finished.current && !lesson.building && t >= track.duration_s * 0.9) {
         finished.current = true;
         award({ type: "lesson_complete", lesson_id: lesson.id, lang });
       }
@@ -79,6 +83,20 @@ export const LessonPage: React.FC<Props> = (
     p.addEventListener("frameupdate", onFrame);
     return () => p.removeEventListener("frameupdate", onFrame);
   }, [track, lesson, lang, award]);
+
+  // Playback caught up with the scenes made so far: wait, and carry on by itself when the next scenes arrive.
+  useEffect(() => {
+    const p = player.current;
+    if (!p || !lesson?.building) return;
+    const onEnd = () => { stalledAt.current = frames - 1; };
+    p.addEventListener("ended", onEnd);
+    return () => p.removeEventListener("ended", onEnd);
+  }, [lesson?.building, frames, lesson?.id, lang]);
+  useEffect(() => {
+    const p = player.current;
+    const at = stalledAt.current;
+    if (p && at !== null && frames - 1 > at) { stalledAt.current = null; p.seekTo(at); p.play(); }
+  }, [frames]);
 
   // Continuous flow: when an episode ends, start the next one; if it is still being made, wait and start it when ready.
   useEffect(() => {
@@ -255,6 +273,11 @@ export const LessonPage: React.FC<Props> = (
         <div className="stack">
           <section className="aura green player-card" aria-label="Lesson player">
             <div className="aura-title">{lesson ? "Lesson player" : "Your lesson"}</div>
+            {lesson?.building && track && (
+              <div className="building-note" role="status">
+                <span className="tab-spin" aria-hidden />Playing while it is made · {track.scenes.length} of about {Math.max(lesson.scenes_total ?? 0, track.scenes.length)} scenes ready
+              </div>
+            )}
             {lesson && track && inputProps ? (
               <div ref={frame} className="vp" tabIndex={0} onKeyDown={onKey} aria-label="Lesson video. Space plays or pauses, arrow keys seek.">
                 <div className="vp-screen">
@@ -311,7 +334,7 @@ export const LessonPage: React.FC<Props> = (
         </div>
 
         <div className="stack">
-          {!lesson ? (
+          {!lesson || lesson.building ? (
             <Pending job={generating?.job ?? null} title={playlist ? "Your course is on its way" : "Your lesson is on its way"} />
           ) : (
             <section className="aura pink" aria-label="Downloads">
@@ -335,7 +358,9 @@ export const LessonPage: React.FC<Props> = (
               </div>
             </section>
           )}
+          {lesson && !lesson.building && <TakeAway lesson={lesson} lang={lang} />}
           <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} onMetaQuiz={onMetaQuiz} metaBusy={metaBusy} />
+          {lesson && !lesson.building && <TeachBack lesson={lesson} onSeekScene={(i) => { const s = track?.scenes[i]; if (s) seekPlay(s.start_s); }} />}
           {lesson && track && (
             <>
               <section className="aura orange" aria-label="Build time">

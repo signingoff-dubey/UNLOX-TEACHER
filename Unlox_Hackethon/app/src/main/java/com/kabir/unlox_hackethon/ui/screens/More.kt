@@ -275,7 +275,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val packs = remember { mutableStateMapOf<String, String>() }          // language -> "ready" | "getting" | "failed" | "missing"
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { status = Graph.models.status() }
-        LANGS.filter { it.code != "en" }.forEach { l -> packs[l.code] = if (Graph.translator.packReady(l.code)) "ready" else "missing" }
+        LANGS.filter { it.code != "en" }.forEach { l -> packs[l.code] = if (l.code == "ml") "gemma" else if (Graph.translator.packReady(l.code)) "ready" else "missing" }
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         IconBtn(R.drawable.ic_arrow_left, "Back", onClick = onBack)
@@ -289,12 +289,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LANGS.filter { it.code != "en" }.forEach { l ->
                     val s = packs[l.code] ?: "…"
-                    Chip(when (s) { "ready" -> "${l.name} ✓"; "getting" -> "${l.name} …"; "failed" -> "${l.name} ✕"; else -> "${l.name} ↓" }, selected = s == "ready") {
-                        if (s != "ready" && s != "getting") { packs[l.code] = "getting"; scope.launch { packs[l.code] = if (Graph.translator.downloadPack(l.code)) "ready" else "failed" } }
+                    Chip(when (s) { "ready" -> "${l.name} ✓"; "gemma" -> "${l.name} · by Gemma"; "getting" -> "${l.name} …"; "failed" -> "${l.name} ✕"; else -> "${l.name} ↓" }, selected = s == "ready" || s == "gemma") {
+                        if (s != "ready" && s != "getting" && s != "gemma") { packs[l.code] = "getting"; scope.launch { packs[l.code] = if (Graph.translator.downloadPack(l.code)) "ready" else "failed" } }
                     }
                 }
             }
-            Text("Until a pack is downloaded, Gemma translates instead (slower). A failed download needs an internet connection.", style = T.Sub, color = U.TextTertiary)
+            Text("Until a pack is downloaded, Gemma translates instead (slower). Malayalam has no ML Kit pack, so Gemma always translates it. A failed download needs an internet connection.", style = T.Sub, color = U.TextTertiary)
             SectionHeader("Voice test", trailing = "reads one sentence aloud")
             var voiceNote by remember { mutableStateOf("") }
             SettingRow("Test the voice", voiceNote.ifBlank { "Tap to hear English, then Hindi" }) {

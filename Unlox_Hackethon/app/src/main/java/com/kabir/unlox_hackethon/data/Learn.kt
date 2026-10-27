@@ -93,7 +93,7 @@ class LlmTutor(private val llm: Llm, private val profile: Profile) {
     suspend fun ask(question: String, lesson: Lesson?, lang: String, scene: Int, history: List<Pair<String, String>>): String {
         val code = detectLanguage(question, lang)
         val name = LANGS.first { it.code == code }.name
-        val track = lesson?.track("en")
+        val track = lesson?.planTrack
         val outline = track?.scenes?.mapIndexed { i, s -> "${i + 1}. ${s.heading}: ${s.narration}" }?.joinToString("\n").orEmpty()
         val here = track?.scenes?.getOrNull(scene)
         val system = buildString {
@@ -118,7 +118,7 @@ class LlmTutor(private val llm: Llm, private val profile: Profile) {
 class StudyBuilder(private val llm: Llm, private val store: LessonStore) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
-    private fun context(l: Lesson): String = l.track("en").let { t -> "Lesson \"${t.title}\":\n" + t.scenes.joinToString("\n") { "- ${it.heading}: ${it.narration}" } }
+    private fun context(l: Lesson): String = l.planTrack.let { t -> "Lesson \"${t.title}\":\n" + t.scenes.joinToString("\n") { "- ${it.heading}: ${it.narration}" } }
     private val system = "You make study material from a lesson. Reply with JSON only, no other text. Be accurate and keep every line short."
 
     private suspend inline fun <reified T> make(l: Lesson, kind: String, prompt: String): T {
@@ -130,6 +130,12 @@ class StudyBuilder(private val llm: Llm, private val store: LessonStore) {
             if (parsed != null) { file.writeText(extractJson(reply)!!); return parsed }
         }
         error("The tutor could not make that. Try again.")
+    }
+
+    /** Makes all four tools for a lesson now, one after another, so they are ready when the learner opens them. */
+    suspend fun prebuild(l: Lesson) {
+        runCatching { cards(l) }; runCatching { quiz(l) }; runCatching { notes(l) }; runCatching { mindMap(l) }
+        Trace.mark("study tools ready for ${l.id}")
     }
 
     suspend fun cards(l: Lesson): List<CardT> = make<List<CardT>>(l, "cards", """Make 6 flashcards. JSON: [{"front": "question", "back": "short answer"}]""").filter { it.front.isNotBlank() }

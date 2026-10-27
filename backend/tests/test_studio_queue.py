@@ -49,6 +49,8 @@ def test_ensure_waits_for_the_tool(lesson_dir):
 
 
 def test_urgent_request_jumps_ahead_of_background(lesson_dir, monkeypatch):
+    monkeypatch.setattr(studio, "WORKERS", 1)            # the order only means something with one builder: several take work at once
+    studio._workers.clear()
     order: list[str] = []
     gate = threading.Event()
     real = studio._mock
@@ -74,3 +76,25 @@ def test_background_work_waits_while_a_lesson_is_being_made(lesson_dir, monkeypa
     assert studio.status("L1", "en")["faq"]["state"] == "queued"
     studio.request("L1", "faq")                                       # urgent ignores the wait
     assert wait_for(lambda: studio.status("L1", "en")["faq"]["state"] == "ready")
+
+
+def test_several_tools_are_built_at_the_same_time(lesson_dir, monkeypatch):
+    monkeypatch.setattr(studio, "WORKERS", 3)
+    studio._workers.clear()
+    inside, peak, lock = [0], [0], threading.Lock()
+    real = studio._mock
+
+    def slow_mock(kind, lesson, size):
+        with lock:
+            inside[0] += 1
+            peak[0] = max(peak[0], inside[0])
+        time.sleep(0.3)
+        with lock:
+            inside[0] -= 1
+        return real(kind, lesson, size)
+
+    monkeypatch.setattr(studio, "_mock", slow_mock)
+    for kind in ("flashcards", "quiz", "mindmap"):
+        studio.request("L1", kind)
+    assert wait_for(lambda: all(studio.status("L1", "en")[k]["state"] == "ready" for k in ("flashcards", "quiz", "mindmap")))
+    assert peak[0] >= 2                                                  # they overlapped instead of queueing one behind another

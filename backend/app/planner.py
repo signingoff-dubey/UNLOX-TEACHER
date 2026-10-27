@@ -71,6 +71,8 @@ PAGE_REQUEST = re.compile(r"\b(chapter|ch\.?|unit|lesson|section|page|pages|pp?\
 
 
 MODE_HINTS = {
+    "revise": ("This is a revision lesson for a learner who keeps getting some things wrong. Re-teach those ideas from a different angle, "
+               "with a fresh example, and end with a quiz scene that checks them again."),
     "study": ("This is for studying and revising: name the key terms, give one memory trick or mnemonic, and end with a quiz scene "
               "that tests recall of the most important facts."),
     "homework": ("The student must finish a homework on this. Teach only the concepts needed to solve it, with one worked example in "
@@ -80,8 +82,8 @@ MODE_HINTS = {
 
 def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upload: str | None = None, focus: str = "",
                 on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None,
-                extra: str = "", mode: str = "explain") -> tuple[LessonPlan, list[dict]]:
-    """Returns the lesson plan and the sources it was grounded in.
+                extra: str = "", mode: str = "explain", on_text=None) -> tuple[LessonPlan, list[dict]]:
+    """Returns the lesson plan and the sources it was grounded in. `on_text` hears the plan's JSON as it is written (see streaming.py).
 
     - concept only: search the knowledge base / library.
     - concept + upload: search that PDF first, then the library.
@@ -112,7 +114,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
     for attempt in range(3):
         try:
             try:
-                raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series, extra, mode)
+                raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series, extra, mode, on_text)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
@@ -233,11 +235,14 @@ def _span(pages: list[int]) -> str:
 
 def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
                  context: str = "", on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None,
-                 extra: str = "", mode: str = "explain") -> str:
+                 extra: str = "", mode: str = "explain", on_text=None) -> str:
     words = round(duration_s * wps / 10) * 10                 # spoken words per second of the slowest chosen language
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
                 else "an intermediate learner: assume the basics, add the why and one deeper detail or edge case")
+    from .learner import age_hint
+    if age_hint():
+        audience = f"{audience}. {age_hint()}"
     user = (f"Create a lesson plan that explains: {concept}\n"
             f"Audience: {audience}.\n"
             f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
@@ -269,6 +274,12 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             user += "\nThis is the final episode: finish with a recap and one small challenge."
     if MODE_HINTS.get(mode):
         user += "\n" + MODE_HINTS[mode]
+    if mode == "revise":
+        from .srs import weak_focus
+        user += "\n" + (weak_focus() or "No weak spots are recorded yet, so revise the main ideas of the concept.")
+    if duration_s >= 45:
+        user += ("\nAlso fill common_mistakes with one or two beliefs students often get wrong about this concept, each with the correct fact "
+                 "(wrong: at most 14 words, right: at most 14 words). Leave it empty if there are none.")
     if extra:
         user += "\nThe student attached a photo or a document. This is what it shows (read by a computer, so there may be mistakes):\n" + extra
     if context:
@@ -279,7 +290,13 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
     # No Ollama `format`: constrained decoding made this call 2-4x slower (see llm.py). The schema goes in the prompt instead.
     return llm.stream_chat(
         [{"role": "system", "content": llm.with_schema(SYSTEM_PROMPT, LessonPlan)}, {"role": "user", "content": user}],
-        {"temperature": 0.4}, expected_tokens=max(350, duration_s * 12), on_progress=on_progress)
+        {"temperature": 0.4}, expected_tokens=max(350, duration_s * 12), on_progress=on_progress, on_text=on_text)
+
+
+def scene_target(duration_s: int) -> int:
+    """About how many scenes a lesson of this length has (the planner is asked for this many)."""
+    return 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
+
 
 
 def ollama_generate(prompt: str, max_tokens: int = 512) -> str:

@@ -179,3 +179,41 @@
 **Fix:** every stage has its own real percentage (the plan stage streams Gemma's output); translating and narrating run in parallel; the dial uses the website's steady-progress idea (a clock that may run only 4% ahead of real work)
 **Files Changed:** data/Creator.kt, data/Engines.kt, ui/screens/CreateAndGenerating.kt, ui/UnloxApp.kt
 **Status:** Resolved
+
+## [ISSUE-023] — 2026-10-27
+**Title:** The player waited for the whole lesson (web and phone)
+**Symptom:** nothing could be watched until planning, translation and narration of every scene had finished (25-45 s); the "make the first scene, then keep adding" idea in `docs/plan-long-videos.md` had never been built, only languages one by one
+**Root Cause:** the plan was parsed only when complete, and `lesson.json` was written once at the end
+**Fix:** read the planner's JSON as it streams (`streaming.extract_scenes`), make and publish each finished scene (`ScenePreview`), poll the lesson while `building`, wait at the end of what exists, then swap in the finished lesson. Same on the phone (`StreamScenes.kt`). Scene 1 now plays after about 6 s
+**Files Changed:** backend/app/streaming.py, pipeline.py, planner.py, llm.py, jobs.py, web/src/App.tsx, pages/LessonPage.tsx, Android data/StreamScenes.kt, data/Creator.kt, ui/UnloxApp.kt
+**Status:** Resolved (phone build awaits an on-device test)
+
+---
+
+## [ISSUE-024] — 2026-10-27
+**Title:** Study tools built one after another
+**Symptom:** flashcards, quiz, mind map and the rest appeared one at a time
+**Root Cause:** one worker thread drained the queue
+**Fix:** `STUDIO_WORKERS` (default 3) builder threads; the English version of a tool is written once under a per-key lock
+**Files Changed:** backend/app/studio.py, backend/tests/test_studio_queue.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-025] — 2026-10-27
+**Title:** Teach-back scored off-topic text 60/100
+**Symptom:** a sentence about football covered several lesson points
+**Root Cause:** nomic-embed-text with the search prefix gives unrelated texts cosine 0.5-0.67, above the first threshold
+**Fix:** no prefix, threshold 0.62, chosen from measurements on a real lesson (off-topic max 0.56, paraphrase 0.75)
+**Files Changed:** backend/app/teachback.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-026] — 2026-10-27
+**Title:** PDF tests fail in the full suite, pass alone
+**Symptom:** test_ingest, test_tesseract, test_triage and test_routes_rag raise MemoryError when the whole suite runs
+**Root Cause:** the laptop had about 2 GB RAM free (the backend python process holds 4.8 GB), not a code fault
+**Fix:** none needed; run those files alone (27 passed) or stop the backend first
+**Files Changed:** none
+**Status:** Ongoing (environment)

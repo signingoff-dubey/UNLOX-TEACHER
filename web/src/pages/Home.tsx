@@ -7,7 +7,7 @@ import { useRewards } from "../rewards/RewardsContext";
 import { Dashboard } from "./Dashboard";
 
 export const COUNTS = [0, 1, 2, 3, 5, 8];                  // 0 = Auto: the AI picks one video per concept
-export const MODES: [Mode, string, string][] = [["explain", "Explanation", "Understand it"], ["study", "Study", "Revise for a test"], ["homework", "Homework", "Learn it and get the answers"]];
+export const MODES: [Mode, string, string][] = [["explain", "Explanation", "Understand it"], ["study", "Study", "Revise for a test"], ["homework", "Homework", "Learn it and get the answers"], ["revise", "Revise", "Practise what you got wrong before"]];
 /** Up to 4 minutes. Over 1:30 the backend writes the video in parts (see backend/app/longplan.py). */
 export const LENGTHS: [number, string][] = [[30, "0:30"], [60, "1:00"], [90, "1:30"], [120, "2:00"], [150, "2:30"], [180, "3:00"], [210, "3:30"], [240, "4:00"]];
 const TOPICS: [string, string][] = [
@@ -46,6 +46,7 @@ type Props = {
   onOpenCourse: (id: string) => void;
   onRewards: () => void;
   onLibrary: () => void;
+  onReview?: () => void;
 };
 
 /** The first screen. The prompt box is the hero; scrolling shrinks it into a pinned header (its buttons slide away behind it)
@@ -200,7 +201,7 @@ export const Home: React.FC<Props> = (p) => {
       </section>
 
       <Dashboard recent={p.recent} courses={p.courses} onOpenLesson={p.onOpenLesson} onOpenCourse={p.onOpenCourse}
-        onNew={() => document.getElementById("concept")?.focus()} onRewards={p.onRewards} onLibrary={p.onLibrary} />
+        onNew={() => document.getElementById("concept")?.focus()} onRewards={p.onRewards} onLibrary={p.onLibrary} onReview={p.onReview} />
     </main>
   );
 };

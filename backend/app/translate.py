@@ -83,6 +83,18 @@ def _free_gpu() -> None:
         pass
 
 
+def back_translate(texts: list[str], lang: str) -> list[str] | None:
+    """Translate texts in `lang` back to English with NLLB (None when that model is not the one in use). Only for checking, never shown."""
+    if lang == "en" or config.TRANSLATE_BACKEND != "nllb" or not texts:
+        return None
+    return _NLLB.get().translate(texts, "eng_Latn", beams=2, src=get_lang(lang).flores)
+
+
+def retranslate_with_llm(texts: list[str], lang: str) -> list[str]:
+    """A second opinion from the local language model, for texts the translation model put in the wrong script."""
+    return _ollama_translate_batch(texts, lang)
+
+
 def preload() -> None:
     if config.TRANSLATE_BACKEND == "indictrans2":
         _IndicTrans2.get()
@@ -164,16 +176,20 @@ class _NLLB:
             config.NLLB_MODEL, dtype=torch.float16 if self.device == "cuda" else torch.float32,
         ).to(self.device).eval()
 
-    def translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4) -> list[str]:
+    def translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4, src: str = "eng_Latn") -> list[str]:
         out: list[str] = []
         bos = self.tok.convert_tokens_to_ids(tgt)
-        for i in range(0, len(texts), batch_size):
-            inputs = self.tok(texts[i:i + batch_size], return_tensors="pt", padding=True,
-                              truncation=True, max_length=256).to(self.device)
-            with self.torch.inference_mode():
-                gen = self.model.generate(**inputs, forced_bos_token_id=bos, num_beams=beams,
-                                          max_new_tokens=256, repetition_penalty=1.1)
-            out.extend(t.strip() for t in self.tok.batch_decode(gen, skip_special_tokens=True))
+        self.tok.src_lang = src
+        try:
+            for i in range(0, len(texts), batch_size):
+                inputs = self.tok(texts[i:i + batch_size], return_tensors="pt", padding=True,
+                                  truncation=True, max_length=256).to(self.device)
+                with self.torch.inference_mode():
+                    gen = self.model.generate(**inputs, forced_bos_token_id=bos, num_beams=beams,
+                                              max_new_tokens=256, repetition_penalty=1.1)
+                out.extend(t.strip() for t in self.tok.batch_decode(gen, skip_special_tokens=True))
+        finally:
+            self.tok.src_lang = "eng_Latn"
         return out
 
 

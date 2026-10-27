@@ -11,6 +11,7 @@ import heapq
 import itertools
 import json
 import logging
+import os
 import random
 import re
 import threading
@@ -343,7 +344,8 @@ def _translate(data: Any, lang: str) -> tuple[Any, str]:
 
 # ------------------------------------------------------------------ the build queue
 # Study tools are made in the background as soon as a video exists (low priority, so lesson generation is never slowed),
-# and a tool the learner asks for jumps the queue. One worker: the local model does one thing at a time anyway.
+# and a tool the learner asks for jumps the queue. Several workers build tools at the same time (flashcards, quiz, mind map...
+# overlap), because the model server answers a few requests at once and the translation of one tool overlaps the writing of another.
 ORDER = ("flashcards", "quiz", "mindmap", "studyguide", "glossary", "faq", "timeline")   # most useful first
 DEFAULT_SIZE, DEFAULT_DIFFICULTY = "standard", "medium"
 URGENT, BACKGROUND = 0, 5
@@ -354,8 +356,19 @@ _waiters: dict[Key, threading.Event] = {}
 _heap: list[tuple[int, int, Key]] = []
 _seq = itertools.count()
 _cv = threading.Condition()
-_worker: threading.Thread | None = None
+WORKERS = max(1, int(os.getenv("STUDIO_WORKERS", "3")))
+_workers: list[threading.Thread] = []
+_en_locks: dict[tuple, threading.Lock] = {}
 _prebuilt: set[str] = set()
+
+
+def _ensure_workers() -> None:
+    """Keep WORKERS builder threads alive (called with the queue lock held)."""
+    _workers[:] = [w for w in _workers if w.is_alive()]
+    while len(_workers) < WORKERS:
+        w = threading.Thread(target=_run, name=f"studio-queue-{len(_workers)}", daemon=True)
+        _workers.append(w)                    # listed before it starts: a builder that is not in the list stops
+        w.start()
 
 
 def _path(lesson_id: str, kind: str, lang: str, size: str, difficulty: str):
@@ -392,10 +405,7 @@ def request(lesson_id: str, kind: str, lang: str = "en", size: str = DEFAULT_SIZ
         _state[key] = {"state": "queued", "progress": 0.0, "stage": "Waiting its turn", "error": None, "priority": priority}
         _waiters.setdefault(key, threading.Event()).clear()
         heapq.heappush(_heap, (priority, next(_seq), key))
-        global _worker
-        if _worker is None or not _worker.is_alive():
-            _worker = threading.Thread(target=_run, name="studio-queue", daemon=True)
-            _worker.start()
+        _ensure_workers()
         _cv.notify_all()
         return dict(_state[key])
 
@@ -445,10 +455,10 @@ def ensure(lesson_id: str, kind: str, lang: str = "en", size: str = DEFAULT_SIZE
     return res
 
 
-def _next() -> Key | None:
+def _next(me: threading.Thread | None = None) -> Key | None:
     """The most urgent waiting tool. Background work waits while a lesson or course is being made (they share the model)."""
     with _cv:
-        while True:
+        while me is None or me in _workers:
             while _heap:
                 prio, _, key = _heap[0]
                 s = _state.get(key)
@@ -461,11 +471,13 @@ def _next() -> Key | None:
                 s["state"] = "building"
                 return key
             _cv.wait(timeout=2.0)
+        return None
 
 
 def _run() -> None:
-    while True:
-        key = _next()
+    me = threading.current_thread()
+    while me in _workers:
+        key = _next(me)
         if key is None:
             continue
         lesson_id, kind, lang, size, difficulty = key
@@ -484,14 +496,18 @@ def _build(key: Key) -> None:
     lesson_id, kind, lang, size, difficulty = key
     lesson = load_lesson(lesson_id)
     en_path = _path(lesson_id, kind, "en", size, difficulty)
-    if en_path.exists():
-        data = json.loads(en_path.read_text(encoding="utf-8"))["data"]
-    else:
-        scale = 0.9 if lang == "en" else 0.75
-        data = (_mock(kind, lesson, size) if config.LLM_BACKEND == "mock" else
-                _ask(kind, lesson, size, difficulty, lambda f: _set(key, progress=round(0.02 + f * (scale - 0.02), 3), stage="Writing it from the lesson")))
-        en_path.write_text(json.dumps({"kind": kind, "lang": "en", "size": size, "difficulty": difficulty, "translator": "none", "data": data},
-                                      ensure_ascii=False, indent=1), encoding="utf-8")
+    # The English version is written once even when two workers want it (English and another language of the same tool).
+    with _cv:
+        lock = _en_locks.setdefault((lesson_id, kind, size, difficulty), threading.Lock())
+    with lock:
+        if en_path.exists():
+            data = json.loads(en_path.read_text(encoding="utf-8"))["data"]
+        else:
+            scale = 0.9 if lang == "en" else 0.75
+            data = (_mock(kind, lesson, size) if config.LLM_BACKEND == "mock" else
+                    _ask(kind, lesson, size, difficulty, lambda f: _set(key, progress=round(0.02 + f * (scale - 0.02), 3), stage="Writing it from the lesson")))
+            en_path.write_text(json.dumps({"kind": kind, "lang": "en", "size": size, "difficulty": difficulty, "translator": "none", "data": data},
+                                          ensure_ascii=False, indent=1), encoding="utf-8")
     if lang == "en":
         _set(key, state="ready", progress=1.0, stage="Ready")
         return

@@ -1,7 +1,7 @@
 import { runJob, url } from "./api";
 import type { Job } from "./types";
 
-export type Mode = "study" | "homework" | "explain";
+export type Mode = "study" | "homework" | "explain" | "revise";
 
 /** A photo attached to the prompt. llava reads it in the backend; `topic` is what it found. */
 export type PhotoItem = { key: string; id?: string; name: string; preview: string; status: "reading" | "ready" | "error"; topic?: string; error?: string };

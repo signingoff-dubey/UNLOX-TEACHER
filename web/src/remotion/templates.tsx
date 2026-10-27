@@ -334,6 +334,48 @@ const Quiz: React.FC<TemplateProps> = ({ scene, speechFrames }) => {
   );
 };
 
+/** Boxes and arrows laid out by the backend (layout.py). The arrows draw themselves left to right and the boxes pop up in the order the narrator names them. */
+const Network: React.FC<TemplateProps> = ({ scene, speechFrames }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const nodes = scene.nodes ?? [], edges = scene.edges ?? [], pos = scene.positions ?? [];
+  const n = nodes.length;
+  const X0 = STAGE.left, Y0 = 300, SX = (STAGE.right - STAGE.left) / 1000, SY = (STAGE.bottom - 60 - Y0) / 420;
+  const px = (i: number) => X0 + pos[i][0] * SX, py = (i: number) => Y0 + pos[i][1] * SY;
+  const order = [...nodes.keys()].sort((a, b) => pos[a][0] - pos[b][0] || pos[a][1] - pos[b][1]);      // left to right
+  const rank = (i: number) => order.indexOf(i);
+  const boxW = Math.min(330, (STAGE.right - STAGE.left) / Math.max(...pos.map((p) => p[0]), 1) * 140 + 150);
+  const label = fitAll(nodes, 38, 14, 0.6);
+  return (
+    <>
+      <Heading text={scene.heading} color={C.violet} />
+      <Full>
+        <ArrowDefs />
+        {edges.map((e, k) => {
+          if (!pos[e.src] || !pos[e.dst]) return null;
+          const at = revealFrame(rank(e.dst), n, speechFrames);
+          const [ax, ay, bx, by] = [px(e.src), py(e.src), px(e.dst), py(e.dst)];
+          const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+          const sx = ax + (dx / len) * (boxW / 2 + 6) * (Math.abs(dx) > Math.abs(dy) ? 1 : 0.2), sy = ay + (dy / len) * 44;
+          const ex = bx - (dx / len) * (boxW / 2 + 12) * (Math.abs(dx) > Math.abs(dy) ? 1 : 0.2), ey = by - (dy / len) * 50;
+          return <DrawPath key={k} d={`M${sx} ${sy}L${ex} ${ey}`} p={ease(frame, at - 10, at + 4)} arrow width={6} />;
+        })}
+      </Full>
+      {nodes.map((label_, i) => {
+        if (!pos[i]) return null;
+        const p = pop(frame, fps, revealFrame(rank(i), n, speechFrames));
+        const color = PALETTE[i % PALETTE.length];
+        return (
+          <div key={i} style={{ ...card, position: "absolute", left: px(i) - boxW / 2, top: py(i) - 46, width: boxW, minHeight: 92, padding: "14px 16px",
+            display: "flex", alignItems: "center", justifyContent: "center", borderColor: color, opacity: p, transform: `scale(${0.5 + 0.5 * p})` }}>
+            <div style={{ fontSize: label, fontWeight: 700, color: C.ink, ...centerText }}>{label_}</div>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
 export const TEMPLATES: Record<TemplateName, React.FC<TemplateProps>> = {
   title: TitleCard,
   bullets: (p) => <ListScene {...p} checks={false} />,
@@ -345,4 +387,5 @@ export const TEMPLATES: Record<TemplateName, React.FC<TemplateProps>> = {
   quiz: Quiz,
   graph: GraphScene,
   code: CodeScene,
+  network: Network,
 };

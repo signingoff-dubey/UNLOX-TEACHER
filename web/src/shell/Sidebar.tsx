@@ -10,7 +10,7 @@ import { Wordmark } from "./Wordmark";
 import type { HomeworkMeta } from "../pages/HomeworkPage";
 
 export type SidebarProps = {
-  screen: "home" | "lesson" | "library" | "rewards" | "homework" | "progress" | "settings";
+  screen: "home" | "lesson" | "library" | "rewards" | "homework" | "progress" | "settings" | "profile" | "review";
   homework: HomeworkMeta[];
   onOpenHomework: (id: string) => void;
   recent: LessonSummary[];
@@ -23,6 +23,8 @@ export type SidebarProps = {
   onRewards: () => void;
   onProgress: () => void;
   onSettings: () => void;
+  onProfile: () => void;
+  onReview: () => void;
   onMetaverse: () => void;
   onBaseChange: () => void;
 };
@@ -44,7 +46,9 @@ export const Sidebar: React.FC<SidebarProps> = (p) => {
         <button type="button" className={p.screen === "home" ? "on" : ""} aria-current={p.screen === "home" ? "page" : undefined} onClick={p.onHome}><Glyph name="home" size={18} /><span className="lbl">Home</span></button>
         <button type="button" className={p.screen === "library" ? "on" : ""} aria-current={p.screen === "library" ? "page" : undefined} onClick={p.onLibrary}><Glyph name="library" size={18} /><span className="lbl">Library</span></button>
         <button type="button" className={p.screen === "rewards" ? "on" : ""} aria-current={p.screen === "rewards" ? "page" : undefined} onClick={p.onRewards}><Glyph name="trophy" size={18} /><span className="lbl">Rewards</span></button>
+        <button type="button" className={p.screen === "review" ? "on" : ""} aria-current={p.screen === "review" ? "page" : undefined} onClick={p.onReview}><Glyph name="target" size={18} /><span className="lbl">Review</span></button>
         <button type="button" className={p.screen === "progress" ? "on" : ""} aria-current={p.screen === "progress" ? "page" : undefined} onClick={p.onProgress}><Glyph name="trend" size={18} /><span className="lbl">Progress</span></button>
+        <button type="button" className={p.screen === "profile" ? "on" : ""} aria-current={p.screen === "profile" ? "page" : undefined} onClick={p.onProfile}><Glyph name="star" size={18} /><span className="lbl">Profile</span></button>
         <button type="button" className={p.screen === "settings" ? "on" : ""} aria-current={p.screen === "settings" ? "page" : undefined} onClick={p.onSettings}><Glyph name="settings" size={18} /><span className="lbl">Settings</span></button>
         <button type="button" onClick={p.onMetaverse} onPointerEnter={preloadMetaverse} onFocus={preloadMetaverse}><Glyph name="cube" size={18} /><span className="lbl">Learnverse</span></button>
       </nav>
