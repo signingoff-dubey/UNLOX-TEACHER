@@ -7,7 +7,6 @@ scripts/build_library.py and is read-only here.
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import threading
 from dataclasses import astuple, fields
@@ -16,11 +15,24 @@ from pathlib import Path
 import faiss
 import numpy as np
 
+from ..words import INDIC_MARKS, words
 from .chunker import Chunk
 
 FIELDS = [f.name for f in fields(Chunk)]
-_WORD = re.compile(r"\w+", re.UNICODE)
 NPROBE = 32          # IVF lists searched per query in the library index (recall vs speed)
+MAX_QUERY_TERMS = 12
+
+# unicode61 splits Indic words at vowel signs and viramas (प्रकाश -> प, रक, श). Declaring those combining
+# marks as token characters keeps each word whole.
+FTS_TOKENIZE = f"unicode61 remove_diacritics 0 tokenchars '{INDIC_MARKS}'"
+
+# Very common words carry no topic and make BM25 scan most of a 1M-chunk index.
+STOPWORDS = set("""
+a an and are as at be been but by can could did do does doing for from had has have how i if in into is it
+its me my not of on or our so than that the their them then there these they this to was we were what when
+where which while who whom why will with would you your about explain tell describe define meaning
+है हैं का की के में और से को पर यह वह एक भी तो ही था थी थे कि क्या क्यों कैसे होता होती होते
+""".split())
 
 
 class Collection:
@@ -37,9 +49,8 @@ class Collection:
             CREATE TABLE IF NOT EXISTS chunks (rowid INTEGER PRIMARY KEY, {cols});
             CREATE UNIQUE INDEX IF NOT EXISTS chunks_id ON chunks(chunk_id);
             CREATE INDEX IF NOT EXISTS chunks_section ON chunks(doc_id, section_idx);
-            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-                USING fts5(text, title, tokenize='unicode61 remove_diacritics 0');
         """)
+        self._create_fts()
         meta_file = self.path / "meta.json"
         self.meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {
             "embed_model": getattr(embedder, "name", type(embedder).__name__), "dim": embedder.dim}
@@ -53,6 +64,21 @@ class Collection:
                 faiss.extract_index_ivf(self.index).nprobe = NPROBE
             except RuntimeError:
                 pass
+
+    def _create_fts(self) -> None:
+        self.db.execute(f'CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, title, tokenize="{FTS_TOKENIZE}")')
+        self.db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts_vocab USING fts5vocab(chunks_fts, 'row')")
+        self.db.commit()
+
+    def rebuild_fts(self) -> None:
+        """Recreate the keyword index with the current tokenizer (for collections built before it changed)."""
+        with self._lock:
+            self.db.execute("DROP TABLE IF EXISTS chunks_fts_vocab")
+            self.db.execute("DROP TABLE IF EXISTS chunks_fts")
+            self._create_fts()
+            self.db.execute("INSERT INTO chunks_fts (rowid, text, title) "
+                            "SELECT rowid, text, title || ' ' || section FROM chunks")
+            self.db.commit()
 
     def _save_meta(self) -> None:
         (self.path / "meta.json").write_text(json.dumps(self.meta, indent=1), encoding="utf-8")
@@ -106,7 +132,8 @@ class Collection:
             self._save_index()
 
     def keyword(self, query: str, k: int) -> list[tuple[str, float]]:
-        tokens = list(dict.fromkeys(_WORD.findall(query.lower())))
+        tokens = [t for t in dict.fromkeys(words(query.lower()))
+                  if t not in STOPWORDS and (len(t) > 1 or t.isdigit())][:MAX_QUERY_TERMS]
         if not tokens:
             return []
         match = " OR ".join('"' + t.replace('"', "") + '"' for t in tokens)

@@ -59,3 +59,9 @@ def test_low_agreement_flags_page():
     d = choose(tess(PARA, 50), uni(other), "en")
     assert d.low_confidence is True
     assert agreement(PARA, other) < 0.6
+
+
+def test_lexicon_hit_rate_counts_whole_indic_words():
+    from app.ocr.arbiter import lexicon_hit_rate
+    assert lexicon_hit_rate("प्रकाश संश्लेषण", {"प्रकाश", "संश्लेषण"}) == 1.0
+    assert lexicon_hit_rate("प्रकाश xyz", {"प्रकाश"}) == 0.5

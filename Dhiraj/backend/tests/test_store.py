@@ -78,3 +78,32 @@ def test_re_adding_chunk_replaces_old_vector(col):
     assert col.index.ntotal == 3
     assert col.keyword("mitochondria", 5) == []
     assert col.get(["d:0:0"])[0].text.startswith("Gravity")
+
+
+def test_fts_keeps_indic_words_whole(tmp_path):
+    c = Collection(tmp_path / "hi", FakeEmbedder())
+    c.add([mk(0, "प्रकाश संश्लेषण पौधों में होता है"), mk(1, "प्रकाश की गति बहुत तेज होती है")])
+    terms = {r[0] for r in c.db.execute("SELECT term FROM chunks_fts_vocab")}
+    assert {"प्रकाश", "संश्लेषण"} <= terms
+    assert c.keyword("संश्लेषण", 5)[0][0] == "d:0:0"
+    assert [cid for cid, _ in c.keyword("संश्लेषण", 5)] == ["d:0:0"]
+
+
+def test_keyword_ignores_stopwords(col):
+    assert col.keyword("why do we have the", 5) == []
+    assert col.keyword("why does the cell need mitochondria", 5)[0][0] == "d:0:0"
+
+
+def test_rebuild_fts_upgrades_old_tokenizer(tmp_path):
+    import sqlite3
+    path = tmp_path / "old"
+    path.mkdir()
+    db = sqlite3.connect(path / "chunks.sqlite")
+    db.execute("CREATE VIRTUAL TABLE chunks_fts USING fts5(text, title, tokenize='unicode61 remove_diacritics 0')")
+    db.commit()
+    db.close()
+    c = Collection(path, FakeEmbedder())
+    c.add([mk(0, "प्रकाश संश्लेषण")])
+    c.rebuild_fts()
+    assert [cid for cid, _ in c.keyword("संश्लेषण", 5)] == ["d:0:0"]
+    assert "tokenchars" in c.db.execute("SELECT sql FROM sqlite_master WHERE name='chunks_fts'").fetchone()[0]
