@@ -21,14 +21,34 @@ LESSONS_DIR = config.MEDIA_DIR / "lessons"
 Progress = Callable[[str, float], None]
 
 
-def build_lesson(concept: str, languages: list[str], progress: Progress = lambda s, p: None) -> dict:
+def build_lesson(concept: str, languages: list[str], upload: str | None = None, focus: str = "",
+                 progress: Progress = lambda s, p: None) -> dict:
+    """Builds a lesson. With `upload` (a PDF's sha), facts come from that PDF first; with an empty
+    concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
+    # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
+    # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
+    with _gpu_slot():
+        return _build(concept, languages, upload, focus, progress)
+
+
+def _gpu_slot():
+    try:
+        from .gpu import big_slot
+        return big_slot.hold("planner", urgent=True)
+    except ImportError:                                   # OCR extras not installed
+        import contextlib
+        return contextlib.nullcontext()
+
+
+def _build(concept: str, languages: list[str], upload: str | None, focus: str, progress: Progress) -> dict:
     t0 = time.perf_counter()
     langs = list(dict.fromkeys(["en", *languages]))          # English is always included
     for code in langs:
         get_lang(code)                                        # validate early
 
-    progress("Finding facts and planning the lesson", 0.05)
-    plan, sources = plan_lesson(concept)
+    progress("Reading the PDF and planning the lesson" if upload else "Finding facts and planning the lesson", 0.05)
+    plan, sources = plan_lesson(concept, upload=upload, focus=focus)
+    note = source_note(sources)
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]
@@ -45,12 +65,15 @@ def build_lesson(concept: str, languages: list[str], progress: Progress = lambda
         progress(f"Recording {get_lang(code).name} narration", base + step * 0.4)
         tracks[code] = _narrate(scenes, code)
         tracks[code]["translator"] = translator
+        tracks[code]["source_note"] = note
         timings[f"{code}_s"] = round(time.perf_counter() - t1, 2)
         (out_dir / f"captions_{code}.srt").write_text(_track_srt(tracks[code]), encoding="utf-8")
 
     lesson = {
         "id": lesson_id,
-        "concept": concept,
+        "concept": concept or (f"{focus} (PDF)" if focus else plan.title),
+        "upload": upload,
+        "focus": focus,
         "created": int(time.time()),
         "languages": tracks,
         "sources": sources,
@@ -110,6 +133,19 @@ def _narrate(translated: tuple[str, list[dict]], lang: str) -> dict:
         "duration_s": round(start, 3),
         "tts_engines": sorted(engines),
     }
+
+
+def source_note(sources: list[dict]) -> str:
+    """One short citation line for the recap scene, e.g. "Source: Science 8, Ch 3, pp. 41–44"."""
+    if not sources:
+        return ""
+    top = sources[0]
+    if top.get("source") == "upload" or str(top.get("url", "")).startswith("upload:"):
+        where = f"{top['title']}, {top['section']}" if top.get("section") else top["title"]
+        return f"Source: {where}"
+    names = [s["title"] for s in sources[:3]]
+    site = "Wikipedia" if "wikipedia" in str(top.get("source", "")) else top.get("source", "")
+    return f"Sources: {', '.join(names)}" + (f" ({site})" if site else "")
 
 
 def _track_srt(track: dict) -> str:

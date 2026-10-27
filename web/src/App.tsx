@@ -7,6 +7,7 @@ import { FPS, H, W } from "./remotion/theme";
 import { StatusPanel } from "./components/StatusPanel";
 import { SceneList } from "./components/SceneList";
 import { History } from "./components/History";
+import { PdfUpload } from "./components/PdfUpload";
 
 const EXAMPLES = ["Photosynthesis", "The water cycle", "Newton's third law", "How a rainbow forms", "Fractions"];
 const DEFAULT_LANGS = ["hi", "te"];
@@ -23,6 +24,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [sceneIndex, setSceneIndex] = useState(0);
   const [assetBase, setAssetBase] = useState(getApiBase());
+  const [upload, setUpload] = useState<string | null>(null);
+  const [focus, setFocus] = useState("");
   const player = useRef<PlayerRef>(null);
 
   const loadLists = useCallback(() => {
@@ -51,12 +54,15 @@ export default function App() {
 
   const busy = job?.status === "queued" || job?.status === "running";
 
+  const canGenerate = !busy && (concept.trim().length >= 2 || !!upload);
+
   async function generate(topic = concept) {
-    if (!topic.trim() || busy) return;
+    if (busy || (topic.trim().length < 2 && !upload)) return;
     setConcept(topic);
     setError("");
     try {
-      const done = await runJob(api<Job>("/api/lessons", { concept: topic, languages: selected }), setJob);
+      const body = { concept: topic.trim(), languages: selected, upload, focus: upload ? focus.trim() : "" };
+      const done = await runJob(api<Job>("/api/lessons", body), setJob);
       const l = done.result as Lesson;
       setLesson(l);
       setExports({});
@@ -120,10 +126,14 @@ export default function App() {
             <label htmlFor="concept" className="label">What do you want to learn?</label>
             <div className="ask">
               <input id="concept" value={concept} onChange={(e) => setConcept(e.target.value)}
-                placeholder="e.g. Photosynthesis" autoComplete="off" disabled={busy} maxLength={200} />
-              <button type="submit" disabled={busy || !concept.trim()}>{busy ? "Creating…" : "Create lesson"}</button>
+                placeholder={upload ? "Optional: a topic in this PDF, or leave empty" : "e.g. Photosynthesis"}
+                autoComplete="off" disabled={busy} maxLength={200} />
+              <button type="submit" disabled={!canGenerate}>
+                {busy ? "Creating…" : upload && !concept.trim() ? "Create lesson from PDF" : "Create lesson"}
+              </button>
             </div>
           </form>
+          <PdfUpload sha={upload} onSha={setUpload} focus={focus} onFocus={setFocus} disabled={busy} />
           <div className="examples">
             {EXAMPLES.map((ex) => (
               <button key={ex} className="chip" disabled={busy} onClick={() => generate(ex)}>{ex}</button>
@@ -236,9 +246,11 @@ export default function App() {
                   {lesson.sources?.length ? (
                     <ul className="sources">
                       {lesson.sources.map((s) => (
-                        <li key={s.title}>
-                          {s.url ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a> : <span>{s.title}</span>}
-                          <span className="muted">{s.source}</span>
+                        <li key={s.title + (s.section ?? "")}>
+                          {/^https?:/.test(s.url)
+                            ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a>
+                            : <span className="src-title">{s.title}</span>}
+                          <span className="muted">{s.section || (s.source === "upload" ? "your PDF" : s.source)}</span>
                         </li>
                       ))}
                     </ul>

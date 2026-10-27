@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import requests
 from pydantic import ValidationError
 
 from . import config
-from .knowledge import Passage, retrieve
+from .knowledge import Passage, pages_passages, retrieve
 from .schema import ICONS, LessonPlan, ScenePlan, normalize
 
 log = logging.getLogger(__name__)
@@ -44,13 +45,32 @@ Rules:
 - Write everything in English (it is translated later)."""
 
 
-def plan_lesson(concept: str) -> tuple[LessonPlan, list[dict]]:
-    """Returns the lesson plan and the knowledge-base sources it was grounded in."""
+PAGE_REQUEST = re.compile(r"\b(chapter|ch\.?|unit|lesson|section|page|pages|pp?\.)\s*\d", re.I)
+
+
+def plan_lesson(concept: str, upload: str | None = None, focus: str = "") -> tuple[LessonPlan, list[dict]]:
+    """Returns the lesson plan and the sources it was grounded in.
+
+    - concept only: search the knowledge base / library.
+    - concept + upload: search that PDF first, then the library.
+    - upload with no concept, a `focus`, or a concept like "explain chapter 4": teach that part of
+      the PDF from its passages in reading order."""
     if config.LLM_BACKEND == "mock":
         return normalize(sample_plan()), []
-    passages = retrieve(concept)
-    sources = _sources(passages)
-    reference = _reference_block(passages)
+    page_mode = bool(upload) and (not concept or bool(focus) or bool(PAGE_REQUEST.search(concept)))
+    passages: list[Passage] = []
+    if page_mode:
+        passages = pages_passages(upload, focus or (concept if PAGE_REQUEST.search(concept) else ""))
+    if not passages:
+        page_mode = False
+        passages = retrieve(concept or focus, upload=upload)
+    sources = _page_sources(passages) if page_mode else _sources(passages)
+    reference = _condensed_block(passages) if page_mode else _reference_block(passages)
+    if page_mode:
+        book = passages[0].title
+        part = focus or (concept if PAGE_REQUEST.search(concept) else "") or passages[0].section or "this chapter"
+        concept = f"the main ideas of {part} from the textbook \"{book}\"" + (f" ({concept})" if concept and
+                                                                               not PAGE_REQUEST.search(concept) else "")
     last_error = ""
     best: LessonPlan | None = None
     for attempt in range(3):
@@ -116,11 +136,45 @@ def _reference_block(passages: list[Passage], budget: int = 4000) -> str:
     return "\n\n".join(parts)
 
 
+def _condensed_block(passages: list[Passage], budget: int = 9000) -> str:
+    """A whole chapter can be 80 passages (~50k characters). Keep reading order and coverage:
+    sample evenly if there are too many, then trim each passage at a sentence boundary."""
+    per_min = 280
+    if len(passages) * per_min > budget:
+        n = budget // per_min
+        step = len(passages) / n
+        passages = [passages[int(i * step)] for i in range(n)]
+    per = max(per_min, budget // max(len(passages), 1))
+    parts = []
+    for p in passages:
+        text = p.text if len(p.text) <= per else p.text[:per].rsplit(". ", 1)[0] + "."
+        parts.append(f"[{p.section or p.title}] {text}")
+    return "\n\n".join(parts)
+
+
 def _sources(passages: list[Passage]) -> list[dict]:
     out: dict[str, dict] = {}
     for p in passages:
-        out.setdefault(p.title, {"title": p.title, "url": p.url, "source": p.source, "score": p.score})
+        out.setdefault(p.title, {"title": p.title, "section": p.section, "url": p.url,
+                                 "source": p.source, "score": p.score})
     return list(out.values())
+
+
+def _page_sources(passages: list[Passage]) -> list[dict]:
+    """One source for a page-range lesson: the book, its chapter and the full page span."""
+    pages: set[int] = set()
+    for p in passages:
+        if m := re.search(r"#page=(\d+)", p.url):
+            pages.add(int(m.group(1)))
+        if m := re.search(r"pp?\.\s*(\d+)(?:\s*[–-]\s*(\d+))?", p.section):   # "pp. 214–219" carries the end page
+            pages.update(int(x) for x in m.groups() if x)
+    pages = sorted(pages)
+    first = passages[0]
+    chapter = re.sub(r",?\s*pp?\.\s*[\d–-]+$", "", first.section).strip(", ")
+    span = (f"p. {pages[0]}" if len(pages) == 1 or pages[0] == pages[-1] else f"pp. {pages[0]}–{pages[-1]}") \
+        if pages else ""
+    section = ", ".join(x for x in (chapter, span) if x)
+    return [{"title": first.title, "section": section, "url": first.url, "source": first.source, "score": 1.0}]
 
 
 def _ollama_chat(concept: str, previous_error: str, reference: str = "") -> str:

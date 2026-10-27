@@ -1,4 +1,5 @@
-"""Tiny in-process job queue. One worker, so the GPU only ever runs one job at a time."""
+"""Tiny in-process job queues. Lessons and exports share one worker (one GPU job at a time);
+PDF uploads get their own worker so a long OCR pass never delays a lesson."""
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,8 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
-_pool = ThreadPoolExecutor(max_workers=1)
+_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lesson")
+_upload_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload")
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
@@ -35,7 +37,7 @@ def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
             log.error("Job %s failed:\n%s", job_id, traceback.format_exc())
             job.update(status="error", error=f"{type(e).__name__}: {e}")
 
-    _pool.submit(run)
+    (_upload_pool if kind == "upload" else _pool).submit(run)
     return job
 
 

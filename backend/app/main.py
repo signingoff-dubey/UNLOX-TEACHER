@@ -13,8 +13,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, jobs, knowledge, translate, tts
+from . import config, jobs, knowledge, routes_rag, translate, tts
 from .exporter import export_mp4
+from .ocr.ingest import upload_status
 from .languages import LANGUAGES
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
@@ -41,11 +42,16 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Visual Teacher", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+app.include_router(routes_rag.router)        # PDF uploads + OCR status + hybrid search
 
 
 class LessonRequest(BaseModel):
-    concept: str = Field(min_length=2, max_length=200)
+    # Either a concept, or an uploaded PDF (upload=<sha>) with an optional focus such as
+    # "chapter 4" or "pages 120-135". A concept plus a PDF searches that PDF first.
+    concept: str = Field("", max_length=200)
     languages: list[str] = ["hi", "te"]
+    upload: str | None = Field(None, pattern=r"^[0-9a-f]{16}$")
+    focus: str = Field("", max_length=100)
 
 
 class ExportRequest(BaseModel):
@@ -89,7 +95,12 @@ def create_lesson(req: LessonRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    return jobs.submit("lesson", build_lesson, req.concept.strip(), req.languages)
+    concept = req.concept.strip()
+    if len(concept) < 2 and not req.upload:
+        raise HTTPException(400, "Type a concept, or attach a PDF")
+    if req.upload and upload_status(req.upload) is None:
+        raise HTTPException(404, "That PDF upload was not found")
+    return jobs.submit("lesson", build_lesson, concept, req.languages, req.upload, req.focus.strip())
 
 
 @app.get("/api/jobs/{job_id}")

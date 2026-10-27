@@ -27,6 +27,17 @@ Lessons are grounded in an offline knowledge base, so facts come from a source a
 
 Wikipedia text is CC BY-SA 4.0. The articles are downloaded during setup, not stored in this repo, and each lesson links to the articles it used.
 
+## Lessons from your own PDF
+
+Attach a textbook or notes PDF (up to 2 GB / 5,000 pages) in the UI, or `POST /api/uploads`. Digital pages are read directly. Scanned pages go through **Tesseract** (~85 pages/min) and then, when the GPU is idle, a higher-accuracy **Unlimited-OCR** pass that always gives way to lesson generation.
+
+- **Concept + PDF:** "photosynthesis" searches the PDF first, then the knowledge base.
+- **Chapter or pages:** leave the concept empty and type `chapter 4` or `pages 120-135` as the focus, or type "explain chapter 4" as the concept. The lesson teaches that part of the book in reading order, condensed to fit the prompt.
+- The recap scene shows a citation such as `Source: Science 8, Chapter 2, pp. 41–44`.
+- Uploads run on their own job queue, so a long OCR run never delays a lesson.
+
+Design: `docs/superpowers/specs/2026-10-27-rag-ocr-design.md`. Code: `backend/app/ocr/`, `backend/app/rag/`, `backend/app/routes_rag.py`.
+
 ## Quick start (Windows, PowerShell)
 
 ```powershell

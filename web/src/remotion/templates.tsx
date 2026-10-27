@@ -4,7 +4,7 @@ import type { Scene, TemplateName } from "../types";
 import { Icon } from "./icons";
 import { C, PALETTE, STAGE, W, ease, fit, fitAll, pop, revealFrame } from "./theme";
 
-export type TemplateProps = { scene: Scene; speechFrames: number; lessonTitle: string };
+export type TemplateProps = { scene: Scene; speechFrames: number; lessonTitle: string; sourceNote?: string };
 
 const card: React.CSSProperties = {
   background: C.card,
@@ -82,7 +82,7 @@ const TitleCard: React.FC<TemplateProps> = ({ scene, lessonTitle }) => {
   );
 };
 
-const ListScene: React.FC<TemplateProps & { checks: boolean }> = ({ scene, speechFrames, checks }) => {
+const ListScene: React.FC<TemplateProps & { checks: boolean }> = ({ scene, speechFrames, checks, sourceNote }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const n = scene.items.length;
@@ -116,6 +116,13 @@ const ListScene: React.FC<TemplateProps & { checks: boolean }> = ({ scene, speec
         transform: `rotate(${Math.sin(frame / 20) * 4}deg)` }}>
         <Icon name={scene.icon} size={260} />
       </div>
+      {checks && sourceNote && (
+        <div style={{ position: "absolute", left: STAGE.left + 40, right: STAGE.left, top: 800,
+          fontSize: 26, fontWeight: 600, color: C.muted, opacity: ease(frame, 20, 40),
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {sourceNote}
+        </div>
+      )}
     </>
   );
 };
