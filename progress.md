@@ -37,4 +37,4 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
-| 2053634 | 2026-10-27 | Project setup: docs, lesson schema, Revideo frontend scaffold, fonts |
+| 1cb5b0d | 2026-10-27 | Project setup: docs, lesson schema, Revideo frontend scaffold, fonts |
