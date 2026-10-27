@@ -6,6 +6,8 @@ models/
 media/
 web/node_modules/
 web/dist/
+metaverse/node_modules/
+metaverse/dist/
 web/.remotion-bundle/
 web/public/fonts/
 .impeccable/

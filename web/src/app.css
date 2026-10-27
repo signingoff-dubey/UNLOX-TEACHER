@@ -204,3 +204,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .layout { grid-template-columns: 1fr; }
   .tag { display: none; }
 }
+
+/* Metaverse entry point: additive, does not touch the existing layout. */
+.top-right { display: flex; align-items: center; gap: 14px; }
+.metaverse-btn { padding: 8px 14px; background: transparent; cursor: pointer; }
+.mv-overlay { position: fixed; inset: 0; z-index: 1000; background: #0e0a24; }
+.mv-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #fff2e3; font-weight: 700; }
