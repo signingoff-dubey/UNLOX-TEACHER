@@ -333,6 +333,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 2dacea8 | 2026-10-28 | v0.14.4: PDF Markdown pipeline, font checks, llava for PDF pictures, caching and pre-warming |
 | e7f578e | 2026-10-28 | v0.14.3: ask the chat for another video, every course episode streams |
 | ea3b050 | 2026-10-27 | v0.14.2: 5 video course no longer hangs the laptop, GPU errors fall back to CPU, long videos and episode 1 stream, autoplay fixed |
 | fd03bb2 | 2026-10-27 | v0.14.1: Learnverse AI worlds with a building screen, gates open by themselves, jump, saved points and purchases, home plus button aligned |
