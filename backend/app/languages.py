@@ -44,3 +44,25 @@ def get(code: str) -> Language:
         return LANGUAGES[code]
     except KeyError:
         raise ValueError(f"Unsupported language '{code}'. Choose from: {', '.join(LANGUAGES)}")
+
+
+# Unicode blocks of the scripts used here. Devanagari is Hindi or Marathi; the learner's current language settles which.
+_SCRIPTS = [(0x0900, 0x097F, "hi"), (0x0980, 0x09FF, "bn"), (0x0A80, 0x0AFF, "gu"), (0x0B80, 0x0BFF, "ta"),
+            (0x0C00, 0x0C7F, "te"), (0x0C80, 0x0CFF, "kn"), (0x0D00, 0x0D7F, "ml")]
+
+
+def detect_text_language(text: str, prefer: str = "en") -> str:
+    """The language a typed message is written in, from its script: Telugu letters -> "te". Latin letters -> "en"."""
+    counts: dict[str, int] = {}
+    for ch in text:
+        o = ord(ch)
+        for lo, hi, code in _SCRIPTS:
+            if lo <= o <= hi:
+                counts[code] = counts.get(code, 0) + 1
+                break
+    if not counts:
+        return "en"
+    best = max(counts, key=counts.get)
+    if best == "hi" and prefer == "mr":
+        return "mr"
+    return best if best in LANGUAGES else "en"

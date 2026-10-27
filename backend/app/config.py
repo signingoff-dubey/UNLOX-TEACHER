@@ -77,7 +77,7 @@ STT_DEVICE = os.getenv("STT_DEVICE", "auto")      # "cpu" to keep speech recogni
 
 DEVICE = os.getenv("DEVICE", "auto")                 # auto | cuda | cpu
 # Load translation + TTS models at startup so the first lesson is fast.
-PRELOAD = os.getenv("PRELOAD", "0") == "1"
+PRELOAD = os.getenv("PRELOAD", "1") == "1"        # warm the models in the background at start-up (the first question is not slow)
 # Origins allowed to call the API from another device/port ("*" = any).
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 SCENE_PADDING_S = float(os.getenv("SCENE_PADDING_S", "0.5"))

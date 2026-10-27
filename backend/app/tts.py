@@ -234,9 +234,15 @@ def preload() -> None:
                 _piper("ok", code, AUDIO_DIR / "_warmup.wav")
             except EngineUnavailable:
                 pass
+    for code in LANGUAGES:                          # languages without a Piper voice use the Indic ONNX voices
+        if code in config.TTS_PREFER_INDIC or not get_lang(code).piper_voice:
+            try:
+                _indic("ok", code, AUDIO_DIR / "_warmup.wav")
+            except Exception as e:  # noqa: BLE001
+                log.info("Indic voice for %s not warmed: %s", code, e)
     if "parler" in (config.TTS_ENGINE, config.TTS_FALLBACK):
         try:
             _Parler.get()
-        except EngineUnavailable as e:
-            log.warning("Parler not loaded: %s", e)
+        except Exception as e:  # noqa: BLE001  EngineUnavailable, or the model is not downloaded and the machine is offline
+            log.warning("Parler not loaded: %s", str(e)[:120])
     (AUDIO_DIR / "_warmup.wav").unlink(missing_ok=True)

@@ -156,6 +156,21 @@ export default function App() {
   };
   const removePhoto = (key: string) => setPhotos((cur) => { cur.filter((x) => x.key === key).forEach((x) => URL.revokeObjectURL(x.preview)); return cur.filter((x) => x.key !== key); });
 
+  // The other languages of a lesson are made one by one after the first is ready: poll until each has arrived.
+  const pendingCount = lesson?.pending?.length ?? 0;
+  const lessonId = lesson?.id;
+  useEffect(() => {
+    if (!lessonId || !pendingCount) return;
+    const t = setInterval(() => {
+      api<Lesson>(`/api/lessons/${lessonId}`).then((fresh) => setLesson((cur) => {
+        if (!cur || cur.id !== fresh.id) return cur;
+        // Keep the track objects the player already has, so a new language does not restart the video.
+        return { ...fresh, languages: Object.fromEntries(Object.entries(fresh.languages).map(([k, v]) => [k, cur.languages[k] ?? v])) };
+      })).catch(() => undefined);
+    }, 2500);
+    return () => clearInterval(t);
+  }, [lessonId, pendingCount]);
+
   const busy = job?.status === "queued" || job?.status === "running";
 
   async function create(topic = concept) {

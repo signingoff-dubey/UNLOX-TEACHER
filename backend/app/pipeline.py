@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import threading
 import time
 import uuid
 from typing import Callable
@@ -27,14 +28,14 @@ Progress = Callable[[str, float], None]
 
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
                  documents: list[str] | None = None, series: dict | None = None, focus: str = "",
-                 images: list[str] | None = None, mode: str = "explain",
+                 images: list[str] | None = None, mode: str = "explain", progressive: bool = False,
                  progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
     """Builds a lesson. `documents` holds uploaded PDFs (their sha): facts come from the first one before the
     library; with an empty concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
     # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
     # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
     with _gpu_slot():
-        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus, images or [], mode)
+        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus, images or [], mode, progressive)
 
 
 def _gpu_slot():
@@ -47,7 +48,7 @@ def _gpu_slot():
 
 
 def _build(concept: str, languages: list[str], level: str, duration_s: int, documents: list[str],
-           series: dict | None, progress: Progress, focus: str, images: list[str], mode: str) -> dict:
+           series: dict | None, progress: Progress, focus: str, images: list[str], mode: str, progressive: bool) -> dict:
     upload = documents[0] if documents else None
     extra = vision.context(images)                            # what the attached photos show (read earlier by llava)
     if not concept.strip() and not documents and extra:
@@ -81,41 +82,60 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     out_dir = LESSONS_DIR / lesson_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Stage A: translate every language (one shared model, so one after another).
-    translated: dict[str, tuple] = {}
-    t_translate: dict[str, float] = {}
-    for i, code in enumerate(langs):
-        name = get_lang(code).name
-        progress(f"Translating to {name}" if code != "en" else "Preparing English", 0.60 + 0.12 * i / len(langs))
+    note = source_note(sources)
+
+    def make_track(code: str, report=lambda f: None) -> tuple[dict, float]:
+        """One language: translate every string, then record the voice. Returns the track and the seconds it took."""
         t1 = time.perf_counter()
-        translated[code] = _translated_scenes(plan, code)
-        t_translate[code] = time.perf_counter() - t1
-
-    # Stage B: record the voices of all languages at the same time (voices run on CPU, one per language).
-    done_frac = {code: 0.0 for code in langs}
-
-    def narrate_one(code: str) -> tuple[str, dict, float]:
-        name = get_lang(code).name
-
-        def report(f: float) -> None:
-            done_frac[code] = f
-            progress(f"Recording {name} narration", 0.72 + 0.26 * sum(done_frac.values()) / len(langs))
-
-        t2 = time.perf_counter()
-        scenes, translator = translated[code]
+        scenes, translator = _translated_scenes(plan, code)
         # Untranslated text must not be read by a Hindi voice (English words with a Hindi accent): use the English voice.
         track = _narrate(scenes, code, report, voice_lang="en" if translator == "untranslated" else code)
         track["translator"] = translator
         track["source_note"] = note
-        return code, track, time.perf_counter() - t2
+        (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
+        return track, time.perf_counter() - t1
 
+    first, rest = (langs[:1], langs[1:]) if progressive else (langs, [])
     tracks: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=min(len(langs), 4)) as pool:
-        for code, track, secs in pool.map(narrate_one, langs):
-            tracks[code] = track
-            timings[f"{code}_s"] = round(t_translate[code] + secs, 2)
-            (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
-    tracks = {code: tracks[code] for code in langs}          # keep the order the learner picked
+    if len(first) == 1:
+        code = first[0]
+        name = get_lang(code).name
+        progress(f"Translating to {name}" if code != "en" else "Preparing English", 0.60)
+        tracks[code], timings[f"{code}_s"] = make_track(
+            code, lambda f: progress(f"Recording {name} narration", 0.62 + 0.36 * f))
+        timings[f"{code}_s"] = round(timings[f"{code}_s"], 2)
+    else:
+        # A course episode: every language now (the translation model is shared, so one after another; the voices overlap).
+        translated: dict[str, tuple] = {}
+        t_translate: dict[str, float] = {}
+        for i, code in enumerate(langs):
+            name = get_lang(code).name
+            progress(f"Translating to {name}" if code != "en" else "Preparing English", 0.60 + 0.12 * i / len(langs))
+            t1 = time.perf_counter()
+            translated[code] = _translated_scenes(plan, code)
+            t_translate[code] = time.perf_counter() - t1
+        done_frac = {code: 0.0 for code in langs}
+
+        def narrate_one(code: str) -> tuple[str, dict, float]:
+            name = get_lang(code).name
+
+            def report(f: float) -> None:
+                done_frac[code] = f
+                progress(f"Recording {name} narration", 0.72 + 0.26 * sum(done_frac.values()) / len(langs))
+
+            t2 = time.perf_counter()
+            scenes, translator = translated[code]
+            track = _narrate(scenes, code, report, voice_lang="en" if translator == "untranslated" else code)
+            track["translator"] = translator
+            track["source_note"] = note
+            return code, track, time.perf_counter() - t2
+
+        with ThreadPoolExecutor(max_workers=min(len(langs), 4)) as pool:
+            for code, track, secs in pool.map(narrate_one, langs):
+                tracks[code] = track
+                timings[f"{code}_s"] = round(t_translate[code] + secs, 2)
+                (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
+        tracks = {code: tracks[code] for code in langs}          # keep the order the learner picked
 
     lesson = {
         "id": lesson_id,
@@ -128,6 +148,9 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         "series": series,                             # set when this lesson is an episode of a playlist
         "review": review_notes,
         "languages": tracks,
+        "pending": [{"code": c, "name": get_lang(c).name, "native": get_lang(c).native} for c in rest],   # still being made, one by one
+        "failed": [],
+        "order": langs,
         "sources": sources,
         "timings": timings,
         "videos": {},
@@ -138,9 +161,45 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         studio.prebuild(lesson_id)             # flashcards, quiz, mind map... are written in the background from now on
     except Exception:  # noqa: BLE001  never let study tools break a finished lesson
         log.warning("could not queue the study tools for %s", lesson_id, exc_info=True)
+    if rest:
+        from . import jobs
+        jobs.submit("langs", finish_languages, lesson_id, rest, make_track)      # the learner can already watch the first language
     progress("Ready", 1.0)
     log.info("Lesson %s built in %.1fs %s", lesson_id, time.perf_counter() - t0, timings)
     return lesson
+
+
+_lesson_lock = threading.Lock()
+
+
+def finish_languages(lesson_id: str, codes: list[str], make_track, progress: Progress = lambda s, p: None) -> dict:
+    """The other languages of a lesson, one by one: each is added to lesson.json as soon as it is ready, so the page shows it
+    right away. Translation (GPU, shared model) runs ahead while the previous language's voice is still being recorded."""
+    def add(code: str, track: dict | None, secs: float, error: str = "") -> None:
+        with _lesson_lock:
+            lesson = load_lesson(lesson_id)
+            lesson["pending"] = [p for p in lesson.get("pending", []) if p["code"] != code]
+            if track is not None:
+                lesson["languages"][code] = track
+                lesson["languages"] = {c: lesson["languages"][c] for c in lesson.get("order", []) if c in lesson["languages"]}
+                lesson["timings"][f"{code}_s"] = round(secs, 2)
+            else:
+                lesson.setdefault("failed", []).append({"code": code, "name": get_lang(code).name, "error": error})
+            save_lesson(lesson)
+
+    def one(code: str) -> None:
+        try:
+            track, secs = make_track(code)
+            add(code, track, secs)
+        except Exception as e:  # noqa: BLE001  one language failing must not stop the rest
+            log.error("lesson %s: language %s failed: %s", lesson_id, code, e, exc_info=True)
+            add(code, None, 0.0, f"{type(e).__name__}: {e}")
+
+    for k, code in enumerate(codes):
+        progress(f"Making {get_lang(code).name}", k / max(len(codes), 1))
+        one(code)
+    progress("Ready", 1.0)
+    return {"id": lesson_id}
 
 
 def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dict]], str]:

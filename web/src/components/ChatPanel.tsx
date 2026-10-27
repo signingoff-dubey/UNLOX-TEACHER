@@ -115,12 +115,12 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
       rec.current = null;
       setVoice("hearing");
       try {
-        const r = await fetch(url(`/api/stt?lang=${encodeURIComponent(lang)}&lesson_id=${lesson.id}`),
+        const r = await fetch(url(`/api/stt?lang=auto&lesson_id=${lesson.id}`),
           { method: "POST", body: new Blob(chunks, { type: mr.mimeType }) });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.detail ?? `Speech recognition failed (${r.status})`);
         if (!body.text) setNote("I did not catch that. Try again a little closer to the microphone.");
-        else void send(body.text, true);
+        else void send(body.text, true, body.lang);       // the language it was spoken in decides the language of the answer
       } catch (e) {
         setNote((e as Error).message);
       } finally {
@@ -132,7 +132,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     setVoice("listening");
   }
 
-  async function send(raw = text, spoken = false) {
+  async function send(raw = text, spoken = false, askedIn = "auto") {
     const message = raw.trim();
     if (!message || busy || !lesson) return;
     setText("");
@@ -143,7 +143,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     try {
       const history = msgs.filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
       const res = await api<{ reply: string; scene: number | null; audio_url?: string }>(`/api/lessons/${lesson.id}/chat`,
-        { message, lang, time_s: getTime(), history, speak: speaker && (spoken || voice === "off") });
+        { message, lang: askedIn, watching: lang, time_s: getTime(), history, speak: speaker && (spoken || voice === "off") });
       award({ type: "tutor_question" });
       const done: Msg[] = [...next, { role: "assistant", content: res.reply, scene: res.scene }];
       setMsgs(done);

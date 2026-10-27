@@ -18,6 +18,7 @@ _pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1, thread
           "upload": ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload"),
           "studio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio"),
           "vision": ThreadPoolExecutor(max_workers=1, thread_name_prefix="vision"),
+          "langs": ThreadPoolExecutor(max_workers=1, thread_name_prefix="langs"),
           "homework": ThreadPoolExecutor(max_workers=1, thread_name_prefix="homework")}
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()

@@ -12,7 +12,7 @@ import logging
 import requests
 
 from . import config
-from .languages import get as get_lang
+from .languages import detect_text_language, get as get_lang
 from .pipeline import load_lesson
 from .knowledge import retrieve
 from .translate import translate_batch
@@ -80,10 +80,14 @@ def speak(reply: str, lang: str) -> str:
     return f"/media/audio/{synthesize(reply, lang).path.name}"
 
 
-def ask(lesson_id: str, message: str, lang: str, time_s: float, history: list[dict]) -> dict:
+def ask(lesson_id: str, message: str, lang: str, time_s: float, history: list[dict], watching: str = "en") -> dict:
+    """`lang` is the language to answer in, or "auto": the language the question was written in (by its script). `watching` is the
+    language of the video on screen, used for the scene lookup and to tell Hindi from Marathi."""
     lesson = load_lesson(lesson_id)
+    if lang == "auto":
+        lang = detect_text_language(message, prefer=watching)
     get_lang(lang)
-    scene = scene_at(lesson, lang, time_s)
+    scene = scene_at(lesson, watching if watching in lesson["languages"] else lang, time_s)
     system = SYSTEM + "\n\n" + lesson_context(lesson, scene)
     upload = (lesson.get("documents") or [lesson.get("upload")])[0]
     docs = "\n".join(f"- {p.title}: {p.text}" for p in retrieve(message, upload=upload)[:4])
@@ -110,5 +114,5 @@ def ask(lesson_id: str, message: str, lang: str, time_s: float, history: list[di
 
     translator = "none"
     if lang != "en":
-        (reply,), translator = translate_batch([reply], lang)
+        (reply,), translator = translate_batch([reply], lang, beams=1)       # greedy: a short answer does not need beam search
     return {"reply": reply, "scene": scene, "lang": lang, "translator": translator}

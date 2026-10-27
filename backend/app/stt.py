@@ -79,6 +79,20 @@ def available() -> bool:
     return p.exists() or "/" in config.STT_MODEL or config.STT_MODEL in ("tiny", "base", "small", "medium")
 
 
+def _detect(model, samples) -> str:
+    """Which of OUR languages is being spoken (Whisper knows 99; picking only among the nine we support avoids Urdu for Hindi and the like).
+    One extra pass over the first 30 s of audio: about 0.1 s on the GPU."""
+    from .languages import LANGUAGES
+    try:
+        _, _, probs = model.detect_language(samples)
+        ours = [(p, c) for c, p in probs if c in LANGUAGES]
+        if ours:
+            return max(ours)[1]
+    except Exception as e:  # noqa: BLE001
+        log.warning("language detection failed (%s); letting Whisper decide", e)
+    return None
+
+
 def transcribe(audio: bytes, lang_hint: str | None = None, vocabulary: str = "") -> dict:
     """Returns {text, lang, duration_s}. Empty text means silence/noise (the UI says "I did not catch that")."""
     if not audio:
@@ -90,13 +104,16 @@ def transcribe(audio: bytes, lang_hint: str | None = None, vocabulary: str = "")
         return {"text": "", "lang": lang_hint or "en", "duration_s": 0.0}
     with _lock:
         model = _load()
+        lang = lang_hint if lang_hint and lang_hint != "auto" else _detect(model, samples)
         segments, info = model.transcribe(
-            samples, language=lang_hint if lang_hint and lang_hint != "auto" else None, beam_size=1,
+            samples, language=lang, beam_size=1,
             vad_filter=True, vad_parameters={"min_silence_duration_ms": 400},
-            initial_prompt=vocabulary or None, condition_on_previous_text=False,
+            temperature=0.0,                                  # no re-decoding at higher temperatures when the text looks odd: that took 10 s on Telugu
+            max_new_tokens=int(samples.size / 16000 * 14) + 24,   # a runaway decode cannot go on past what the audio could hold
+            initial_prompt=(vocabulary or None) if lang == "en" else None,      # an English hint pulls other languages into English condition_on_previous_text=False,
         )
         text = " ".join(s.text.strip() for s in segments).strip()
-    return {"text": text, "lang": info.language, "duration_s": round(samples.size / 16000, 2)}
+    return {"text": text, "lang": lang, "duration_s": round(samples.size / 16000, 2)}
 
 
 def _decode_wav(audio: bytes):
@@ -159,3 +176,8 @@ def _decode(audio: bytes):
     if proc.returncode != 0 or not proc.stdout:
         raise ValueError("That recording could not be read. Try again.")
     return np.frombuffer(proc.stdout, dtype=np.float32)
+
+
+def preload() -> None:
+    """Load the speech model now and run it once (the first real recording is then fast)."""
+    _load()

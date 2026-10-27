@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import threading
+import time
 from typing import Literal
 
 import requests
@@ -27,6 +29,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("chanakya")
 
 
+def _warm_up() -> None:
+    """Load the translation model, every voice, speech recognition and the language model now, so nobody waits for them later."""
+    t0 = time.perf_counter()
+    log.info("Warming up the models...")
+    for name, fn in (("translation", translate.preload), ("voices", tts.preload), ("speech recognition", stt.preload)):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001  keep serving; each feature falls back on its own
+            log.error("Warm-up of %s failed: %s", name, e)
+    try:
+        requests.post(f"{config.OLLAMA_URL}/api/chat", json={
+            "model": config.OLLAMA_MODEL, "messages": [{"role": "user", "content": "hi"}], "stream": False,
+            "keep_alive": config.OLLAMA_KEEP_ALIVE, "options": config.ollama_options({"num_predict": 1})}, timeout=120)
+    except requests.RequestException as e:
+        log.warning("Warm-up of the language model failed: %s", e)
+    log.info("Models ready in %.1fs", time.perf_counter() - t0)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
@@ -34,13 +54,7 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         log.error("Knowledge base failed to load: %s", e)
     if config.PRELOAD:
-        log.info("Preloading translation and voice models…")
-        try:
-            translate.preload()
-        except Exception as e:  # keep serving; lessons fall back per language
-            log.error("Translation model failed to preload: %s", e)
-        tts.preload()
-        log.info("Models ready")
+        threading.Thread(target=_warm_up, name="warm-up", daemon=True).start()      # the server answers while the models load
     yield
 
 
@@ -81,7 +95,8 @@ class PlaylistExportRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
-    lang: str = "en"
+    lang: str = "en"                  # the language to answer in, or "auto": the language the question is written in
+    watching: str = "en"              # the language of the video being watched
     time_s: float = 0                 # where the learner is in the video, so the tutor knows the current scene
     history: list[dict] = []          # [{"role": "user"|"assistant", "content": "..."}]
     speak: bool = False               # also return the reply as a voice clip (audio_url)
@@ -150,7 +165,7 @@ def create_lesson(req: LessonRequest) -> dict:
         if upload_status(d) is None:
             raise HTTPException(404, "That PDF upload was not found")
     return jobs.submit("lesson", build_lesson, concept, req.languages, req.level, req.duration_s, documents, None,
-                       req.focus.strip(), req.images, req.mode)
+                       req.focus.strip(), req.images, req.mode, True)       # True: one language at a time
 
 
 @app.get("/api/jobs/{job_id}")
@@ -296,9 +311,9 @@ def export_playlist(playlist_id: str, req: PlaylistExportRequest) -> dict:
 def chat_about_lesson(lesson_id: str, req: ChatRequest) -> dict:
     from . import chat
     try:
-        res = chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history)
+        res = chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history, req.watching)
         if req.speak:
-            res["audio_url"] = chat.speak(res["reply"], req.lang)
+            res["audio_url"] = chat.speak(res["reply"], res["lang"])
         return res
     except FileNotFoundError:
         raise HTTPException(404, "No such lesson")

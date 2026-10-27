@@ -1,7 +1,20 @@
 # Progress Log
 
-## Current Version: v0.11.0
+## Current Version: v0.12.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.12.0] — 2026-10-27
+### What's New
+- **Voice and tutor detect the language**: speak or type in Hindi, Telugu, Tamil... and the answer comes back in that language, spoken in that voice. Speech: Whisper picks among our 9 languages (`stt._detect`, ~0.1 s on the GPU); typed text: by script (`languages.detect_text_language`). Ask in Hindi while watching a Marathi video and Devanagari is treated as Marathi
+- **Latency**: models warm up in the background at start (translation, every voice, speech recognition, the language model); chat translation uses greedy decoding; Whisper no longer re-decodes at higher temperatures (Telugu 10 s -> 0.35 s) and ignores the English vocabulary hint for other languages (that hint was turning Hindi speech into English text). Warm tutor round trip: English ~2.5 s, Tamil 3-5 s, Hindi 5-6 s
+- **Languages one by one**: the first language of a lesson is playable as soon as it is ready (a 30 s test: 13 s); the others are made in the background and appear as tabs the moment each is done (`pipeline.finish_languages`, `pending`/`failed` in lesson.json, the page polls). One failing language does not stop the rest
+- Video content in the chosen language: every heading, point, label and caption is translated and the voice is that language (checked on a Hindi and a Telugu track)
+
+### Known Issues
+- Whisper-small hears Telugu, Hindi and the other Indian languages roughly: the language is detected right but the words can be wrong. `STT_MODEL=medium` is better but needs ~1 GB more VRAM (the 8 GB card is nearly full with the language model)
+- Hindi tutor answers still take 5-6 s (translation + a longer voice clip)
 
 ---
 

@@ -225,6 +225,10 @@ export const LessonPage: React.FC<Props> = (
                 <button key={t.lang} type="button" role="tab" aria-selected={t.lang === lang} className={t.lang === lang ? "tab on" : "tab"}
                   onClick={() => switchLang(t.lang)}>{t.native}</button>
               ))}
+              {lesson.pending?.map((p) => (
+                <button key={p.code} type="button" role="tab" aria-selected={false} aria-disabled="true" className="tab making" disabled
+                  title={`${p.name} is being made. It appears here when it is ready.`}><span className="tab-spin" aria-hidden />{p.native}</button>
+              ))}
             </div>
           )}
           {lesson && onMetaverse && (

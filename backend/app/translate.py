@@ -27,7 +27,7 @@ def _key(lang: str, text: str) -> str:
     return hashlib.sha1(f"{config.TRANSLATE_BACKEND}|{lang}|{text}".encode()).hexdigest()
 
 
-def translate_batch(texts: list[str], lang: str) -> tuple[list[str], str]:
+def translate_batch(texts: list[str], lang: str, beams: int = 4) -> tuple[list[str], str]:
     """Translate English strings. Returns (translations, engine used). Results are cached on disk.
     If the configured model cannot load, the English text is kept so the lesson still builds
     (engine "untranslated" is reported back to the UI)."""
@@ -35,7 +35,7 @@ def translate_batch(texts: list[str], lang: str) -> tuple[list[str], str]:
         return list(texts), "none"
     todo = sorted({t for t in texts if t.strip() and _key(lang, t) not in _cache})
     if todo:
-        out, engine = _translate_with_fallbacks(todo, lang)
+        out, engine = _translate_with_fallbacks(todo, lang, beams)
         if out is None:
             log.error("Translation to %s failed with every engine; keeping English text", lang)
             return list(texts), "untranslated"
@@ -46,7 +46,7 @@ def translate_batch(texts: list[str], lang: str) -> tuple[list[str], str]:
     return [_cache.get(_key(lang, t), t) if t.strip() else t for t in texts], config.TRANSLATE_BACKEND
 
 
-def _translate_with_fallbacks(todo: list[str], lang: str) -> tuple[list[str] | None, str]:
+def _translate_with_fallbacks(todo: list[str], lang: str, beams: int = 4) -> tuple[list[str] | None, str]:
     """The configured model on the GPU; if that fails for any reason (the GPU is nearly full while the language model is
     loaded, a driver hiccup) the same model on the CPU; then the language model through Ollama. English is the last resort,
     never the first: a Hindi lesson that comes out in English is worse than one that takes a few seconds longer."""
@@ -55,9 +55,9 @@ def _translate_with_fallbacks(todo: list[str], lang: str) -> tuple[list[str] | N
     attempts: list[tuple[str, object]] = []
     if backend in ("indictrans2", "nllb"):
         model = _IndicTrans2 if backend == "indictrans2" else _NLLB
-        attempts.append((backend, lambda: model.get().translate(todo, flores)))
+        attempts.append((backend, lambda: model.get().translate(todo, flores, beams=beams)))
         if config.torch_device() != "cpu":
-            attempts.append((f"{backend} on CPU", lambda: model.get("cpu").translate(todo, flores)))
+            attempts.append((f"{backend} on CPU", lambda: model.get("cpu").translate(todo, flores, beams=beams)))
     attempts.append(("ollama", lambda: _ollama_translate_batch(todo, lang)))
     for label, run in attempts:
         try:
@@ -164,14 +164,14 @@ class _NLLB:
             config.NLLB_MODEL, dtype=torch.float16 if self.device == "cuda" else torch.float32,
         ).to(self.device).eval()
 
-    def translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:
+    def translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4) -> list[str]:
         out: list[str] = []
         bos = self.tok.convert_tokens_to_ids(tgt)
         for i in range(0, len(texts), batch_size):
             inputs = self.tok(texts[i:i + batch_size], return_tensors="pt", padding=True,
                               truncation=True, max_length=256).to(self.device)
             with self.torch.inference_mode():
-                gen = self.model.generate(**inputs, forced_bos_token_id=bos, num_beams=4,
+                gen = self.model.generate(**inputs, forced_bos_token_id=bos, num_beams=beams,
                                           max_new_tokens=256, repetition_penalty=1.1)
             out.extend(t.strip() for t in self.tok.batch_decode(gen, skip_special_tokens=True))
         return out
@@ -210,11 +210,11 @@ class _IndicTrans2:
 
     _gen_lock = threading.Lock()                 # episodes of a playlist are built concurrently; the model is shared
 
-    def translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:
+    def translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4) -> list[str]:
         with self._gen_lock:
-            return self._translate(texts, tgt, batch_size)
+            return self._translate(texts, tgt, batch_size, beams)
 
-    def _translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:
+    def _translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4) -> list[str]:
         out: list[str] = []
         for i in range(0, len(texts), batch_size):
             chunk = texts[i:i + batch_size]
@@ -225,7 +225,7 @@ class _IndicTrans2:
                 # use_cache=False: IndicTrans2's remote model code predates the Cache classes of transformers >= 4.50 and
                 # crashes with the cache on (Unlimited-OCR needs 4.57). Lesson sentences are short, so the cost is small.
                 gen = self.model.generate(**inputs, use_cache=False, min_length=0,
-                                          max_length=256, num_beams=4, num_return_sequences=1)
+                                          max_length=256, num_beams=beams, num_return_sequences=1)
             decoded = self.tok.batch_decode(gen, skip_special_tokens=True,
                                             clean_up_tokenization_spaces=True)
             out.extend(self.ip.postprocess_batch(decoded, lang=tgt))

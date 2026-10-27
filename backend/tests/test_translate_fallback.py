@@ -14,7 +14,7 @@ class _Cpu:
             raise RuntimeError("CUDA out of memory")
         return cls()
 
-    def translate(self, texts, tgt):
+    def translate(self, texts, tgt, **kw):
         return [f"hi:{t}" for t in texts]
 
 

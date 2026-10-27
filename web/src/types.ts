@@ -68,6 +68,9 @@ export type Lesson = {
   concept: string;
   created: number;
   languages: Record<string, Track>;
+  /** Languages still being made (one by one) and the ones that failed. */
+  pending?: { code: string; name: string; native: string }[];
+  failed?: { code: string; name: string; error: string }[];
   /** Articles or PDF pages retrieved to ground the lesson (RAG). */
   sources?: Source[];
   /** Set when the lesson was made from an uploaded PDF. */
