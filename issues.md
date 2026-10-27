@@ -35,3 +35,11 @@
 **Fix:** Do not use sarvam-translate; use IndicTrans2 distilled 200M (MIT)
 **Files Changed:** none (PLAN.md left as-is by request)
 **Status:** Resolved
+
+## [ISSUE-005] — 2026-10-27
+**Title:** Two license problems found in the stack
+**Symptom:** README claimed Piper = MIT and listed Qwen2.5-3B as usable
+**Root Cause:** `pip install piper-tts` (1.8.0) is the GPL-3.0-or-later successor (OHF-Voice/piper1-gpl, uses espeak-ng); Qwen2.5-3B ships under the Qwen Research License
+**Fix:** README licenses table corrected; planner fallback switched to qwen3:4b (verify Apache-2.0); 3B model not used. GPL decision for our repo is open (see progress.md)
+**Files Changed:** README.md, .env.example
+**Status:** Ongoing (repo license choice pending)

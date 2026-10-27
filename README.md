@@ -40,7 +40,7 @@ UNLOX hackethon/
 ```bash
 # Ollama models (once, online)
 ollama pull qwen2.5:7b-instruct-q4_K_M
-ollama pull qwen2.5:3b-instruct-q4_K_M
+ollama pull qwen3:4b
 
 # Python env (TTS, HF CLI)
 python -m venv .venv
@@ -72,8 +72,8 @@ Backend run steps: see `backend/` once teammate pushes.
 ## Models, Voices & Assets Used (licenses)
 | Component | Name | License | Source |
 |---|---|---|---|
-| Planner LLM | Qwen2.5-7B/3B-Instruct | Qwen2.5-7B: Apache-2.0; 3B: Qwen Research license (verify before final; use 7B or swap if unsuitable) | ollama.com/library/qwen2.5 |
-| TTS engine | Piper | MIT | github.com/rhasspy/piper |
+| Planner LLM | Qwen2.5-7B-Instruct, Qwen3-4B (fallback) | 7B: Apache-2.0 (verified via `ollama show --license`). 3B: Qwen Research License (verified) — NOT used. Fallback: qwen3:4b (confirm Apache-2.0 via `ollama show --license` once pulled) | ollama.com/library/qwen2.5 |
+| TTS engine | piper-tts 1.8.0 (OHF-Voice/piper1-gpl; uses espeak-ng) | **GPL-3.0-or-later** (verified via pip metadata). Old rhasspy/piper is MIT but archived | github.com/OHF-Voice/piper1-gpl |
 | Piper voices | hi_IN-pratham, te_IN-venkatesh, mr_IN-google, bn_BD-google, ml_IN-meera, en_GB-alan (medium) | Per-voice, see each `.onnx.json` / model card — TO VERIFY | huggingface.co/rhasspy/piper-voices |
 | Indic TTS | AI4Bharat Indic-TTS, int8 ONNX repack (en, ta, kn, gu) | MIT (upstream); repack by RaunakSaha, unofficial | huggingface.co/RaunakSaha/echobharat-models |
 | Translation (optional) | IndicTrans2 distilled 200M | MIT (gated download) | huggingface.co/ai4bharat/indictrans2-en-indic-dist-200M |
