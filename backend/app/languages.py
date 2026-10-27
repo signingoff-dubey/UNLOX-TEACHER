@@ -21,10 +21,10 @@ LANGUAGES: dict[str, Language] = {
         Language("te", "Telugu", "తెలుగు", "tel_Telu", "te/te_IN/padmavathi/medium/te_IN-padmavathi-medium"),
         Language("ml", "Malayalam", "മലയാളം", "mal_Mlym", "ml/ml_IN/meera/medium/ml_IN-meera-medium"),
         Language("mr", "Marathi", "मराठी", "mar_Deva", "mr/mr_IN/google/medium/mr_IN-google-medium"),
-        # No Piper voices for these: they use TTS_FALLBACK (Indic Parler-TTS).
+        # No Piper voices for kn/ta/gu: they use the CPU "indic" engine (AI4Bharat Indic-TTS ONNX), then Parler (GPU).
         Language("kn", "Kannada", "ಕನ್ನಡ", "kan_Knda", None),
         Language("ta", "Tamil", "தமிழ்", "tam_Taml", None),
-        Language("bn", "Bengali", "বাংলা", "ben_Beng", None),
+        Language("bn", "Bengali", "বাংলা", "ben_Beng", "bn/bn_BD/google/medium/bn_BD-google-medium"),
         Language("gu", "Gujarati", "ગુજરાતી", "guj_Gujr", None),
     ]
 }

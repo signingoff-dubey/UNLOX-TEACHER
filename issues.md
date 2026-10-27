@@ -43,3 +43,27 @@
 **Fix:** README licenses table corrected; planner fallback switched to qwen3:4b (verify Apache-2.0); 3B model not used. GPL decision for our repo is open (see progress.md)
 **Files Changed:** README.md, .env.example
 **Status:** Ongoing (repo license choice pending)
+
+## [ISSUE-006] — 2026-10-27
+**Title:** Backend crashed on start after editing planner prompt
+**Symptom:** `ValueError: Invalid format specifier '"circle","a":0,...'` importing `app.planner`
+**Root Cause:** `SYSTEM_PROMPT` is an f-string; raw JSON braces in the added examples were parsed as format fields
+**Fix:** Double the braces (`{{ }}`) in prompt text that contains JSON
+**Files Changed:** backend/app/planner.py
+**Status:** Resolved
+
+## [ISSUE-007] — 2026-10-27
+**Title:** Stale processes: duplicate model downloads and self-killing restart
+**Symptom:** `.part` file locked (WinError 32); a PowerShell restart command exited 255; old uvicorn kept serving mock lessons
+**Root Cause:** Two `download_models.py` ran at once; a kill command filtered on `uvicorn app.main` also matched its own command line
+**Fix:** Kill by listening port (Get-NetTCPConnection -LocalPort 8000) and by process name; run downloads once
+**Files Changed:** none
+**Status:** Resolved
+
+## [ISSUE-008] — 2026-10-27
+**Title:** Code line cut mid-statement on screen
+**Symptom:** React snippet ended `getElementById('root'`
+**Root Cause:** `normalize()` truncated lines to 58 columns
+**Fix:** Cap raised to 72; prompt asks for lines under 45 characters and to split long statements
+**Files Changed:** backend/app/schema.py, backend/app/planner.py
+**Status:** Resolved (monitor)

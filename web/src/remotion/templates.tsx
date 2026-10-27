@@ -3,6 +3,8 @@ import { useCurrentFrame, useVideoConfig } from "remotion";
 import type { Scene, TemplateName } from "../types";
 import { Icon } from "./icons";
 import { C, PALETTE, STAGE, W, ease, fit, fitAll, pop, revealFrame } from "./theme";
+import { CodeScene } from "./code";
+import { GraphScene } from "./graph";
 
 export type TemplateProps = { scene: Scene; speechFrames: number; lessonTitle: string };
 
@@ -334,4 +336,6 @@ export const TEMPLATES: Record<TemplateName, React.FC<TemplateProps>> = {
   compare: Compare,
   diagram: Diagram,
   quiz: Quiz,
+  graph: GraphScene,
+  code: CodeScene,
 };

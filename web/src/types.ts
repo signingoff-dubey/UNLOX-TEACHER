@@ -1,7 +1,7 @@
 // Mirrors the JSON produced by backend/app/pipeline.py
 
 export type TemplateName =
-  | "title" | "bullets" | "flow" | "cycle" | "compare" | "diagram" | "quiz" | "summary";
+  | "title" | "bullets" | "flow" | "cycle" | "compare" | "diagram" | "quiz" | "summary" | "graph" | "code";
 
 export type Caption = { start: number; end: number; text: string };
 
@@ -16,6 +16,17 @@ export type Scene = {
   left: string[];
   right: string[];
   answer_index: number;
+  /** graph scenes: plain numbers, drawn by web/src/remotion/graph.tsx (never evaluated) */
+  curves?: { type: string; a: number; b: number; c: number; d: number }[];
+  marks?: { kind: string; x: number; y: number }[];
+  x_range?: number[];
+  y_range?: number[];
+  equation?: string;
+  /** code scenes: display text only, drawn by web/src/remotion/code.tsx */
+  code_lang?: string;
+  code?: string[];
+  highlights?: number[];
+  output?: string[];
   audio_url?: string;
   speech_s: number;
   duration_s: number;

@@ -10,7 +10,7 @@ browser player ◄── Remotion scene templates ◄── timed lesson JSON �
 MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
 ```
 
-- **Data, never code:** the LLM only picks one of 8 templates (title, bullets, flow, cycle, compare, diagram, quiz, summary) and fills in its text fields.
+- **Data, never code:** the LLM only picks one of 10 templates (title, bullets, flow, cycle, compare, diagram, quiz, summary, **graph**, **code**) and fills in its text fields.
 - **Narration first:** each scene's voice is synthesized before anything is animated, and the scene lasts exactly as long as that audio plus 0.5 s. Item reveals and captions are timed against the same audio.
 
 ## Layout
@@ -139,3 +139,11 @@ See `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md`, `issues.md`, `d
 - [ ] MP4 on judge topic (live), MP4 on our topic
 - [ ] 5-min offline demo rehearsed
 - [ ] Verified with network disabled
+
+## Graph and code lessons
+
+- Maths topics (circle, parabola, sine wave, lines...) get `graph` scenes: curves are chosen from a fixed list (`line, parabola, cubic, sine, cosine, exp, abs, sqrt, reciprocal, circle, ellipse`) with numeric parameters; circles can mark centre, radius, diameter, chord, tangent.
+- Programming topics (Python, Rust, React/JSX, Java, Go, SQL...) get `code` scenes: syntax-coloured snippet, a highlight that follows the narration, one note per line, optional program output. Snippets are only displayed, never executed.
+- Test offline without a model: `LLM_BACKEND=mock` with a concept containing "circle" or "python".
+- Export size: `POST /api/lessons/{id}/export` takes `"height": 720` (default) or `1080`.
+- GPU/CPU: `OLLAMA_NUM_GPU=auto|N|0`, `DEVICE=auto|cuda|cpu`; see `/api/health` -> `gpu`.

@@ -30,7 +30,11 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 # "0" unloads the LLM from the GPU right after planning, freeing VRAM for TTS.
-OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "0")
+# How long the LLM stays loaded after planning. Keeping it loaded makes repeat lessons fast; "0" frees VRAM at once.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
+# LLM layers on the GPU: "auto" = Ollama offloads as many layers as fit in VRAM (rest run on CPU),
+# a number = exactly that many layers, 0 = CPU only. DEVICE=cpu forces 0.
+OLLAMA_NUM_GPU = os.getenv("OLLAMA_NUM_GPU", "auto")
 
 # Translation: "indictrans2", "ollama" (LLM translates) or "none" (copy English)
 TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "indictrans2")
@@ -72,3 +76,25 @@ def torch_device() -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"
     except ImportError:
         return "cpu"
+
+
+def ollama_options(base: dict) -> dict:
+    """Add the GPU-layer setting to an Ollama `options` dict."""
+    opts = dict(base)
+    if DEVICE == "cpu":
+        opts["num_gpu"] = 0
+    elif OLLAMA_NUM_GPU != "auto":
+        opts["num_gpu"] = int(OLLAMA_NUM_GPU)
+    return opts
+
+
+def ort_providers() -> list[str]:
+    """ONNX Runtime providers: CUDA first when installed and allowed, CPU always as the fallback."""
+    try:
+        import onnxruntime as ort
+        have = ort.get_available_providers()
+    except ImportError:
+        return ["CPUExecutionProvider"]
+    if DEVICE != "cpu" and "CUDAExecutionProvider" in have:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]

@@ -9,6 +9,8 @@ import { ensureBrowser, renderMedia, selectComposition } from "@remotion/rendere
 
 const ENTRY = path.resolve("src/remotion/index.ts");
 const BUNDLE_DIR = path.resolve(".remotion-bundle");
+// Design canvas is 1920x1080; RENDER_HEIGHT scales the output (720 -> 1280x720 = the spec's 720p, default; 1080 = native; set per export by the backend).
+const OUT_HEIGHT = Number(process.env.RENDER_HEIGHT || 720);
 const progress = (stage, value) => console.log(`PROGRESS ${stage} ${value.toFixed(3)}`);
 
 const newestMtime = (dir) =>
@@ -45,6 +47,7 @@ await renderMedia({
   composition,
   serveUrl,
   codec: "h264",
+  scale: OUT_HEIGHT / composition.height,
   outputLocation: outFile,
   inputProps,
   concurrency: concurrency ? Number(concurrency) : null,

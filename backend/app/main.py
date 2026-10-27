@@ -46,6 +46,16 @@ class LessonRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     lang: str = "en"
+    height: int = 720             # output height: 720 (default, 1280x720) or 1080 (1920x1080 "boost")
+
+
+def _ollama_loaded() -> list[dict]:
+    """Models currently in Ollama and how much of each sits in GPU memory (shows layer offload)."""
+    try:
+        ps = requests.get(f"{config.OLLAMA_URL}/api/ps", timeout=2).json().get("models", [])
+        return [{"model": m["name"], "gpu_percent": round(100 * m.get("size_vram", 0) / max(m.get("size", 1), 1))} for m in ps]
+    except requests.RequestException:
+        return []
 
 
 @app.get("/api/health")
@@ -67,6 +77,9 @@ def health() -> dict:
         "render": {"web_dir_ok": (config.WEB_DIR / "render.mjs").exists(),
                    "node_modules_ok": (config.WEB_DIR / "node_modules" / "@remotion" / "renderer").exists()},
         "device": config.torch_device(),
+        "gpu": {"torch": config.torch_device(), "onnx_providers": config.ort_providers(),
+                "ollama_num_gpu": config.OLLAMA_NUM_GPU if config.DEVICE != "cpu" else 0,
+                "ollama_loaded": _ollama_loaded()},
     }
 
 
@@ -103,7 +116,7 @@ def get_lesson(lesson_id: str) -> dict:
 @app.post("/api/lessons/{lesson_id}/export")
 def export(lesson_id: str, req: ExportRequest) -> dict:
     get_lesson(lesson_id)
-    return jobs.submit("export", export_mp4, lesson_id, req.lang)
+    return jobs.submit("export", export_mp4, lesson_id, req.lang, req.height)
 
 
 app.mount("/media", StaticFiles(directory=config.MEDIA_DIR), name="media")
