@@ -11,7 +11,7 @@ Beginner/intermediate learners on CPU-only laptops; hackathon judges (primary au
 
 ## Core Features (must-have)
 1. Concept input: topic, level (beginner/intermediate), language, target duration
-2. Lesson planner: local LLM via Ollama -> JSON matching `schema/lesson.schema.json`; schema check + automatic fallback to built-in sample lesson
+2. Lesson planner: local LLM via Ollama -> JSON matching `backend/app/schema.py`; schema check + automatic fallback to built-in sample lesson
 3. Visual engine: reusable components, >= 3 scene types (Title Card, Diagram w/ labels+arrows, Code Walkthrough)
 4. Multilingual narration: local TTS + captions in English (Indian accent) + >= 2 Indian languages, synced to visuals
 5. Audio-first timing: scene duration = narration audio length + short pause
@@ -48,5 +48,5 @@ Working end-to-end 25%, Teaching quality 20%, Visuals 15%, Languages 15%, Engine
 Cloud anything, native mobile app, STT/Whisper, generative video, user accounts.
 
 ## Ownership
-- Teammate: backend (planner, TTS, pipeline, API) — lands via git
-- This workstream: frontend (Revideo scenes + player), shared schema, docs, model/asset setup
+- Teammate: backend (`backend/`) + frontend (`web/`) — merged from origin/main
+- This workstream: docs, model/asset setup, benchmarks, orchestration design (frontend `web/` is the teammate's, Remotion-based)

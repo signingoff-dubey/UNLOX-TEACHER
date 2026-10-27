@@ -1,7 +1,19 @@
 # Progress Log
 
-## Current Version: v0.1.0
+## Current Version: v0.2.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.2.0] — 2026-10-27
+### What's New
+- Merged teammate's `origin/main` (5127b43): FastAPI backend (Ollama planner, IndicTrans2, Piper/Parler TTS, captions, jobs), Remotion `web/` frontend, 8 templates
+- Removed our Revideo scaffold and draft `schema/` (superseded by `backend/app/schema.py` and Remotion); scaffold kept outside repo
+- License note: project is hackathon-only, not published; license columns kept in README for the submission rule
+
+### Known Issues
+- Teammate's design uses Indic Parler-TTS on GPU for ta/kn/bn/gu; spec says CPU-only. Needs CPU path (our Indic-TTS ONNX voices) or accept GPU risk
+- Renders at 1920x1080; spec asks 720p (RENDER setting to check)
 
 ---
 

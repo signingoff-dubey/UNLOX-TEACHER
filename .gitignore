@@ -1,7 +1,18 @@
+backend/venv/
+backend/.venv/
+backend/.env
+__pycache__/
+models/
+media/
+web/node_modules/
+web/dist/
+web/.remotion-bundle/
+web/public/fonts/
+.impeccable/
+
 .env
 .env.local
 node_modules/
-__pycache__/
 *.pyc
 .venv/
 .DS_Store
@@ -9,7 +20,6 @@ dist/
 build/
 *.log
 # models / generated media: large, fetched via scripts/fetch-models
-models/
 output/
 frontend/output/
 *.onnx
