@@ -78,14 +78,17 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     # The first scenes are made while the planner is still writing, so the player can start at once (see streaming.py).
     preview = None
     on_text = None
-    if progressive and series is None and duration_s <= LONG_MIN and config.LLM_BACKEND != "mock":
+    long_video = duration_s > LONG_MIN and config.LLM_BACKEND != "mock"
+    if progressive and config.LLM_BACKEND != "mock":
+        from .longplan import parts_for
         from .planner import scene_target
         from .streaming import ScenePreview
-        preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, scene_target(duration_s), lesson_path(lesson_id),
+        expected = parts_for(duration_s) * scene_target(round(duration_s / parts_for(duration_s))) if long_video else scene_target(duration_s)
+        preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, expected, lesson_path(lesson_id),
                                on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id))
         on_text = preview.feed
-    if duration_s > LONG_MIN and config.LLM_BACKEND != "mock":
-        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode)      # 1.5-4 min: planned in parts
+    if long_video:
+        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, preview=preview)      # 1.5-4 min: planned in parts
     else:
         plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
                                     series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
@@ -177,7 +180,8 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     save_lesson(lesson)
     try:
         from . import studio
-        studio.prebuild(lesson_id)             # flashcards, quiz, mind map... are written in the background from now on
+        if series is None:                     # a course episode gets them on demand (and episode 1 when the course is done): 5 x 14 tools would swamp the laptop
+            studio.prebuild(lesson_id)         # flashcards, quiz, mind map... are written in the background from now on
     except Exception:  # noqa: BLE001  never let study tools break a finished lesson
         log.warning("could not queue the study tools for %s", lesson_id, exc_info=True)
     if rest:

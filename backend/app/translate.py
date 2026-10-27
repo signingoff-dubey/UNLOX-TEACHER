@@ -4,11 +4,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import threading
 
 import requests
 
-from . import config
+from . import config, resources
 from .languages import get as get_lang
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,23 @@ if _CACHE_FILE.exists():
         _cache = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         _cache = {}
+
+
+TRANSLATE_MIN_FREE_GB = float(os.getenv("TRANSLATE_MIN_FREE_GB", "1.8"))   # less free VRAM than this (the language model is loaded) and the translator runs on the CPU
+
+
+def _pick_device() -> str:
+    """cuda only when it is usable and either the translator is already on it or there is room to load it."""
+    dev = config.torch_device()
+    if dev != "cuda":
+        return dev
+    if any("cuda" in k for k in (*_NLLB._instances, *_IndicTrans2._instances)):
+        return dev
+    free = config.gpu_free_gb()
+    if free is not None and free < TRANSLATE_MIN_FREE_GB:
+        log.warning("Only %.1f GB of VRAM free: translating on the CPU", free)
+        return "cpu"
+    return dev
 
 
 def _key(lang: str, text: str) -> str:
@@ -46,12 +64,20 @@ def translate_batch(texts: list[str], lang: str, beams: int = 4) -> tuple[list[s
     return [_cache.get(_key(lang, t), t) if t.strip() else t for t in texts], config.TRANSLATE_BACKEND
 
 
+def _release_translators() -> None:
+    """Drop the loaded translation models (the GPU copy included); the next lesson loads one again."""
+    with _lock:
+        _NLLB._instances.clear()
+        _IndicTrans2._instances.clear()
+
+
 def _translate_with_fallbacks(todo: list[str], lang: str, beams: int = 4) -> tuple[list[str] | None, str]:
     """The configured model on the GPU; if that fails for any reason (the GPU is nearly full while the language model is
     loaded, a driver hiccup) the same model on the CPU; then the language model through Ollama. English is the last resort,
     never the first: a Hindi lesson that comes out in English is worse than one that takes a few seconds longer."""
     backend = config.TRANSLATE_BACKEND
     flores = get_lang(lang).flores
+    resources.idle_release("translate", config.MODEL_IDLE_S, _release_translators)       # (re)arms the release; every use postpones it
     attempts: list[tuple[str, object]] = []
     if backend in ("indictrans2", "nllb"):
         model = _IndicTrans2 if backend == "indictrans2" else _NLLB
@@ -62,12 +88,15 @@ def _translate_with_fallbacks(todo: list[str], lang: str, beams: int = 4) -> tup
     for label, run in attempts:
         try:
             out = run()
+            _free_gpu()                                          # hand the allocator's cache back after every batch
             if len(out) == len(todo):
                 if label != backend:
                     log.warning("Translation to %s used %s", lang, label)
                 return out, label.split(" ")[0]
         except Exception as e:  # noqa: BLE001  any failure moves on to the next engine
             log.error("Translation to %s with %s failed: %s", lang, label, e, exc_info=True)
+            if config.is_cuda_error(e):
+                config.mark_cuda_broken(str(e))                  # the next attempt (and every later lesson) uses the CPU
             _free_gpu()
     return None, "untranslated"
 
@@ -77,9 +106,9 @@ def _free_gpu() -> None:
         import gc
         import torch
         gc.collect()
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and config.torch_device() == "cuda":
             torch.cuda.empty_cache()
-    except ImportError:
+    except Exception:  # noqa: BLE001  cleaning up must never be the thing that fails (a broken CUDA context raises here too)
         pass
 
 
@@ -158,7 +187,7 @@ class _NLLB:
 
     @classmethod
     def get(cls, device: str | None = None) -> "_NLLB":
-        device = device or config.torch_device()
+        device = device or _pick_device()
         with _lock:
             if device not in cls._instances:
                 cls._instances[device] = cls(device)
@@ -167,6 +196,8 @@ class _NLLB:
     def __init__(self, device: str) -> None:
         import torch
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+        if device == "cuda":
+            config.limit_torch_vram()
 
         self.torch = torch
         self.device = device
@@ -199,7 +230,7 @@ class _IndicTrans2:
 
     @classmethod
     def get(cls, device: str | None = None) -> "_IndicTrans2":
-        device = device or config.torch_device()
+        device = device or _pick_device()
         with _lock:
             if device not in cls._instances:
                 cls._instances[device] = cls(device)
@@ -208,6 +239,8 @@ class _IndicTrans2:
     def __init__(self, device: str) -> None:
         import torch
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+        if device == "cuda":
+            config.limit_torch_vram()
         try:
             from IndicTransToolkit.processor import IndicProcessor
         except ImportError:

@@ -70,7 +70,11 @@ export type Lang = { code: string; name: string; native: string; piper: boolean 
 export type PlaylistEpisode = {
   index: number; title: string; focus: string; lesson_id: string | null;
   status: "pending" | "building" | "ready" | "failed"; duration_s?: number; error?: string | null;
+  /** The first scenes exist (lesson_id is set) while the rest is still being made: it can be played already. */
+  preview?: boolean;
 };
+/** Ready, or being made but with its first scenes already watchable. */
+export const playable = (e: PlaylistEpisode | undefined): boolean => !!e && !!e.lesson_id && (e.status === "ready" || e.status === "building");
 export type Playlist = {
   id: string; topic: string; title: string; languages: string[];
   status: "planning" | "building" | "ready" | "partial" | "error";

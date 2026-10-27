@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, homework, jobs, knowledge, routes_rag, stt, translate, tts, vision
+from . import config, homework, jobs, knowledge, resources, routes_rag, stt, translate, tts, vision
 from .exporter import export_mp4
 from .ocr.ingest import upload_status
 from .languages import LANGUAGES
@@ -35,7 +35,10 @@ def _warm_up() -> None:
     """Load the translation model, every voice, speech recognition and the language model now, so nobody waits for them later."""
     t0 = time.perf_counter()
     log.info("Warming up the models...")
-    for name, fn in (("translation", translate.preload), ("voices", tts.preload), ("speech recognition", stt.preload)):
+    steps = [("translation", translate.preload), ("voices", tts.preload)]
+    if config.PRELOAD_STT:                                       # off by default: it loads on the first spoken question (see stt.py)
+        steps.append(("speech recognition", stt.preload))
+    for name, fn in steps:
         try:
             fn()
         except Exception as e:  # noqa: BLE001  keep serving; each feature falls back on its own
@@ -51,6 +54,7 @@ def _warm_up() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    resources.lower_priority()                 # the desktop, the browser and the slides always win over a lesson being made
     try:
         knowledge.KnowledgeBase.get()          # load the index once, not on the first lesson
     except Exception as e:
@@ -134,6 +138,7 @@ def health() -> dict:
     return {
         "llm": {"backend": config.LLM_BACKEND, "model": config.OLLAMA_MODEL, "ollama": ollama},
         "knowledge": knowledge.status(),
+        "resources": resources.snapshot(),
         "translate": {"backend": config.TRANSLATE_BACKEND,
                       "model": {"nllb": config.NLLB_MODEL, "indictrans2": config.INDICTRANS2_MODEL}.get(
                           config.TRANSLATE_BACKEND, config.OLLAMA_MODEL),

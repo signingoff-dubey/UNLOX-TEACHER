@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { World } from "metaverse";
 import type { Job, Lesson, Track } from "./types";
 import {
-  api, getApiBase, runJob, type Lang, type LessonSettings, type LessonSummary, type Playlist, type PlaylistSummary,
+  api, getApiBase, playable, runJob, type Lang, type LessonSettings, type LessonSummary, type Playlist, type PlaylistSummary,
 } from "./api";
 import { MetaverseLayer, preloadMetaverse } from "./components/MetaverseLayer";
 import { Home } from "./pages/Home";
@@ -97,8 +97,8 @@ export default function App() {
       setPlaylist(pl);
       setConcept(pl.title);
       setScreen("lesson");
-      const ready = pl.episodes.findIndex((e) => e.status === "ready");
-      if (index !== undefined && pl.episodes[index]?.status === "ready") openEpisode(pl, index);
+      const ready = pl.episodes.findIndex((e) => playable(e));
+      if (index !== undefined && playable(pl.episodes[index])) openEpisode(pl, index);
       else if (ready >= 0) openEpisode(pl, ready);
       else { setLesson(null); window.history.replaceState(null, "", `#c-${pl.id}`); }
     }).catch(() => { setError("That course could not be loaded."); setScreen("home"); });
@@ -142,7 +142,7 @@ export default function App() {
   }, [playlist?.id, making]);
   useEffect(() => {
     if (!playlist || lesson || screen !== "lesson") return;
-    const first = playlist.episodes.findIndex((e) => e.status === "ready");
+    const first = playlist.episodes.findIndex((e) => playable(e));        // episode 1 is watchable while it is still being made
     if (first >= 0) openEpisode(playlist, first);
   }, [playlist, lesson, screen, openEpisode]);
 

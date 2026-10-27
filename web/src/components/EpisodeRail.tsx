@@ -27,7 +27,7 @@ export const EpisodeRail: React.FC<Props> = ({ playlist, current, onPick, waitin
       <ol className="rail-list">
         {playlist.episodes.map((e) => {
           const on = e.index === current;
-          const can = e.status === "ready";
+          const can = e.status === "ready" || (e.status === "building" && !!e.lesson_id);
           return (
             <li key={e.index}>
               <button type="button" className={`ep ${on ? "on" : ""} ${e.status}`} disabled={!can} onClick={() => onPick(e.index)}
@@ -35,7 +35,7 @@ export const EpisodeRail: React.FC<Props> = ({ playlist, current, onPick, waitin
                 <span className="ep-n">{on ? <Ui name="play" size={14} /> : e.index + 1}</span>
                 <span className="ep-t">{e.title}</span>
                 <span className="ep-s">
-                  {e.status === "ready" ? mmss(e.duration_s) : e.status === "building" ? "making…" : e.status === "failed" ? "failed" : "queued"}
+                  {e.status === "ready" ? mmss(e.duration_s) : e.status === "building" ? (e.lesson_id ? "playing, more coming…" : "making…") : e.status === "failed" ? "failed" : "queued"}
                 </span>
                 {e.status === "building" && <span className="ep-spin" aria-hidden />}
               </button>

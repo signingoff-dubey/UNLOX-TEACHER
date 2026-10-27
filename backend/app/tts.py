@@ -84,7 +84,7 @@ def _piper(text: str, lang: str, out: Path) -> None:
     with _lock_for(_piper_locks, lang):
         voice = _piper_voices.get(lang)
         if voice is None:
-            voice = _piper_voices[lang] = PiperVoice.load(str(model), use_cuda=config.ort_providers()[0] == "CUDAExecutionProvider")
+            voice = _piper_voices[lang] = PiperVoice.load(str(model), use_cuda=config.PIPER_CUDA and config.ort_providers()[0] == "CUDAExecutionProvider")
         with wave.open(str(out), "wb") as wf:
             if hasattr(voice, "synthesize_wav"):      # piper-tts >= 1.3
                 voice.synthesize_wav(text, wf)

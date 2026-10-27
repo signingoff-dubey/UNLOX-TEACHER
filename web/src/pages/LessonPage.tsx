@@ -44,7 +44,7 @@ export const LessonPage: React.FC<Props> = (
   const track = lesson?.languages[lang];
   const player = useRef<PlayerRef>(null);
   const frame = useRef<HTMLDivElement>(null);
-  const resume = useRef<{ frac: number; playing: boolean } | null>(null);
+  const resume = useRef<{ lessonId: string; frac: number; playing: boolean } | null>(null);
   const tap = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finished = useRef(false);
   const followed = useRef("");
@@ -105,7 +105,7 @@ export const LessonPage: React.FC<Props> = (
     const onEnd = () => {
       const next = playlist.episodes[episode + 1];
       if (!next) { award({ type: "course_complete", course_id: playlist.id }); return; }
-      if (next.status === "ready") onEpisode?.(episode + 1);
+      if (next.status === "ready") onEpisode?.(episode + 1);        // (an episode still being made waits until it is complete)
       else if (next.status !== "failed") setWaitingNext(true);
     };
     p.addEventListener("ended", onEnd);
@@ -136,11 +136,15 @@ export const LessonPage: React.FC<Props> = (
   // Switching language keeps your place in the lesson (the scenes line up across languages).
   const switchLang = (code: string) => {
     const p = player.current;
-    resume.current = p ? { frac: p.getCurrentFrame() / frames, playing: p.isPlaying() } : null;
+    resume.current = p && lesson ? { lessonId: lesson.id, frac: p.getCurrentFrame() / frames, playing: p.isPlaying() } : null;
     onLang(code);
   };
-  const initialFrame = resume.current ? Math.min(Math.round(resume.current.frac * frames), frames - 1) : 0;
-  const autoPlay = resume.current ? resume.current.playing : true;
+  // Only for the lesson the language was switched in: a later lesson or episode starts from the beginning and plays by itself.
+  const kept = resume.current && resume.current.lessonId === lesson?.id ? resume.current : null;
+  const initialFrame = kept ? Math.min(Math.round(kept.frac * frames), frames - 1) : 0;
+  const autoPlay = kept ? kept.playing : true;
+  // Browsers refuse sound before any click on the page (a reload, a pasted link): start muted then, instead of not starting at all.
+  const quiet = typeof navigator !== "undefined" && "userActivation" in navigator && !(navigator as Navigator & { userActivation: { hasBeenActive: boolean } }).userActivation.hasBeenActive;
 
   // Tap the left or right third twice to jump 5 s; centre once to play/pause, twice for full screen.
   const onScreenClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -292,6 +296,7 @@ export const LessonPage: React.FC<Props> = (
                     fps={FPS}
                     initialFrame={initialFrame}
                     autoPlay={autoPlay}
+                    initiallyMuted={quiet}
                     playbackRate={speed}
                     controls={false}
                     clickToPlay={false}

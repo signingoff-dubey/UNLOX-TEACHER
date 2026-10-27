@@ -1,7 +1,28 @@
 # Progress Log
 
-## Current Version: v0.14.1
+## Current Version: v0.14.2
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.14.2] — 2026-10-27
+### What's New
+- **A 5-video course no longer dies on "CUDA error: out of memory"**. Cause: that error is sticky (the GPU cannot be used by torch again in the process) and the cleanup after a failed translation (`_free_gpu`) raised it again, so no fallback ran and all 5 episodes failed with the same text after 384 s. Now: a CUDA error switches every torch model to the CPU for the rest of the process (`config.mark_cuda_broken`), cleanup never raises, the translator starts on the CPU when under 1.8 GB of VRAM is free (the language model holds most of the 8 GB), and a course episode that hits a CUDA error is retried once
+- **Long videos stream too**: a 2 minute video is planned in 4 parts of 30 s (was 3 of 40 s). Part 1 is read token by token and its scenes are made while it is written; parts 2, 3 and 4 are added in order as each is finished, so the player starts after the first scenes and the rest follows. Measured on this laptop (cold model): first scenes watchable at 13 s, 5 scenes at 26 s, 15 scenes at 35 s, job done at 63 s
+- **Courses**: episode 1 opens and plays while it is still being made (`preview` on the episode, `lesson_id` set early); the episode rail shows "playing, more coming..." and lets you pick it
+- **Videos play by themselves again**: the position kept for a language switch (`resume`) was never cleared and was not tied to a lesson, so after one switch every later lesson or episode started at that old position and, if it was paused then, did not play. It now belongs to the lesson it was set in. When the browser has had no click yet (a reload) the video starts muted instead of not starting
+
+- **The other languages are no longer starved by the study tools**: flashcards, quiz and the rest (background, 3 workers) started on the GPU the moment the English video was done and shared the card with the Hindi translation, which then took more than 9 minutes and had not finished. They now wait for the language job too (`jobs.active(..., "langs")`). Same 2 minute video: Hindi in 74 s
+
+- **Root cause of the hangs found and fixed**: PyTorch's GPU allocator reserved 10.3 GB while translating (1 GB in use), beyond the 8 GB card, so Windows spilled into RAM (22 GB committed, 0.2 GB free). Now capped (`PYTORCH_CUDA_ALLOC_CONF`, `TORCH_VRAM_FRACTION=0.35`) and the cache is released after every batch: reserved 0.41 GB, process 4.4 GB in the same test
+- **Resource manager** (`resources.py`) so a 5 video course cannot hang the laptop: the backend runs at below-normal priority (the desktop, browser and slides win), the maths libraries use half the cores, background work (extra episodes, study tools) waits while free RAM is under 1.5 GB or free VRAM under 0.8 GB, and speech recognition and the translator are released after 10 quiet minutes. Before, start-up put the translator, Whisper medium and every Piper voice on the 8 GB card next to the 5.5 GB language model, so the card was permanently full (desktop stutter, then CUDA out of memory). Now: Piper on the CPU (`PIPER_CUDA=0`), Whisper loads on the first spoken question (on the GPU only if 3 GB are free, else the CPU), study tools are not queued for every course episode (14 tools x 5 episodes of language-model work), only for episode 1 once the course is done, and 2 study builders instead of 3. `/api/health` reports free RAM and VRAM
+
+- **Measured, the scenario that failed** (5 videos, 2 min each, English and Hindi, intermediate, this laptop): all 5 episodes ready in 496 s (it failed after 384 s before); episode 1 watchable at 25 s and ready at 72 s, then one more roughly every 90 s; lowest free RAM 4.5 GB (it was 0.2 GB), peak VRAM 7.1 of 8.15 GB, PyTorch's share of the card at most 1.97 GB (it was 10.3 GB), backend memory 8.9 GB (it was 22 GB)
+
+### Known Issues
+- The finished plan is still checked afterwards (director, reviewer), so already-playing scenes can change a little when the final lesson replaces the preview
+- Episodes 2 and up of a course are shown when complete (only episode 1 streams); two episodes plus the language model and the translator share 8 GB of VRAM, so on the CPU fallback Hindi takes longer
+- Video length: the model writes about 90 s of narration for a 120 s request
 
 ---
 

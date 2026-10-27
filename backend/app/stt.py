@@ -12,7 +12,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import config
+from . import config, resources
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +36,10 @@ def _gpu_model(cls, source):
         import torch
         if not torch.cuda.is_available():
             return None
+        free = config.gpu_free_gb()
+        if free is not None and free < config.STT_MIN_FREE_GB:
+            log.info("Only %.1f GB of VRAM free: speech recognition runs on the CPU", free)
+            return None
         lib = Path(torch.__file__).parent / "lib"
         if hasattr(os, "add_dll_directory") and lib.exists():
             os.add_dll_directory(str(lib))
@@ -55,8 +59,16 @@ def _cpu_model(cls, source):
         raise SttUnavailable(f"Could not load the speech model '{source}': {e}") from e
 
 
+def _unload() -> None:
+    """Free the speech model (it reloads on the next question). Waits for a transcription in progress."""
+    global _model
+    with _lock:
+        _model = None
+
+
 def _load():
     global _model
+    resources.touch("stt")
     if _model is None:
         try:
             from faster_whisper import WhisperModel
@@ -70,6 +82,7 @@ def _load():
             try:
                 _model = _gpu_model(WhisperModel, source) or _cpu_model(WhisperModel, source)
                 log.info("STT model loaded: %s", source)
+                resources.idle_release("stt", config.MODEL_IDLE_S, _unload)
                 break
             except SttUnavailable as e:
                 log.warning("%s", e)

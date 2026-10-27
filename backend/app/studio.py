@@ -20,7 +20,7 @@ from typing import Any, Callable
 import requests
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, jobs, llm
+from . import config, jobs, llm, resources
 from .knowledge import retrieve
 from .pipeline import LESSONS_DIR, load_lesson
 from .translate import translate_batch
@@ -356,7 +356,7 @@ _waiters: dict[Key, threading.Event] = {}
 _heap: list[tuple[int, int, Key]] = []
 _seq = itertools.count()
 _cv = threading.Condition()
-WORKERS = max(1, int(os.getenv("STUDIO_WORKERS", "3")))
+WORKERS = max(1, int(os.getenv("STUDIO_WORKERS", "2")))
 _workers: list[threading.Thread] = []
 _en_locks: dict[tuple, threading.Lock] = {}
 _prebuilt: set[str] = set()
@@ -456,7 +456,7 @@ def ensure(lesson_id: str, kind: str, lang: str = "en", size: str = DEFAULT_SIZE
 
 
 def _next(me: threading.Thread | None = None) -> Key | None:
-    """The most urgent waiting tool. Background work waits while a lesson or course is being made (they share the model)."""
+    """The most urgent waiting tool. Background work waits while a lesson, a course or the other languages of a lesson are being made (they share the GPU)."""
     with _cv:
         while me is None or me in _workers:
             while _heap:
@@ -465,7 +465,7 @@ def _next(me: threading.Thread | None = None) -> Key | None:
                 if not s or s["state"] != "queued" or s.get("priority", BACKGROUND) != prio:
                     heapq.heappop(_heap)                         # stale entry: already built, or re-queued more urgently
                     continue
-                if prio >= BACKGROUND and jobs.active("lesson", "playlist"):
+                if prio >= BACKGROUND and (jobs.active("lesson", "playlist", "langs") or not resources.has_headroom()):         # "langs": the other languages are made before the extras
                     break
                 heapq.heappop(_heap)
                 s["state"] = "building"

@@ -1,7 +1,7 @@
 """Videos longer than LONG_MIN seconds (up to 4 minutes) are planned in parts and joined into one lesson.
 
 One answer from a 7B model cannot hold 4 minutes together: it loses the thread and runs long. So an outline is written first
-(a title and one goal per part), then every part of about 40 s is planned as "part k of n of ONE video" (the planner's segment
+(a title and one goal per part), then every part of about 30 s is planned as "part k of n of ONE video" (the planner's segment
 mode): it knows what was already taught and what comes next, only the first part has a title scene, and only the last has the
 quiz and the recap. The scenes of all parts are then joined, and the rest of the pipeline (visual director, writer, translation,
 voices) treats the result like any other lesson.
@@ -23,7 +23,7 @@ from .schema import LessonPlan
 log = logging.getLogger(__name__)
 
 LONG_MIN = 90                      # seconds: anything longer is planned in parts
-PART_S = 40                        # about how long one part is
+PART_S = 30                        # about how long one part is (a 2 minute video is 4 parts)
 MAX_S = 240
 
 
@@ -68,7 +68,7 @@ WORKERS = int(os.getenv("LONGPLAN_WORKERS", "2"))     # Ollama runs 2 requests a
 
 
 def plan_long(concept: str, level: str, duration_s: int, upload: str | None, focus: str, wps: float,
-              on_progress: Callable[[float], None] = lambda f: None, extra: str = "", mode: str = "explain") -> tuple[LessonPlan, list[dict]]:
+              on_progress: Callable[[float], None] = lambda f: None, extra: str = "", mode: str = "explain", preview=None) -> tuple[LessonPlan, list[dict]]:
     """Plan a long video part by part, two parts at a time. Returns the joined plan and the sources of all parts.
     The outline already says what each part is about, so a part knows what came before from the outline's titles, not from the
     scenes of the part before it: that is what lets the parts be written at the same time."""
@@ -80,6 +80,13 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
     frac = [0.0] * n
     lock = threading.Lock()
     best = [0.08]
+    done: dict[int, tuple[LessonPlan, list[dict]]] = {}
+    handed = [1]                       # parts already given to the player: part 1 is streamed token by token, the others whole and in order
+
+    def hand_over() -> None:           # lock held
+        while preview is not None and handed[0] in done:
+            preview.add_scenes([s.model_dump() for s in done[handed[0]][0].scenes])
+            handed[0] += 1
 
     def report(i: int, f: float) -> None:
         with lock:
@@ -94,8 +101,11 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
                   "next": sb.chapters[i + 1].title if i + 1 < n else ""}
         topic = f"{concept}: {ch.title}" if concept else ch.title
         got = plan_lesson(topic, level=level, duration_s=part_s, upload=upload, focus=focus, wps=wps, series=series,
-                          extra=extra, mode=mode, on_progress=lambda f: report(i, f))
+                          extra=extra, mode=mode, on_progress=lambda f: report(i, f), on_text=preview.feed if preview is not None and i == 0 else None)
         report(i, 1.0)
+        with lock:
+            done[i] = got
+            hand_over()                # part 2 appears in the player as soon as parts 1 and 2 are both written
         return got
 
     with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, n))) as pool:

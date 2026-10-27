@@ -281,3 +281,10 @@ Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_h
 - **Learnverse builds a world for any topic you type** with the local model, behind a "Building your world" screen. Quiz gates open by themselves when you reach them, Space (or the Jump button) jumps, and points and purchases are also kept on the backend.
 - New API: `POST /api/metaworld`, `GET/POST /api/metaverse/save`. New backend file: `metaworld.py`.
 - The "+" button on the home prompt now sits beside Create lesson.
+
+## What is new in v0.14.2
+- A GPU out-of-memory no longer fails a whole course: torch models fall back to the CPU, the failed episode is retried. Environment: `TRANSLATE_MIN_FREE_GB` (1.8).
+- Long videos are made in parts of 30 s and play while they are made; episode 1 of a course plays while it is made.
+- Videos start playing by themselves again after a language switch or a new episode.
+- Resource limits (all optional): `MIN_FREE_RAM_GB` (1.5), `MIN_FREE_VRAM_GB` (0.8), `MODEL_IDLE_S` (600), `PIPER_CUDA` (0), `PRELOAD_STT` (0), `STT_MIN_FREE_GB` (3), `STUDIO_WORKERS` (2), `PLAYLIST_WORKERS` (2). See `docs/presentation-mode.md`.
+- `TORCH_VRAM_FRACTION` (0.35): the share of the graphics card PyTorch may hold.

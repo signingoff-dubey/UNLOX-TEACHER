@@ -102,6 +102,16 @@ class ScenePreview:
         for obj in new:
             self._q.put((gen, obj))
 
+    def add_scenes(self, objs: list[dict]) -> None:
+        """Scenes that are already complete (a finished part of a long video), after everything fed so far, in order."""
+        with self._lock:
+            if self._closed:
+                return
+            gen = self._gen
+            self._seen += len(objs)
+        for obj in objs:
+            self._q.put((gen, obj))
+
     def close(self, wait: float = 20.0) -> None:
         """No more writes after this returns (waits for the scene being made, so the final save is the last word)."""
         with self._lock:

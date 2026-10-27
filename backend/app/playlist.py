@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 from pydantic import BaseModel, Field
 
-from . import config, llm
+from . import config, llm, resources
 from .exporter import export_mp4
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
@@ -162,25 +162,37 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
     def build_one(i: int) -> None:
         if i:
             planned[i - 1].wait()          # episode 1 gets the model to itself first, so it is playable sooner
+            resources.wait_for_headroom(f"episode {i + 1}", min_ram=2.0)       # memory is short: the next episode waits instead of freezing the computer
         ep = pl["episodes"][i]
         ep["status"] = "building"
         with state_lock:
             save(pl)
 
-        def report(stage: str, value: float) -> None:
+        def report(stage: str, value: float, **extra) -> None:
+            if extra.get("lesson_id") and not ep.get("lesson_id"):          # the first scenes exist: the course page can open this episode now
+                ep.update(lesson_id=extra["lesson_id"], preview=True)
+                with state_lock:
+                    save(pl)
             frac[i] = value
             if value >= 0.6:
                 planned[i].set()
             progress(f"Episode {i + 1} of {n}: {stage}", 0.05 + 0.95 * sum(frac) / n)
 
-        try:
-            lesson = build_lesson(f"{pl['topic']}: {ep['title']}", pl["languages"], pl["level"], pl["duration_s"],
-                                  pl["documents"], series=series_context(pl, i), images=pl.get("images", []),
-                                  mode=pl.get("mode", "explain"), progress=report)
-            ep.update(lesson_id=lesson["id"], status="ready", duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
-        except Exception as e:                   # noqa: BLE001   one bad episode must not sink the course
-            log.error("playlist %s episode %d failed: %s", playlist_id, i + 1, e)
-            ep.update(status="failed", error=f"{type(e).__name__}: {e}")
+        for attempt in (1, 2):
+            try:
+                lesson = build_lesson(f"{pl['topic']}: {ep['title']}", pl["languages"], pl["level"], pl["duration_s"],
+                                      pl["documents"], series=series_context(pl, i), images=pl.get("images", []),
+                                      mode=pl.get("mode", "explain"), progressive=(i == 0), progress=report)
+                ep.pop("preview", None)
+                ep.update(lesson_id=lesson["id"], status="ready", error=None, duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
+                break
+            except Exception as e:               # noqa: BLE001   one bad episode must not sink the course
+                log.error("playlist %s episode %d failed (attempt %d): %s", playlist_id, i + 1, attempt, e)
+                if config.is_cuda_error(e):
+                    config.mark_cuda_broken(str(e))      # the retry then runs the torch models on the CPU
+                if attempt == 2 or not config.is_cuda_error(e):
+                    ep.update(status="failed", error=f"{type(e).__name__}: {e}")
+                    break
         frac[i] = 1.0
         planned[i].set()
         with state_lock:
@@ -189,6 +201,13 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
     with ThreadPoolExecutor(max_workers=max(1, WORKERS)) as pool:
         list(pool.map(build_one, range(n)))        # started in order, so episode 1 finishes first
 
+    first_ready = next((e["lesson_id"] for e in pl["episodes"] if e["status"] == "ready" and e.get("lesson_id")), None)
+    if first_ready:
+        try:
+            from . import studio
+            studio.prebuild(first_ready)       # the study tools of episode 1 now that nothing else is running; the others are made when opened
+        except Exception:  # noqa: BLE001
+            log.warning("could not queue the study tools for %s", first_ready, exc_info=True)
     ok = sum(1 for e in pl["episodes"] if e["status"] == "ready")
     pl["status"] = "ready" if ok == n else ("partial" if ok else "error")
     pl["built_s"] = round(time.perf_counter() - t0, 1)

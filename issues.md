@@ -237,3 +237,53 @@
 **Fix:** one `.dock-actions` cluster (both 46 px, bottom aligned), `flex: none` on the textarea, a wrap rule under 560 px
 **Files Changed:** web/src/pages/Home.tsx, web/src/styles/home.css
 **Status:** Resolved
+
+---
+
+## [ISSUE-029] — 2026-10-27
+**Title:** 5-video course failed on every episode with "CUDA error: out of memory"
+**Symptom:** the course (Pac-Man, intermediate, 120 s, English + Hindi) ran 384 s and ended with status error: all five episodes failed with the same AcceleratorError, nothing to play
+**Root Cause:** the 8 GB card was full (language model + translator + voices). A CUDA out-of-memory raised as AcceleratorError is sticky: torch cannot use the GPU again in that process. `translate._translate_with_fallbacks` caught it, then called `_free_gpu()` which called `torch.cuda.empty_cache()`, which raised the same error and escaped, so the CPU and Ollama fallbacks never ran; every later episode hit the same dead GPU
+**Fix:** `config.mark_cuda_broken()` (torch models use the CPU from then on), `_free_gpu` swallows everything, the translator only starts on the GPU when at least 1.8 GB is free (`TRANSLATE_MIN_FREE_GB`), a CUDA-failed episode is retried once. Tests in `tests/test_gpu_resilience.py`
+**Files Changed:** backend/app/config.py, translate.py, playlist.py, tests/test_gpu_resilience.py
+**Status:** Resolved (restart the backend after a CUDA error to get the GPU back)
+
+---
+
+## [ISSUE-030] — 2026-10-27
+**Title:** Long videos and courses showed nothing until everything was done
+**Symptom:** a 2 minute video (planned in parts) and every course episode were saved only when complete; the earlier "first scene in 6 s" worked only for single lessons of 90 s or less
+**Root Cause:** `_build` started the scene preview only for `series is None and duration_s <= LONG_MIN`; part planning (`plan_long`) and course episodes never fed it
+**Fix:** parts of 30 s; the preview streams part 1 and receives parts 2.. whole and in order (`ScenePreview.add_scenes`); episode 1 of a course is built with the preview and the course page opens it as soon as its `lesson_id` exists
+**Files Changed:** backend/app/longplan.py, pipeline.py, streaming.py, playlist.py, web/src/App.tsx, api.ts, components/EpisodeRail.tsx
+**Status:** Resolved (episodes 2+ of a course are not streamed)
+
+---
+
+## [ISSUE-032]
+**Title:** Hindi of a new video stuck for minutes behind the study tools
+**Symptom:** the English video was ready, Hindi stayed pending for more than 9 minutes (GPU at 84%, 7.8 of 8 GB used) while flashcards, quiz and other study tools appeared
+**Root Cause:** `studio._next` held background tools back only while a `lesson` or `playlist` job was active, not while the `langs` job (the other languages) was; the tools and the translation shared the card
+**Fix:** background study tools also wait while a `langs` job is active
+**Files Changed:** backend/app/studio.py
+**Status:** Resolved (measured: Hindi 74 s for 15 scenes)
+
+---
+
+## [ISSUE-031] — 2026-10-27
+**Title:** Generated videos did not start playing
+**Symptom:** a finished lesson or episode opened paused, or at a point in the middle
+**Root Cause:** `LessonPage` kept `resume` (position and "was playing") in a ref after a language switch and never cleared it or tied it to a lesson, so every later lesson reused it
+**Fix:** `resume` carries the lesson id and is used only for that lesson; muted start when the page has had no user activation
+**Files Changed:** web/src/pages/LessonPage.tsx
+**Status:** Resolved
+
+---
+
+## [ISSUE-033] — 2026-10-27
+**Title:** Generating a 5 video course made the computer hang
+**Symptom:** the desktop stuttered and froze while a course was made, then episodes failed with CUDA out of memory
+**Root Cause:** measured: while translating, PyTorch's GPU allocator reserved 10.3 GB (only 1 GB in use) in the backend process, more than the whole 8 GB card, so Windows pushed the rest into system RAM (the backend's committed memory reached 22 GB, free RAM 0.2 GB) and froze the desktop. Also: the 8 GB card was full all the time: start-up warm-up loaded the translator (about 2 GB), Whisper medium (about 1.5 GB) and every Piper voice with CUDA next to the language model (5.5 GB); Windows then spills into system memory, which freezes the display. On top of that each finished episode queued 14 study tools (2 languages x 7), three at once, against the same model, and torch and OpenMP used every core
+**Fix:** `PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128`, a cap on torch's share of the card (`TORCH_VRAM_FRACTION`, 0.35), the allocator cache handed back after every translation batch (reserved memory 10.3 GB to 0.41 GB, process memory 14 GB to 4.4 GB in the same test), plus `resources.py` (below-normal priority, headroom gate, idle release), Piper on the CPU, Whisper lazy and VRAM-aware, no automatic study tools for course episodes 2+, 2 study builders, thread caps. See docs/presentation-mode.md
+**Files Changed:** backend/app/resources.py, config.py, stt.py, tts.py, translate.py, studio.py, playlist.py, pipeline.py, main.py
+**Status:** Resolved (see the measured numbers in progress.md v0.14.2)

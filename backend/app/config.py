@@ -2,6 +2,14 @@
 from __future__ import annotations
 
 import os
+
+# The maths libraries (torch, numpy, OpenMP) may use every core by default and leave nothing for the desktop. Half of them is plenty.
+_cores = os.cpu_count() or 4
+for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, str(max(2, _cores // 2)))
+# PyTorch's GPU allocator caches freed blocks and, with many different sizes, reserved 10 GB while only 1 GB was in use (measured on the translator):
+# more than the 8 GB card, so Windows pushed the rest into system RAM and the whole computer froze. Smaller blocks and early release stop that.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "garbage_collection_threshold:0.6,max_split_size_mb:128")
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]          # chanakya/
@@ -76,6 +84,10 @@ PIPER_DIR = Path(os.getenv("PIPER_DIR", MODELS_DIR / "piper"))
 STT_MODEL = os.getenv("STT_MODEL", "medium")
 STT_THREADS = int(os.getenv("STT_THREADS", "4"))
 STT_DEVICE = os.getenv("STT_DEVICE", "auto")      # "cpu" to keep speech recognition off the GPU
+STT_MIN_FREE_GB = float(os.getenv("STT_MIN_FREE_GB", "3.0"))   # the speech model goes to the GPU only when this much VRAM is free, else the CPU
+PRELOAD_STT = os.getenv("PRELOAD_STT", "0") == "1"           # off: it loads on the first spoken question and is released after MODEL_IDLE_S
+MODEL_IDLE_S = float(os.getenv("MODEL_IDLE_S", "600"))       # seconds of quiet after which speech recognition and the translator are released
+PIPER_CUDA = os.getenv("PIPER_CUDA", "0") == "1"             # Piper voices run on the CPU (fast enough); the GPU is for the language model
 
 DEVICE = os.getenv("DEVICE", "auto")                 # auto | cuda | cpu
 # Load translation + TTS models at startup so the first lesson is fast.
@@ -91,7 +103,57 @@ for d in (MEDIA_DIR, MODELS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 
+_cuda_broken = False
+TORCH_VRAM_FRACTION = float(os.getenv("TORCH_VRAM_FRACTION", "0.35"))      # torch in this process may hold at most this share of the card (the language model needs the rest)
+_vram_limited = False
+
+
+def limit_torch_vram() -> None:
+    """Cap what torch may take from the card, so it fails (and falls back to the CPU) instead of spilling into system RAM. Once per process."""
+    global _vram_limited
+    if _vram_limited or _cuda_broken:
+        return
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.set_per_process_memory_fraction(TORCH_VRAM_FRACTION)
+            _vram_limited = True
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def mark_cuda_broken(reason: str = "") -> None:
+    """After "CUDA error: out of memory" (a sticky error, not the catchable OutOfMemoryError) the GPU cannot be used by torch again in this
+    process: every later call raises the same error. From here on torch models go to the CPU instead of failing every lesson."""
+    global _cuda_broken
+    if not _cuda_broken:
+        import logging
+        logging.getLogger(__name__).error("The GPU is unusable for torch after a CUDA error (%s); using the CPU from now on. Restart the backend to get it back.", reason[:120])
+    _cuda_broken = True
+
+
+def is_cuda_error(e: BaseException) -> bool:
+    """True for the sticky CUDA failures (AcceleratorError, 'CUDA error: ...') and for a plain GPU out-of-memory."""
+    text = f"{type(e).__name__} {e}".lower()
+    return "cuda error" in text or "acceleratorerror" in text or "cuda out of memory" in text or "outofmemoryerror" in text
+
+
+def gpu_free_gb() -> float | None:
+    """Free VRAM in GB as torch sees it (None without a usable GPU)."""
+    if _cuda_broken:
+        return None
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.mem_get_info()[0] / 2 ** 30
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def torch_device() -> str:
+    if _cuda_broken:
+        return "cpu"
     if DEVICE != "auto":
         return DEVICE
     try:
