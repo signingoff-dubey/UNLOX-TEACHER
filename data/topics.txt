@@ -1,0 +1,330 @@
+# School topics fetched into the offline knowledge base (Simple English Wikipedia, CC BY-SA).
+# One article title per line. Lines starting with # are ignored. Add more freely, then rerun
+#   backend\venv\Scripts\python backend\scripts\build_knowledge.py
+
+# --- Biology ---
+Photosynthesis
+Cell (biology)
+Cell nucleus
+Mitochondrion
+Chloroplast
+DNA
+Gene
+Chromosome
+Heredity
+Evolution
+Natural selection
+Respiration
+Cellular respiration
+Digestion
+Human digestive system
+Circulatory system
+Heart
+Blood
+Red blood cell
+White blood cell
+Lung
+Respiratory system
+Kidney
+Excretion
+Nervous system
+Brain
+Neuron
+Skeleton
+Muscle
+Skin
+Eye
+Ear
+Hormone
+Endocrine system
+Immune system
+Vaccine
+Bacteria
+Virus
+Fungus
+Microorganism
+Disease
+Malaria
+Tuberculosis
+Nutrition
+Vitamin
+Protein
+Carbohydrate
+Fat
+Plant
+Root
+Leaf
+Flower
+Seed
+Pollination
+Germination
+Transpiration
+Ecosystem
+Food chain
+Food web
+Biodiversity
+Habitat
+Reproduction
+Sexual reproduction
+Asexual reproduction
+Mammal
+Bird
+Reptile
+Amphibian
+Fish
+Insect
+Animal
+Classification (biology)
+
+# --- Chemistry ---
+Atom
+Molecule
+Element (chemistry)
+Chemical compound
+Mixture
+Periodic table
+Electron
+Proton
+Neutron
+Chemical bond
+Covalent bond
+Ionic bond
+Chemical reaction
+Acid
+Base (chemistry)
+PH
+Salt
+Oxidation
+Combustion
+Rust
+Metal
+Nonmetal
+Carbon
+Oxygen
+Hydrogen
+Nitrogen
+Water
+States of matter
+Solid
+Liquid
+Gas
+Evaporation
+Condensation
+Melting
+Boiling point
+Solution (chemistry)
+Polymer
+Plastic
+Fuel
+Petroleum
+
+# --- Physics ---
+Force
+Gravity
+Newton's laws of motion
+Friction
+Motion
+Speed
+Velocity
+Acceleration
+Mass
+Weight
+Energy
+Kinetic energy
+Potential energy
+Conservation of energy
+Work (physics)
+Power (physics)
+Pressure
+Buoyancy
+Density
+Heat
+Temperature
+Thermal conduction
+Convection
+Thermal radiation
+Light
+Reflection (physics)
+Refraction
+Lens
+Rainbow
+Color
+Sound
+Wave
+Echo
+Electricity
+Electric current
+Voltage
+Electrical resistance
+Electric circuit
+Magnet
+Magnetism
+Electromagnet
+Electric generator
+Electric motor
+Simple machine
+Lever
+Pulley
+Atom bomb
+Nuclear energy
+Renewable energy
+Solar energy
+Wind power
+
+# --- Earth and space ---
+Earth
+Solar System
+Sun
+Moon
+Planet
+Star
+Galaxy
+Milky Way
+Universe
+Big Bang
+Eclipse
+Season
+Day
+Tide
+Water cycle
+Rain
+Cloud
+Weather
+Climate
+Climate change
+Global warming
+Greenhouse effect
+Atmosphere of Earth
+Ozone layer
+Air pollution
+Water pollution
+Soil
+Rock (geology)
+Volcano
+Earthquake
+Plate tectonics
+Mountain
+River
+Ocean
+Glacier
+Desert
+Forest
+Monsoon
+Natural disaster
+Flood
+Cyclone
+
+# --- Mathematics ---
+Number
+Natural number
+Integer
+Fraction (mathematics)
+Decimal
+Percentage
+Ratio
+Prime number
+Addition
+Subtraction
+Multiplication
+Division (mathematics)
+Algebra
+Equation
+Linear equation
+Quadratic equation
+Geometry
+Triangle
+Circle
+Pi
+Square (geometry)
+Rectangle
+Polygon
+Angle
+Pythagorean theorem
+Area
+Perimeter
+Volume
+Probability
+Statistics
+Mean
+Graph of a function
+Trigonometry
+Set (mathematics)
+Exponentiation
+Square root
+
+# --- Geography and India ---
+India
+Geography of India
+Himalayas
+Ganges
+Indian Ocean
+Indian subcontinent
+Continent
+Map
+Latitude
+Longitude
+Population
+Agriculture
+Irrigation
+Green Revolution
+Natural resource
+Renewable resource
+Urbanization
+
+# --- History and civics ---
+Indus Valley civilisation
+Vedic period
+Maurya Empire
+Ashoka
+Gupta Empire
+Mughal Empire
+Akbar
+British Raj
+Indian independence movement
+Mahatma Gandhi
+Jawaharlal Nehru
+B. R. Ambedkar
+Partition of India
+Constitution of India
+Democracy
+Parliament of India
+Election
+Fundamental rights
+Government
+Law
+Human rights
+United Nations
+World War I
+World War II
+Industrial Revolution
+Renaissance
+French Revolution
+Ancient Egypt
+Ancient Greece
+Roman Empire
+
+# --- Economics ---
+Economy
+Money
+Bank
+Inflation
+Supply and demand
+Tax
+Trade
+Gross domestic product
+
+# --- Computers and technology ---
+Computer
+Internet
+Algorithm
+Computer program
+Programming language
+Artificial intelligence
+Machine learning
+Binary number
+Computer hardware
+Software
+World Wide Web
+Robot
+Telephone
+Satellite

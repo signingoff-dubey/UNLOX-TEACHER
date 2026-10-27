@@ -50,6 +50,7 @@ export async function runJob(start: Promise<Job>, onUpdate: (j: Job) => void): P
 
 export type Health = {
   llm: { backend: string; model: string; ollama: { ok: boolean; models: string[] } };
+  knowledge: { enabled: boolean; ready: boolean; chunks?: number; articles?: number; error?: string };
   translate: { backend: string; model: string; toolkit_installed: boolean };
   tts: { engine: string; fallback: string; piper_voices: string[]; parler_installed: boolean; parler_model: string };
   render: { web_dir_ok: boolean; node_modules_ok: boolean };

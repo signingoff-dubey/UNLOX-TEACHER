@@ -4,7 +4,8 @@ Type a concept and get a 30–90 s narrated, animated lesson in English plus Ind
 It plays in the browser and exports to MP4. Everything runs offline on one laptop.
 
 ```
-concept ─► Ollama LLM ─► lesson JSON (schema-checked) ─► IndicTrans2 ─► Piper / Indic Parler-TTS
+concept ─► retrieve facts from offline knowledge base (embeddings, ~1 ms search)
+        ─► Ollama LLM ─► lesson JSON (schema-checked) ─► IndicTrans2 ─► Piper / Indic Parler-TTS
                                                                          │ audio length = scene length
 browser player ◄── Remotion scene templates ◄── timed lesson JSON ◄──────┘ captions timed to audio
 MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
@@ -12,6 +13,19 @@ MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
 
 - **Data, never code:** the LLM only picks one of 8 templates (title, bullets, flow, cycle, compare, diagram, quiz, summary) and fills in its text fields.
 - **Narration first:** each scene's voice is synthesized before anything is animated, and the scene lasts exactly as long as that audio plus 0.5 s. Item reveals and captions are timed against the same audio.
+
+## Knowledge base and retrieval (RAG)
+
+Lessons are grounded in an offline knowledge base, so facts come from a source and not only from the 7B model's memory.
+
+- **Dataset:** about 300 school topics in `data/topics.txt`, covering biology, chemistry, physics, earth and space, maths, Indian geography, history and civics, economics and computers. They are fetched from **Simple English Wikipedia**, which is written for learners, with English Wikipedia as a fallback. The current build has 308 articles split into 3,500 passages.
+- **Your own material:** drop `.txt` or `.md` files (notes, syllabus text, worksheets) into `data/kb_extra/`, then rebuild.
+- **Indexing:** `backend/scripts/build_knowledge.py` splits articles by section into ~700-character passages and drops references and links sections. It embeds them with `nomic-embed-text` through Ollama and saves a normalised matrix in `data/kb/`. Rebuild offline with `--no-fetch`.
+- **Search:** one matrix-vector product (cosine similarity), plus a boost when the question names the article. At most 2 passages per article for variety, and a score cut-off (0.68) so unrelated topics add nothing. Takes ~35–60 ms.
+- **Use:** the top passages (up to ~4,000 characters) go into the planner prompt as reference material. Each lesson lists its **Sources**.
+- **Inspect it:** `GET /api/knowledge/search?q=how do vaccines work`.
+
+Wikipedia text is CC BY-SA 4.0. The articles are downloaded during setup, not stored in this repo, and each lesson links to the articles it used.
 
 ## Quick start (Windows, PowerShell)
 
@@ -39,7 +53,10 @@ You also need **Ollama** (https://ollama.com); `setup.ps1` pulls the model if it
 
 | Path | What |
 |---|---|
-| `backend/app/planner.py` | Ollama call with JSON-schema output, validation, retry, fallback |
+| `backend/app/planner.py` | Retrieval-grounded prompt, Ollama JSON-schema output, validation, retry, fallback |
+| `backend/app/knowledge.py` | Offline vector search over the knowledge base |
+| `backend/scripts/build_knowledge.py` | Fetches, chunks and embeds the dataset |
+| `data/topics.txt`, `data/kb_extra/` | Dataset topic list and your own documents |
 | `backend/app/schema.py` | Lesson schema + `normalize()` that repairs small-model mistakes |
 | `backend/app/translate.py` | IndicTrans2 (or Ollama) translation, cached on disk |
 | `backend/app/tts.py` | Piper (CPU) → Indic Parler-TTS (GPU) → silent fallback chain, cached |
@@ -105,6 +122,8 @@ All long work runs as a job: POST returns a job, then poll `GET /api/jobs/{id}` 
 | POST | `/api/lessons` | `{"concept": "Photosynthesis", "languages": ["hi","te"]}` | Job; `result` = Lesson |
 | GET | `/api/jobs/{id}` | — | `{id, status, stage, progress 0..1, result, error}` |
 | GET | `/api/lessons/{id}` | — | Lesson |
+| GET | `/api/lessons` | — | Recent lessons (history) |
+| GET | `/api/knowledge/search?q=…&k=5` | — | Retrieved passages with scores |
 | POST | `/api/lessons/{id}/export` | `{"lang": "hi"}` | Job; `result` = `{"url": "/media/.../lesson_hi.mp4"}` |
 | GET | `/media/...` | — | Audio, MP4s, `captions_<lang>.srt` |
 | GET | `/fonts/...` | — | Noto fonts used by the player and renderer |

@@ -52,6 +52,9 @@ def normalize(plan: LessonPlan) -> LessonPlan:
         s.narration = " ".join(s.narration.split())
         if not s.narration:
             continue
+        if s.template == "quiz" and not all(i.isdigit() for i in s.items):
+            # Small models sometimes leak the answer index ("0") into the options.
+            s.items = [i for i in s.items if not i.isdigit()]
         if s.template == "compare" and not (s.left and s.right):
             s.template = "bullets" if len(s.items) >= 2 else "title"
         if len(s.items) < MIN_ITEMS.get(s.template, 0):

@@ -40,6 +40,8 @@ export type Lesson = {
   concept: string;
   created: number;
   languages: Record<string, Track>;
+  /** Knowledge-base articles retrieved to ground the lesson (RAG). */
+  sources?: { title: string; url: string; source: string; score: number }[];
   timings: Record<string, number>;
   videos: Record<string, string>;
 };

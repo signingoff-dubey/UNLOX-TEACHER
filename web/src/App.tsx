@@ -232,6 +232,19 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                  <div className="label sources-label">Sources</div>
+                  {lesson.sources?.length ? (
+                    <ul className="sources">
+                      {lesson.sources.map((s) => (
+                        <li key={s.title}>
+                          {s.url ? <a href={s.url} target="_blank" rel="noreferrer">{s.title}</a> : <span>{s.title}</span>}
+                          <span className="muted">{s.source}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="muted">Written from the model's own knowledge (no matching articles).</div>
+                  )}
                   <details className="json">
                     <summary>Lesson data (JSON)</summary>
                     <pre>{JSON.stringify(track.scenes.map(({ captions, audio_url, ...s }) => s), null, 2)}</pre>

@@ -27,8 +27,8 @@ def build_lesson(concept: str, languages: list[str], progress: Progress = lambda
     for code in langs:
         get_lang(code)                                        # validate early
 
-    progress("Planning the lesson", 0.05)
-    plan = plan_lesson(concept)
+    progress("Finding facts and planning the lesson", 0.05)
+    plan, sources = plan_lesson(concept)
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]
@@ -53,6 +53,7 @@ def build_lesson(concept: str, languages: list[str], progress: Progress = lambda
         "concept": concept,
         "created": int(time.time()),
         "languages": tracks,
+        "sources": sources,
         "timings": timings,
         "videos": {},
     }

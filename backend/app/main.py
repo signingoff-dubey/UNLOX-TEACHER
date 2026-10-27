@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, jobs, translate, tts
+from . import config, jobs, knowledge, translate, tts
 from .exporter import export_mp4
 from .languages import LANGUAGES
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
@@ -24,6 +24,10 @@ log = logging.getLogger("visual-teacher")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    try:
+        knowledge.KnowledgeBase.get()          # load the index once, not on the first lesson
+    except Exception as e:
+        log.error("Knowledge base failed to load: %s", e)
     if config.PRELOAD:
         log.info("Preloading translation and voice models…")
         try:
@@ -58,8 +62,12 @@ def health() -> dict:
         ollama = {"ok": False, "models": []}
     return {
         "llm": {"backend": config.LLM_BACKEND, "model": config.OLLAMA_MODEL, "ollama": ollama},
-        "translate": {"backend": config.TRANSLATE_BACKEND, "model": config.INDICTRANS2_MODEL,
-                      "toolkit_installed": importlib.util.find_spec("IndicTransToolkit") is not None},
+        "knowledge": knowledge.status(),
+        "translate": {"backend": config.TRANSLATE_BACKEND,
+                      "model": {"nllb": config.NLLB_MODEL, "indictrans2": config.INDICTRANS2_MODEL}.get(
+                          config.TRANSLATE_BACKEND, config.OLLAMA_MODEL),
+                      "toolkit_installed": importlib.util.find_spec(
+                          "IndicTransToolkit" if config.TRANSLATE_BACKEND == "indictrans2" else "transformers") is not None},
         "tts": {"engine": config.TTS_ENGINE, "fallback": config.TTS_FALLBACK,
                 "piper_voices": sorted(p.stem for p in tts.PIPER_DIR.glob("*.onnx")),
                 "parler_installed": importlib.util.find_spec("parler_tts") is not None,
@@ -90,6 +98,15 @@ def job_status(job_id: str) -> dict:
     if not job:
         raise HTTPException(404, "No such job")
     return job
+
+
+@app.get("/api/knowledge/search")
+def knowledge_search(q: str, k: int = 5) -> list[dict]:
+    """Inspect retrieval directly (handy for tuning and for showing judges how RAG works)."""
+    kb = knowledge.KnowledgeBase.get()
+    if not kb:
+        raise HTTPException(404, "Knowledge base not built. Run backend/scripts/build_knowledge.py")
+    return [p.__dict__ for p in kb.search(q, k=k)]
 
 
 @app.get("/api/lessons")
