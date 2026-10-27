@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { World } from "metaverse";
-import type { Lesson } from "../types";
+import { api, runJob, url } from "../api";
+import type { Job, Lesson } from "../types";
 import { MetaverseStart } from "./MetaverseStart";
 import { TunnelTransition } from "./TunnelTransition";
 
@@ -9,6 +10,12 @@ import { TunnelTransition } from "./TunnelTransition";
 // time the tunnel ends it is already in memory and only its start-up work is left.
 const load = () => import("metaverse");
 const Metaverse = lazy(load);
+
+/** Points and purchases also live on the backend, so they follow the learner to another address or a cleared browser. */
+const store = {
+  load: () => fetch(url("/api/metaverse/save")).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  save: (d: unknown) => { void fetch(url("/api/metaverse/save"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d), keepalive: true }).catch(() => undefined); },
+};
 export const preloadMetaverse = () => { void load(); };
 
 type Props = {
@@ -56,6 +63,11 @@ export const MetaverseLayer = memo(function MetaverseLayer({ trigger, lesson, la
   const covered = useCallback(() => setPhase("start"), []);
   const done = useCallback(() => setTunnel(false), []);
   const onReady = useCallback(() => setReady(true), []);
+  /** The AI writes a world for a topic typed inside the metaverse; the job's progress drives the "building" screen. */
+  const onBuild = useCallback(async (topic: string, progress: (p: number, stage: string) => void) => {
+    const done = await runJob(api<Job>("/api/metaworld", { topic, lang }), (j) => progress(j.progress, j.stage));
+    return (done.result as { world: World }).world;
+  }, [lang]);
   const start = useCallback(() => setPhase("open"), []);
 
   if (phase === "off") return null;
@@ -64,7 +76,7 @@ export const MetaverseLayer = memo(function MetaverseLayer({ trigger, lesson, la
       {(phase === "start" || phase === "open") && (
         <div className="mv-overlay" role="dialog" aria-label="Metaverse quiz world">
           <Suspense fallback={null}>
-            <Metaverse lesson={lesson} lang={lang} world={world} onExit={leave} />
+            <Metaverse lesson={lesson} lang={lang} world={world} onExit={leave} onBuild={onBuild} store={store} />
             <Ready onReady={onReady} />
           </Suspense>
         </div>

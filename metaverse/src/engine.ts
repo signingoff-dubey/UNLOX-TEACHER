@@ -9,7 +9,15 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
 import type { World } from './types';
 
-export type StartOptions = { extraWorlds?: Record<string, World>; onExit?: () => void };
+export type SaveData = { wallet: number; life: number; owned: string[]; look: Record<string, string | null>; rev: number };
+export type StartOptions = {
+  extraWorlds?: Record<string, World>;
+  onExit?: () => void;
+  /** Asks the AI for a world about a typed topic. Reports progress (0-1) and a stage name while it works. */
+  onBuild?: (topic: string, onProgress: (p: number, stage: string) => void) => Promise<World>;
+  /** A second home for points and purchases, so they survive another address or cleared browser data. */
+  store?: { load: () => Promise<SaveData | null>; save: (d: SaveData) => void };
+};
 
 export function startMetaverse(root: ShadowRoot, opts: StartOptions = {}): () => void {
 const $=s=>root.querySelector(s);
@@ -42,7 +50,10 @@ water:{title:'The water cycle',zones:[
  ],finale:{title:'Summit reached',body:'Evaporation, condensation, precipitation and collection keep water moving around the planet.'}}
 };
 Object.assign(WORLDS,extra);
-function pickWorld(q){q=q.toLowerCase();for(const k of Object.keys(extra)){const w=WORLDS[k];if(q.trim()===w.title.toLowerCase()||q.indexOf((w.match||w.title).toLowerCase())>=0)return[k,true]}
+function pickWorld(q){q=q.toLowerCase().trim();for(const k of Object.keys(extra)){const w=WORLDS[k];if(q===w.title.toLowerCase()||q.indexOf((w.match||w.title).toLowerCase())>=0)return[k,true]}
+  const ready={'java':'java','explain me the java concept':'java','photosynthesis':'photosynthesis','how does photosynthesis work?':'photosynthesis','the water cycle':'water','water cycle':'water'};
+  if(ready[q])return[ready[q],true];
+  if(opts.onBuild)return[null,false];
   if(/java|jvm|class|object|oop|inherit/.test(q))return['java',true];
   if(/photo|plant|leaf|chloro|biolog/.test(q))return['photosynthesis',true];
   if(/water|rain|cloud|evapor|cycle/.test(q))return['water',true];
@@ -78,9 +89,12 @@ const DEFAULT_LOOK={color:'#ff8a5c',visor:'#8be8ff',hat:null,ride:null,pet:null}
 
 /* ---------------- persistence ---------------- */
 const SAVE_KEY='learnverse.v2';
-let save={wallet:150,life:0,owned:['ride_none','hat_none','suit_orange','visor_sky','pet_none'],look:Object.assign({},DEFAULT_LOOK),welcome:true};
+let save={wallet:150,life:0,owned:['ride_none','hat_none','suit_orange','visor_sky','pet_none'],look:Object.assign({},DEFAULT_LOOK),welcome:true,rev:0};
 try{const raw=localStorage.getItem(SAVE_KEY);if(raw){const s=JSON.parse(raw);save=Object.assign(save,s);save.look=Object.assign({},DEFAULT_LOOK,s.look||{});save.welcome=false}}catch(e){}
-function persist(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}}
+let remoteT=0;
+function snapshot(){return{wallet:save.wallet,life:save.life,owned:save.owned,look:save.look,rev:save.rev||0}}
+function pushRemote(){clearTimeout(remoteT);remoteT=0;if(opts.store)try{opts.store.save(snapshot())}catch(e){}}
+function persist(){save.rev=(save.rev||0)+1;try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}if(opts.store){clearTimeout(remoteT);remoteT=setTimeout(pushRemote,500)}}
 const owns=id=>save.owned.indexOf(id)>=0;
 
 /* ---------------- renderer ---------------- */
@@ -200,7 +214,7 @@ const floaters=[];let clouds=null;
  const pts=new THREE.Points(g,fly.mat);pts.frustumCulled=false;scene.add(pts)}
 
 /* ---------------- avatar: voxel crewmate (blocky like Minecraft, visor + backpack like Among Us) ---------------- */
-const player={g:new THREE.Group(),heading:0,v:0,phase:0,rideY:0,speedMul:1};
+const player={g:new THREE.Group(),heading:0,v:0,phase:0,rideY:0,speedMul:1,jy:0,vy:0};
 const AV={bodyM:new THREE.MeshStandardMaterial({color:K('#ff8a5c'),roughness:.55}),darkM:new THREE.MeshStandardMaterial({color:K('#d96c42'),roughness:.6}),visorM:new THREE.MeshStandardMaterial({color:K('#8be8ff'),roughness:.08,metalness:.55,emissive:K('#8be8ff'),emissiveIntensity:.35}),hat:null,hatKind:undefined,ride:null,rideKind:undefined,petRoot:null,petKind:undefined,spin:[],wheels:[]};
 function bx(parent,m,w,h,d,x,y,z,shadow){const b=new THREE.Mesh(BOX,m);b.scale.set(w,h,d);b.position.set(x,y,z);if(shadow!==false)b.castShadow=true;parent.add(b);return b}
 {const g=player.g,body=AV.bodyM,dark=AV.darkM;
@@ -250,7 +264,7 @@ let look=Object.assign({},save.look);
 function placePlayer(i){const p=S[i],t=TG[i];player.g.position.set(p.x,0,p.z);player.heading=Math.atan2(-t.x,-t.z);player.g.rotation.y=player.heading;player.v=0;if(AV.petRoot)AV.petRoot.position.set(p.x+1.4,0,p.z+2)}
 
 /* ---------------- world per topic ---------------- */
-const world=new THREE.Group();scene.add(world);
+const world=new THREE.Group();scene.add(world);let assemble=1;
 const ZT=[.115,.295,.475,.655],GT=[.2,.38,.56,.74],FT=.925;
 let T=null,zones=[],items=[],coins=[],billboards=[];
 function disposeGroup(g){g.traverse(o=>{if(o.geometry&&o.geometry!==BOX&&o.geometry!==coinGeo)o.geometry.dispose();if(o.material&&o.material!==coinMat){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});while(g.children.length)g.remove(g.children[0])}
@@ -348,7 +362,7 @@ const modal=$('#modal'),card=$('#card');
 function openModal(color){card.style.setProperty('--c',color||'');modal.classList.add('on');state.mode='modal';Object.keys(keys).forEach(k=>keys[k]=false);root.querySelectorAll('.pad button').forEach(b=>b.classList.remove('down'))}
 function closeModal(){modal.classList.remove('on');state.mode='play'}
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
-function openInfo(it){
+function openInfo(it,back){
   const z=T.zones[it.zi],i=z.info;card.innerHTML='';card._keys=null;
   card.appendChild(el('div','eyebrow','Station '+(it.zi+1)+' · '+z.name));card.appendChild(el('h2','',i.title));card.appendChild(el('p','',i.body));
   if(i.code)card.appendChild(el('pre','',i.code));
@@ -356,7 +370,7 @@ function openInfo(it){
   const tm=el('div','terms');i.terms.forEach(t=>tm.appendChild(el('span','term',t)));card.appendChild(tm);
   const first=!zones[it.zi].info;
   const foot=el('div','cardfoot');foot.appendChild(el('div','worth',first?'First read earns 10 points':'Already read'));
-  const b=el('button','btn',first?'Got it':'Close');b.addEventListener('click',()=>{if(first){zones[it.zi].info=true;it.done=true;it.cm.emissive.set(K('#74ffb8'));it.cm.color.set(K('#74ffb8'));it.beamM.opacity=.08;addPts(10,'read',it.pos,'read');sfx.read();burst(it.pos,'#74ffb8',40);refreshStepper();toast('Walk on to the glowing gate and answer the quiz')}closeModal()});foot.appendChild(b);card.appendChild(foot);
+  const b=el('button','btn',first?'Got it':'Close');b.addEventListener('click',()=>{if(first){zones[it.zi].info=true;it.done=true;it.cm.emissive.set(K('#74ffb8'));it.cm.color.set(K('#74ffb8'));it.beamM.opacity=.08;addPts(10,'read',it.pos,'read');sfx.read();burst(it.pos,'#74ffb8',40);refreshStepper();toast('Walk on to the glowing gate and answer the quiz')}closeModal();if(back)back()});foot.appendChild(b);card.appendChild(foot);
   openModal(z.color);b.focus();
 }
 function pointsFor(tries){return tries===0?100:tries===1?50:25}
@@ -369,13 +383,16 @@ function openQuiz(it){
     const order=q.options.map((o,i)=>i);for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]]}
     card.appendChild(el('div','eyebrow','Quiz gate '+(zi+1)+' · '+z.name+(list.length>1?' · question '+(zs.qi+1)+' of '+list.length:'')));card.appendChild(el('h2','',q.q));
     const opts=el('div','opts'),fb=el('div','fbk',''),foot=el('div','cardfoot'),worth=el('div','worth','Worth '+pointsFor(zs.tries)+' points');foot.appendChild(worth);
+    const learn=el('button','btn ghost sm','Read the station first');learn.addEventListener('click',()=>{const si=items.find(x=>x.type==='info'&&x.zi===zi);if(si)openInfo(si,()=>openQuiz(it))});
+    const later=el('button','btn ghost sm','Not yet');later.addEventListener('click',()=>closeModal());
+    foot.appendChild(learn);foot.appendChild(later);
     const go=el('button','btn',last?'Open the gate':'Next question');go.hidden=true;foot.appendChild(go);
     const btns=order.map((oi,pos)=>{const b=el('button','opt');b.appendChild(el('span','key',String(pos+1)));b.appendChild(el('span','',q.options[oi]));b.dataset.ok=oi===q.answer?'1':'';b.addEventListener('click',()=>answer(b));opts.appendChild(b);return b});
     function answer(b){
       if(b.dataset.ok){
         const pts=pointsFor(zs.tries);btns.forEach(x=>{x.disabled=true});b.classList.add('ok');fb.className='fbk ok';fb.textContent='Correct! +'+(owns('perk_boost')?Math.round(pts*1.25):pts)+' points'+(q.why?'. '+q.why:'');
         if(zs.tries===0)state.streak++;else state.streak=0;addPts(pts,'',it.pos,'quiz');sfx.ok();
-        burst(it.pos.clone().setY(2),z.color,last?120:50);worth.hidden=true;go.hidden=false;go.focus();
+        burst(it.pos.clone().setY(2),z.color,last?120:50);worth.hidden=true;learn.hidden=true;later.hidden=true;go.hidden=false;go.focus();
         if(last){zs.quiz=true;it.done=true;refreshStepper()}
       }else{
         b.classList.add('no');b.disabled=true;zs.tries++;zs.wrong++;state.wrong++;state.streak=0;fmtPts();fb.className='fbk no';fb.textContent='Not quite. Hint: '+q.hint;worth.textContent='Worth '+pointsFor(zs.tries)+' points';sfx.no();
@@ -473,14 +490,15 @@ let near=null;
 function interact(){
   if(state.mode!=='play'||!near)return;
   if(near.type==='info')openInfo(near);
-  else if(near.type==='gate'){if(!zones[near.zi].info&&!near.done){toast('Read the station first, then open the gate');return}openQuiz(near)}
+  else if(near.type==='gate')openQuiz(near)
   else if(near.type==='finale'){if(zones.every(z=>z.quiz))openFinale(near);else toast('Open every quiz gate first')}
 }
 function findNear(){
   let best=null,bd=1e9;const p=player.g.position;
-  for(const it of items){if(it.type==='gate'&&it.done)continue;const d=Math.hypot(p.x-it.pos.x,p.z-it.pos.z);if(d<it.radius&&d<bd){bd=d;best=it}}
+  for(const it of items){const d=Math.hypot(p.x-it.pos.x,p.z-it.pos.z);if(it.auto&&d>it.radius+4)it.auto=false;if(it.type==='gate'&&it.done)continue;if(d<it.radius&&d<bd){bd=d;best=it}}
   near=best;const pr=$('#prompt');
-  if(best){pr.hidden=false;$('#promptT').textContent=best.type==='info'?'Read: '+best.title:best.type==='gate'?(zones[best.zi].info?'Open the quiz gate':'Read the station first'):(zones.every(z=>z.quiz)?'Enter the golden portal':'Finish every quiz gate first');$('#bAct').disabled=false}
+  if(best){pr.hidden=false;$('#promptT').textContent=best.type==='info'?'Read: '+best.title:best.type==='gate'?'Answer the question':(zones.every(z=>z.quiz)?'Enter the golden portal':'Finish every quiz gate first');$('#bAct').disabled=false;
+    if(!best.auto&&(best.type==='gate'||(best.type==='finale'&&zones.every(z=>z.quiz)))){best.auto=true;interact()}}
   else{pr.hidden=true;$('#bAct').disabled=true}
 }
 
@@ -489,7 +507,8 @@ const KM={ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',K
 on('keydown',e=>{
   if(state.mode==='play'){const k=KM[e.code];if(k){keys[k]=true;e.preventDefault();return}
     if(e.code==='KeyB'){openShop('play');return}
-    if(e.code==='KeyE'||e.code==='Enter'||e.code==='Space'){if(root.activeElement&&root.activeElement.tagName==='BUTTON'&&e.code!=='KeyE')return;e.preventDefault();interact()}}
+    if(e.code==='Space'){e.preventDefault();const a=root.activeElement;if(a&&a.blur)a.blur();if(!e.repeat)jump();return}
+    if(e.code==='KeyE'||e.code==='Enter'){if(root.activeElement&&root.activeElement.tagName==='BUTTON'&&e.code!=='KeyE')return;e.preventDefault();interact()}}
   else if(state.mode==='shop'){if(e.code==='Escape'||(e.code==='KeyB'&&!/INPUT/.test((root.activeElement||{}).tagName||'')))closeShop()}
   else if(state.mode==='modal'&&/^Digit[1-4]$/.test(e.code)){const bs=card._keys;if(bs&&bs.length&&modal.classList.contains('on')){const b=bs[+e.code.slice(5)-1];if(b&&!b.disabled)b.click()}}
 });
@@ -497,6 +516,9 @@ on('keyup',e=>{const k=KM[e.code];if(k)keys[k]=false});
 on('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
 root.querySelectorAll('.pad button').forEach(b=>{const k=b.dataset.k;const on=ev=>{ev.preventDefault();keys[k]=true;b.classList.add('down');try{b.setPointerCapture(ev.pointerId)}catch(e){}};const off=()=>{keys[k]=false;b.classList.remove('down')};b.addEventListener('pointerdown',on);['pointerup','pointercancel','lostpointercapture'].forEach(n=>b.addEventListener(n,off))});
 $('#bAct').addEventListener('click',interact);
+$('#prompt').addEventListener('click',interact);
+function jump(){if(state.mode!=='play'||player.jy>0.001)return;player.vy=8.6;player.jy=0.001;blip(420,.14,'square',.03,720)}
+const bJump=$('#bJump');bJump.addEventListener('pointerdown',e=>{e.preventDefault();jump()});bJump.addEventListener('click',()=>jump());
 $('#bSound').addEventListener('click',e=>{soundOn=!soundOn;e.currentTarget.setAttribute('aria-pressed',soundOn);e.currentTarget.textContent=soundOn?'Sound on':'Sound off'});
 const TIERS=['high','medium','low'];
 $('#bQual').addEventListener('click',()=>setTier(TIERS[(TIERS.indexOf(Q.tier)+1)%3]));
@@ -510,17 +532,30 @@ function setTier(t){
 /* ---------------- flow ---------------- */
 function startWorld(key,req){
   state.worldKey=key;state.req=req;Object.assign(state,{streak:0,coins:0,wrong:0,reading:0,quizPts:0,coinPts:0,run:0,current:null});
-  fmtPts();buildWorld(key);buildStepper();refreshStepper();placePlayer(14);lastIdx=14;applyLook(look);
+  player.jy=0;player.vy=0;assemble=0;world.scale.y=.02;fmtPts();buildWorld(key);buildStepper();refreshStepper();placePlayer(14);lastIdx=14;applyLook(look);
   $('#hName').textContent=T.title;const rq=$('#hReq');rq.hidden=!req;rq.textContent='Requested: '+req.slice(0,40);
   setZoneLabel();state.mode='play';camState.follow=true;
   $('#topic').classList.add('gone');$('#hud').classList.add('on');perf.t=0;perf.acc=0;perf.n=0;
 }
 function toTopic(){state.mode='topic';camState.follow=false;near=null;$('#prompt').hidden=true;$('#hud').classList.remove('on');$('#topic').classList.remove('gone');$('#q').focus({preventScroll:true})}
+let buildToken=0,retryTopic='';
+function setBuild(p,stage){p=Math.max(.02,Math.min(1,p||0));$('#bFill').style.width=Math.round(p*100)+'%';$('#bPct').textContent=Math.round(p*100)+'%';if(stage)$('#bStage').textContent=stage}
+function buildAi(topic){
+  const my=++buildToken;retryTopic=topic;state.mode='building';$('#topic').classList.add('gone');
+  $('#bTitle').textContent=topic.length>38?topic.slice(0,37)+'…':topic;$('#bBox').classList.remove('bad');$('#bErr').hidden=true;$('#bRetry').hidden=true;setBuild(.02,'Starting');$('#build').hidden=false;
+  opts.onBuild(topic,(p,st)=>{if(my===buildToken)setBuild(p,st)}).then(w=>{
+    if(my!==buildToken||dead)return;WORLDS.ai=w;setBuild(1,'Placing the stations');
+    setTimeout(()=>{if(my!==buildToken||dead)return;$('#build').hidden=true;startWorld('ai','');toast('Your world is ready. Walk forward: quiz gates open by themselves. Space jumps.')},800);
+  }).catch(err=>{if(my!==buildToken||dead)return;$('#bBox').classList.add('bad');$('#bStage').textContent='Could not build the world';$('#bErr').textContent=(err&&err.message)||'Something went wrong';$('#bErr').hidden=false;$('#bRetry').hidden=false});
+}
+$('#bCancel').addEventListener('click',()=>{buildToken++;$('#build').hidden=true;toTopic()});
+$('#bRetry').addEventListener('click',()=>buildAi(retryTopic));
 $('#tform').addEventListener('submit',e=>{
-  e.preventDefault();const raw=$('#q').value.trim()||'Explain me the Java concept';const [key,hit]=pickWorld(raw);
-  startWorld(key,hit?'':raw);
-  if(!hit)toast('No world for “'+raw.slice(0,40)+'” yet. Showing the Java demo. The local model will build new worlds from any topic.');
-  else toast('Walk forward along the glowing path. Press E at a station.');
+  e.preventDefault();const raw=$('#q').value.trim();if(!raw){$('#q').focus();return}
+  const [key,hit]=pickWorld(raw);
+  if(hit){startWorld(key,'');toast('Walk forward along the glowing path. Quiz gates open by themselves. Space jumps.');return}
+  if(opts.onBuild){buildAi(raw);return}
+  startWorld('java',raw);toast('No world for “'+raw.slice(0,40)+'” yet. Showing the Java demo.');
 });
 [...Object.keys(extra).map(k=>[WORLDS[k].title,WORLDS[k].title]),['Java','Explain me the Java concept'],['Photosynthesis','How does photosynthesis work?'],['Water cycle','The water cycle']].forEach(([l,v])=>{const b=el('button','chip',l);b.type='button';b.addEventListener('click',()=>{$('#q').value=v;$('#q').focus()});$('#chips').appendChild(b)});
 
@@ -556,6 +591,7 @@ function adapt(dt){
 }
 function update(dt){
   time+=dt;frameNo++;
+  if(assemble<1){assemble=Math.min(1,assemble+dt/1.3);world.scale.y=Math.max(.02,1-Math.pow(1-assemble,3))}
   const p=player.g.position,inShop=state.mode==='shop';
   if(state.mode==='play'){
     const turn=(keys.left?1:0)-(keys.right?1:0);player.heading+=turn*dt*2.3;
@@ -575,7 +611,8 @@ function update(dt){
   const riding=!!AV.rideKind;
   player.legL.rotation.x=riding?(AV.rideKind==='bike'?sw*.9:0):sw;player.legR.rotation.x=riding?(AV.rideKind==='bike'?-sw*.9:0):-sw;
   const bob=riding?(AV.rideKind==='hover'?Math.sin(time*2.4)*.12:0):Math.abs(Math.sin(player.phase))*.12*sp;
-  p.y=player.rideY+bob;
+  if(player.jy>0||player.vy>0){player.vy-=24*dt;player.jy=Math.max(0,player.jy+player.vy*dt);if(player.jy===0)player.vy=0}
+  p.y=player.rideY+bob*(player.jy>0?0:1)+player.jy;
   for(let i=0;i<AV.wheels.length;i++)AV.wheels[i].rotation.x+=player.v*dt*1.9;
   for(let i=0;i<AV.spin.length;i++)AV.spin[i].rotation.y+=dt*(8+Math.abs(player.v)*1.5);
   if(AV.petRoot){const pr=AV.petRoot,tx=p.x+Math.sin(player.heading)*2.4+Math.cos(player.heading)*1.6,tz=p.z+Math.cos(player.heading)*2.4-Math.sin(player.heading)*1.6;
@@ -609,13 +646,16 @@ function frame(){
   raf=requestAnimationFrame(frame);
 }
 resize();applyLook(look);buildWorld('java');buildStepper();placePlayer(14);fmtPts();
-if(save.welcome){toast('Welcome bonus: 150 points to spend in the shop');save.welcome=false;persist()}
+const welcome=()=>{if(dead)return;if(save.welcome){toast('Welcome bonus: 150 points to spend in the shop');save.welcome=false;persist()}};
+if(opts.store){opts.store.load().then(r=>{if(dead||!r)return;const mine=save.rev||0;
+  if((r.rev||0)>mine&&Array.isArray(r.owned)){save.wallet=r.wallet|0;save.life=r.life|0;save.owned=r.owned;save.look=Object.assign({},DEFAULT_LOOK,r.look||{});save.rev=r.rev;save.welcome=false;look=Object.assign({},save.look);try{localStorage.setItem(SAVE_KEY,JSON.stringify(save))}catch(e){}applyLook(look);fmtPts()}
+  else if(mine>(r.rev||0))pushRemote()}).catch(()=>{}).then(welcome)}else welcome();
 (document.fonts&&document.fonts.load?Promise.all([document.fonts.load('700 40px "Chakra Petch"'),document.fonts.load('400 16px Figtree')]).catch(()=>{}):Promise.resolve()).then(()=>{if(dead)return;buildWorld('java');frame()});
 const bExit=$('#bExit'),tExit=$('#tExit');
 if(opts.onExit){bExit.hidden=false;tExit.hidden=false;bExit.addEventListener('click',()=>opts.onExit());tExit.addEventListener('click',()=>opts.onExit())}
 const firstExtra=Object.keys(extra)[0];if(firstExtra)$('#q').value=WORLDS[firstExtra].title;
 function dispose(){
-  dead=true;cancelAnimationFrame(raf);offs.forEach(f=>f());clearTimeout(toast.t);
+  dead=true;buildToken++;if(remoteT)pushRemote();cancelAnimationFrame(raf);offs.forEach(f=>f());clearTimeout(toast.t);
   try{disposeGroup(world);scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})});
   if(composer&&composer.dispose)composer.dispose();renderer.dispose();renderer.forceContextLoss()}catch(e){}
 }

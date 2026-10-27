@@ -217,3 +217,23 @@
 **Fix:** none needed; run those files alone (27 passed) or stop the backend first
 **Files Changed:** none
 **Status:** Ongoing (environment)
+
+---
+
+## [ISSUE-027] — 2026-10-27
+**Title:** Learnverse purchases and points gone the next time
+**Symptom:** after buying a ride or hat the shop looked empty on the next visit and the points were back to the start
+**Root Cause:** everything lived only in the browser's `localStorage`, which belongs to one address; opening the app from another address (localhost vs 127.0.0.1 vs a network IP, another dev port) or clearing site data starts from nothing
+**Fix:** keep a second copy on the backend (`media/metaverse_save.json`, newer `rev` wins, a stale tab cannot overwrite); load it when the world starts
+**Files Changed:** metaverse/src/engine.ts, web/src/components/MetaverseLayer.tsx, backend/app/metaworld.py, backend/app/main.py
+**Status:** Resolved (verified by clearing localStorage: points restored from the server)
+
+---
+
+## [ISSUE-028] — 2026-10-27
+**Title:** "+" button and Create button in different corners of the home prompt
+**Symptom:** the add-photo "+" floated at the top right of the box while Create lesson sat at the bottom right; collapsed header was two rows tall
+**Root Cause:** `align-items: flex-start` plus a margin-top on the "+", `align-self: flex-end` on Create; and `.dock-box textarea { flex: 1 }` inside the new column wrapper `.dock-field` made flex-basis 0, so the `height` rule was ignored
+**Fix:** one `.dock-actions` cluster (both 46 px, bottom aligned), `flex: none` on the textarea, a wrap rule under 560 px
+**Files Changed:** web/src/pages/Home.tsx, web/src/styles/home.css
+**Status:** Resolved

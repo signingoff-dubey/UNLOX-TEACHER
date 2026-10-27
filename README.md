@@ -276,3 +276,8 @@ Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_h
 - New pages: `#/review`, `#/profile`. New API: `/api/review/*`, `/api/weak*`, `/api/profile`, `/api/papers*`, `/api/lessons/{id}/{subtitles,podcast,say,bundle,teachback}`, `/api/bundle/import`, `/api/jobs`.
 - Environment: `STUDIO_WORKERS` (3), `BACKCHECK` (1: translate narration back to English and compare).
 - New backend files: `streaming.py`, `srs.py`, `learner.py`, `fidelity.py`, `exports.py`, `bundle.py`, `paper.py`, `teachback.py`, `layout.py`, `resume.py`.
+
+## What is new in v0.14.1
+- **Learnverse builds a world for any topic you type** with the local model, behind a "Building your world" screen. Quiz gates open by themselves when you reach them, Space (or the Jump button) jumps, and points and purchases are also kept on the backend.
+- New API: `POST /api/metaworld`, `GET/POST /api/metaverse/save`. New backend file: `metaworld.py`.
+- The "+" button on the home prompt now sits beside Create lesson.

@@ -54,6 +54,19 @@ button{cursor:pointer}
 .shoprow{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px dashed var(--line)}
 .shoprow b{font:700 20px var(--f-d)}
 
+#build{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:24px var(--gr) 24px var(--gl);background:radial-gradient(ellipse at 50% 40%,rgba(14,10,36,.5),rgba(14,10,36,.93))}
+.bcard{width:min(560px,100%);padding:34px;display:grid;gap:18px;text-align:center;justify-items:center}
+.bcard h1{margin:0;font:700 clamp(26px,4.6vw,38px)/1.1 var(--f-d);text-wrap:balance;overflow-wrap:anywhere}
+.bcard h1 span{color:var(--amber)}
+.blocks{display:grid;grid-template-columns:repeat(8,22px);gap:6px;height:84px;align-items:end}
+.blocks i{display:block;width:22px;height:22px;border-radius:4px;background:var(--amber);transform-origin:bottom;animation:rise 1.5s ease-in-out infinite;animation-delay:calc(var(--n)*.12s)}
+.blocks i:nth-child(4n+2){background:var(--cyan)}.blocks i:nth-child(4n+3){background:var(--pink)}.blocks i:nth-child(4n){background:var(--mint)}
+@keyframes rise{0%,100%{transform:scaleY(.3);opacity:.55}50%{transform:scaleY(3.4);opacity:1}}
+.bbar{width:100%;height:10px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+.bbar i{display:block;height:100%;width:2%;background:linear-gradient(90deg,var(--amber),var(--pink));transition:width .6s}
+.bmeta{display:flex;justify-content:space-between;gap:12px;width:100%;color:var(--dim);font:600 14px var(--f-d);text-align:left}
+.berr{margin:0;color:var(--pink);font-size:14px}
+.bad .blocks i{animation:none;background:var(--pink);transform:scaleY(.4)}
 #hud{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .6s}
 #hud.on{opacity:1}
 #hud>*{pointer-events:none}
@@ -82,6 +95,9 @@ button{cursor:pointer}
 .bl{position:absolute;left:var(--gl);bottom:calc(20px + env(safe-area-inset-bottom,0px));display:grid;gap:10px}
 .prompt{display:flex;align-items:center;gap:12px;padding:10px 14px;max-width:min(380px,70vw)}
 .prompt .t{font:600 15px var(--f-d)}
+button.prompt{color:var(--text);text-align:left;cursor:pointer}
+button.prompt:hover{border-color:var(--amber)}
+.prompt .go{margin-left:auto;font:700 22px var(--f-d);color:var(--amber)}
 .pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(2,56px);gap:6px}
 .pad button{border:1px solid var(--line);border-radius:14px;background:var(--panel);display:grid;place-items:center;touch-action:none;user-select:none;-webkit-user-select:none}
 .pad button:active,.pad button.down{background:var(--amber);color:#2a1300}
@@ -89,7 +105,9 @@ button{cursor:pointer}
 .pad .u{grid-column:2;grid-row:1}.pad .l{grid-column:1;grid-row:2}.pad .d{grid-column:2;grid-row:2}.pad .r{grid-column:3;grid-row:2}
 .br .btn{flex:none}
 .br{max-width:calc(100% - 232px);position:absolute;right:var(--gr);bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end}
-.act{width:72px;height:72px;border-radius:50%;border:3px solid #fff3;background:var(--amber);color:#2a1300;font:700 22px var(--f-d);box-shadow:0 6px 0 #b8741f}
+.act{width:72px;height:72px;border-radius:50%;border:3px solid #fff3;background:var(--amber);color:#2a1300;font:700 15px var(--f-d);box-shadow:0 6px 0 #b8741f;touch-action:none;user-select:none;-webkit-user-select:none}
+.act.jump{background:var(--cyan);box-shadow:0 6px 0 #1c8aa3}
+.act.jump:active{transform:translateY(4px);box-shadow:0 2px 0 #1c8aa3}
 .act:disabled{background:rgba(255,255,255,.1);color:var(--dim);box-shadow:none}
 .float{position:absolute;pointer-events:none;font:700 24px var(--f-d);color:var(--amber);text-shadow:0 2px 12px rgba(0,0,0,.6);animation:fl 1.4s ease-out forwards}
 @keyframes fl{to{transform:translateY(-60px);opacity:0}}
@@ -174,20 +192,32 @@ export const MARKUP = `<div id="app">
     <div class="glass tcard">
       <div class="eyebrow">Learnverse</div>
       <h1>What do you want to <span>explore</span>?</h1>
-      <p>Type a concept. The world fills with stations that teach it. Read each one, pass the quiz gate, and spend your points on rides and looks.</p>
+      <p>Type any concept. The local AI builds a world of stations that teach it, with a quiz gate after each. Already know it? Walk to a gate and answer straight away. Spend your points on rides and looks.</p>
       <form class="tform" id="tform" autocomplete="off">
         <label for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Concept to learn</label>
-        <input id="q" maxlength="80" placeholder="Explain me the Java concept">
-        <button class="btn" type="submit">Enter the world</button>
+        <input id="q" maxlength="80" placeholder="Black holes, the French Revolution, Python loops&hellip;">
+        <button class="btn" type="submit">Build my world</button>
       </form>
       <div class="chips" id="chips"><small>Worlds ready</small></div>
       <button class="btn ghost sm" id="tExit" type="button" hidden>Back to Chanakya</button>
       <div class="shoprow"><span><span class="coin"></span> <b id="tWallet">0</b> points to spend</span><button class="btn ghost sm" id="tShop" type="button">Wardrobe and shop</button></div>
       <div class="legend">
         <span><span class="key">&uarr;</span><span class="key">&larr;</span><span class="key">&darr;</span><span class="key">&rarr;</span> walk and turn</span>
-        <span><span class="key">E</span> interact</span>
+        <span><span class="key">Space</span> jump</span>
         <span><span class="key">B</span> shop</span>
       </div>
+    </div>
+  </section>
+
+  <section id="build" aria-label="Building your world" role="status" hidden>
+    <div class="glass bcard" id="bBox">
+      <div class="eyebrow">Learnverse</div>
+      <h1>Building your world: <span id="bTitle"></span></h1>
+      <div class="blocks" aria-hidden="true">${Array.from({ length: 8 }, (_, i) => `<i style="--n:${i}"></i>`).join("")}</div>
+      <div class="bbar"><i id="bFill"></i></div>
+      <div class="bmeta"><span id="bStage">Starting</span><span id="bPct">0%</span></div>
+      <p class="berr" id="bErr" hidden></p>
+      <div class="cardfoot"><button class="btn ghost sm" id="bCancel" type="button">Cancel</button><button class="btn sm" id="bRetry" type="button" hidden>Try again</button></div>
     </div>
   </section>
 
@@ -203,7 +233,7 @@ export const MARKUP = `<div id="app">
       <canvas id="mini" width="300" height="300" aria-label="Minimap"></canvas>
     </div>
     <div class="bl">
-      <div class="prompt glass" id="prompt" hidden><span class="key">E</span><span class="t" id="promptT"></span></div>
+      <button class="prompt glass" id="prompt" type="button" hidden><span class="t" id="promptT"></span><span class="go" aria-hidden="true">&rsaquo;</span></button>
       <div class="pad" id="pad" aria-label="Movement controls">
         <button class="u" data-k="up" aria-label="Walk forward"><svg viewBox="0 0 24 24"><path d="M12 5l8 10h-5v4H9v-4H4z"/></svg></button>
         <button class="l" data-k="left" aria-label="Turn left"><svg viewBox="0 0 24 24"><path d="M5 12l10-8v5h4v6h-4v5z"/></svg></button>
@@ -217,7 +247,8 @@ export const MARKUP = `<div id="app">
       <button class="btn ghost sm hm" id="bTopic">New topic</button>
       <button class="btn ghost sm" id="bExit" hidden>Exit</button>
       <button class="btn sm" id="bShop">Shop <span class="key" style="margin-left:4px">B</span></button>
-      <button class="act" id="bAct" disabled aria-label="Interact">E</button>
+      <button class="act jump" id="bJump" type="button" aria-label="Jump (Space)">Jump</button>
+      <button class="act" id="bAct" disabled aria-label="Open">Open</button>
     </div>
     <div class="toast glass" id="toast" role="status"></div>
   </div>

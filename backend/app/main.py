@@ -22,6 +22,7 @@ from . import config, homework, jobs, knowledge, routes_rag, stt, translate, tts
 from .exporter import export_mp4
 from .ocr.ingest import upload_status
 from .languages import LANGUAGES
+from .metaworld import MetaSave
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
 config.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
@@ -652,6 +653,33 @@ def meta_quiz(req: MetaQuizRequest) -> dict:
     if req.lang not in LANGUAGES:
         raise HTTPException(400, f"Unsupported language '{req.lang}'")
     return jobs.submit("studio", metaquiz.build_world, req.lesson_ids, req.focus, req.lang, req.title.strip())
+
+
+class MetaWorldRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=120)
+    lang: str = "en"
+
+
+@app.post("/api/metaworld")
+def meta_world(req: MetaWorldRequest) -> dict:
+    """A metaverse world about any topic, written by the local model (data only)."""
+    from . import metaworld
+    if req.lang not in LANGUAGES:
+        raise HTTPException(400, f"Unsupported language '{req.lang}'")
+    return jobs.submit("studio", metaworld.build, req.topic.strip(), req.lang)
+
+
+@app.get("/api/metaverse/save")
+def metaverse_save_get() -> dict:
+    """Points and purchases of the metaverse wardrobe, kept here so they survive another address or a cleared browser."""
+    from . import metaworld
+    return metaworld.load_save() or {}
+
+
+@app.post("/api/metaverse/save")
+def metaverse_save_set(save: MetaSave) -> dict:
+    from . import metaworld
+    return metaworld.store_save(save)
 
 
 @app.post("/api/stt")

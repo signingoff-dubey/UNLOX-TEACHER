@@ -16,11 +16,13 @@
   background: var(--white); box-shadow: var(--shadow-lg); }
 .dock-box:focus-within { box-shadow: 0 0 0 2px var(--ink), var(--shadow-lg); }
 .dock-spark { flex: none; margin-top: calc(4px + 9px * var(--p)); color: var(--ink-2); }
-.dock-box textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; overflow: hidden;
+.dock-box textarea { flex: none; min-width: 0; border: 0; background: none; outline: none; resize: none; overflow: hidden;
   height: calc(116px - 68px * var(--p)); padding: calc(12px * var(--p)) 0 0; font-size: calc(26px - 8px * var(--p)); line-height: 1.3; letter-spacing: -0.02em; }
 .dock-box textarea::placeholder { color: var(--faint); }
 .dock-clear { flex: none; margin-top: calc(2px + 6px * var(--p)); }
-.dock-go { flex: none; align-self: flex-end; padding: 14px calc(22px - 7px * var(--p)); }
+/* the add button and the create button are one cluster on the bottom edge, the same height, centred on each other */
+.dock-actions { flex: none; align-self: flex-end; display: flex; align-items: center; gap: 10px; }
+.dock-go { flex: none; height: 46px; padding: 0 calc(22px - 7px * var(--p)); }
 .dock-go-label { display: inline-block; overflow: hidden; white-space: nowrap; max-width: calc(220px * (1 - var(--p))); opacity: calc(1 - var(--p) * 1.5); }
 .dock-go svg { flex: none; }
 
@@ -70,6 +72,12 @@
 .medal.sm { width: 36px; height: 36px; margin: 0; }
 .medal-row .ghost { margin-left: auto; padding: 7px 12px; }
 
+@media (max-width: 560px) {
+  .dock-box { flex-wrap: wrap; }
+  .dock-spark { display: none; }
+  .dock-field { flex-basis: 100%; }
+  .dock-actions { margin-left: auto; }
+}
 @media (max-width: 900px) {
   .home { order: -1; }                                  /* the prompt comes before the awards on a phone */
   .settings-grid { grid-template-columns: 1fr; }
@@ -99,7 +107,7 @@
 
 /* ---------- photo attach, mode pills, homework answers ---------- */
 .dock-field { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.dock-plus { flex: none; cursor: pointer; margin-top: calc(2px + 6px * var(--p)); background: var(--surface); transition: background 0.15s, transform 0.15s var(--ease); }
+.dock-plus { flex: none; cursor: pointer; width: 46px; height: 46px; background: var(--surface); transition: background 0.15s, transform 0.15s var(--ease); }
 .dock-plus:hover { background: var(--lime); transform: rotate(90deg); }
 .dock-plus:focus-within { box-shadow: 0 0 0 2px var(--ink); }
 .dock-plus.off { opacity: 0.4; pointer-events: none; }

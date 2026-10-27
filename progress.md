@@ -1,7 +1,21 @@
 # Progress Log
 
-## Current Version: v0.14.0
+## Current Version: v0.14.1
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.14.1] — 2026-10-27
+### What's New
+- **Learnverse builds a world for any topic** (`metaworld.py`, `POST /api/metaworld`): type a topic and the local model writes four stations with questions (data only; cleaned, translated for other languages). A "Building your world" screen with animated blocks and live progress shows while it works (about 25 s for a real topic). The topic box no longer defaults to Java: ready-made worlds (Java, photosynthesis, water cycle, the open lesson) start at once, everything else is built by the AI
+- **No E key**: quiz gates open their question by themselves when you reach them, so a learner who knows the answer just answers. "Read the station first" and "Not yet" are offered on the question; stations are optional and tappable ("Read: ...")
+- **Jump**: Space bar and a Jump button (also on touch)
+- **Points and purchases are kept** in the browser and on the backend (`GET/POST /api/metaverse/save`, newer revision wins), so another address (localhost vs 127.0.0.1, a LAN IP) or cleared browser data no longer loses them. Verified: wiped the browser copy and the 265 points came back from the server
+- **Home page**: the "+" (add photo) button sits with the Create button on the bottom row, both 46 px high, centred on the text when the box shrinks; the textarea height rule works again (it was ignored inside the column wrapper)
+
+### Known Issues
+- Worlds are English first, then translated with the lesson engine; Indic fonts on in-world billboards still fall back to the system font
+- The standalone `metaverse/standalone/learnverse.html` and the copy under `Dhiraj/` are not updated
 
 ---
 

@@ -17,7 +17,7 @@ Everything runs in the browser with three.js. No network is needed once the app 
 
 The active language tab is used, so a Hindi or Telugu lesson gives a Hindi or Telugu world. See `src/lessonToWorld.ts`.
 
-Without a lesson, three built-in worlds are offered: Java, photosynthesis, water cycle. Any other topic falls back to the Java demo and says so.
+Inside the world the learner can type any topic. The ready-made worlds (Java, photosynthesis, water cycle, and the open lesson) start at once; anything else goes to `POST /api/metaworld`, where the local model writes four stations with questions, while a "Building your world" screen shows its progress. Without a backend (`onBuild` not given) the old keyword matching and Java fallback remain.
 
 ## Layout
 
@@ -51,7 +51,7 @@ npm run dev        # click "Metaverse" in the header
 
 ## Controls
 
-Arrow keys or WASD to walk and turn, `E` to interact, `1`-`4` to answer, `B` for the shop, `Esc` to close it. On touch screens there is an on-screen pad. Points, level and purchases are saved in `localStorage`.
+Arrow keys or WASD to walk and turn, `Space` to jump, `1`-`4` to answer, `B` for the shop, `Esc` to close it. Quiz gates open their question when you reach them (no key needed); stations are read by tapping the prompt, the Open button or pressing `E`. On touch screens there is an on-screen pad with Jump and Open buttons. Points, level and purchases are saved in `localStorage` and, when a `store` is given, on the backend (`/api/metaverse/save`), so they survive another address or cleared browser data.
 
 ## Performance
 

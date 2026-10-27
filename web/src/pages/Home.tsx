@@ -122,6 +122,7 @@ export const Home: React.FC<Props> = (p) => {
               </ul>
             )}
           </div>
+          <div className="dock-actions">
           <label className={`round dock-plus${p.busy || p.photos.length >= 4 ? " off" : ""}`} title="Add a photo (homework, a textbook page, a diagram)">
             <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={p.busy || p.photos.length >= 4}
               aria-label="Add a photo" onChange={(e) => { if (e.target.files?.length) p.onAddPhotos(e.target.files); e.target.value = ""; }} />
@@ -131,6 +132,7 @@ export const Home: React.FC<Props> = (p) => {
             <span className="dock-go-label">{p.busy ? "Creating…" : course ? (p.videos === 0 ? "Create a course" : `Create ${p.videos}-video course`) : p.upload && !p.concept.trim() ? "Create from PDF" : "Create lesson"}</span>
             <Glyph name="chevron" size={18} />
           </button>
+          </div>
         </form>
 
         <ul className="dock-extra" aria-label="Try a topic">

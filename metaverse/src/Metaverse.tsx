@@ -6,7 +6,7 @@ import "@fontsource/figtree/400.css";
 import "@fontsource/figtree/600.css";
 import "@fontsource/figtree/700.css";
 import { CSS, MARKUP } from "./ui";
-import { startMetaverse } from "./engine";
+import { startMetaverse, type StartOptions } from "./engine";
 import { lessonToWorld, type LessonLike } from "./lessonToWorld";
 import type { World } from "./types";
 
@@ -19,16 +19,22 @@ export type MetaverseProps = {
   lang?: string;
   /** Shows an Exit button and calls this when it is pressed. */
   onExit?: () => void;
+  /** Builds a world for a topic typed in the world (the AI). Without it, only the ready-made worlds are offered. */
+  onBuild?: StartOptions["onBuild"];
+  /** Keeps points and purchases outside the browser as well. */
+  store?: StartOptions["store"];
 };
 
 /**
  * Mounts the 3D world inside a shadow root, so its styles never leak into the host page
  * and the host page's styles never leak into it.
  */
-export default function Metaverse({ lesson, lang = "en", world: given, onExit }: MetaverseProps) {
+export default function Metaverse({ lesson, lang = "en", world: given, onExit, onBuild, store }: MetaverseProps) {
   const host = useRef<HTMLDivElement>(null);
   const exit = useRef(onExit);
   exit.current = onExit;
+  const build = useRef(onBuild);
+  build.current = onBuild;
   const world = useMemo(() => given ?? (lesson ? lessonToWorld(lesson, lang) : null), [given, lesson, lang]);
 
   useEffect(() => {
@@ -39,12 +45,14 @@ export default function Metaverse({ lesson, lang = "en", world: given, onExit }:
     const stop = startMetaverse(root, {
       extraWorlds: world ? { lesson: world } : {},
       onExit: exit.current ? () => exit.current?.() : undefined,
+      onBuild: build.current ? (topic, progress) => build.current!(topic, progress) : undefined,
+      store,
     });
     return () => {
       stop();
       root.innerHTML = "";
     };
-  }, [world]);
+  }, [world, store]);
 
   return <div ref={host} style={{ width: "100%", height: "100%" }} />;
 }
