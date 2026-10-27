@@ -191,7 +191,9 @@ class _IndicTrans2:
             inputs = self.tok(batch, truncation=True, padding="longest",
                               return_tensors="pt", return_attention_mask=True).to(self.device)
             with self.torch.inference_mode():
-                gen = self.model.generate(**inputs, use_cache=True, min_length=0,
+                # use_cache=False: IndicTrans2's remote model code predates the Cache classes of transformers >= 4.50 and
+                # crashes with the cache on (Unlimited-OCR needs 4.57). Lesson sentences are short, so the cost is small.
+                gen = self.model.generate(**inputs, use_cache=False, min_length=0,
                                           max_length=256, num_beams=4, num_return_sequences=1)
             decoded = self.tok.batch_decode(gen, skip_special_tokens=True,
                                             clean_up_tokenization_spaces=True)
