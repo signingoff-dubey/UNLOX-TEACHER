@@ -52,3 +52,12 @@ Start with: single streamed LLM call + incremental JSON parse + per-scene TTS ov
 | Word timing | ctc-forced-aligner (check Indic CTC model) or Piper phoneme durations | BSD-2 |
 | Fallback LLM serving | llama.cpp (GBNF, speculative decoding) | MIT |
 Excluded: aeneas (AGPL), MMS-TTS (NC), elkjs (EPL-2.0, unconfirmed), Qwen2.5-3B (research license).
+
+## Measured on this laptop (2026-10-27, Ollama 0.23.1, schema-constrained `format`, ~110 tokens out)
+| Model | Device | Speed | JSON valid |
+|---|---|---|---|
+| qwen2.5:7b q4_K_M | RTX 5060 GPU | 62.7 tok/s | yes |
+| qwen2.5:7b q4_K_M | CPU only | failed to load: only 3.7 GB RAM free of 15.4 | - |
+| qwen2.5:3b q4_K_M | GPU | 104.6 tok/s | yes |
+| qwen2.5:3b q4_K_M | CPU only (Core Ultra 9 275HX) | 11.2 tok/s | yes |
+A ~700-token lesson takes ~60 s at 11 tok/s on CPU (3B), ~11 s on GPU. Streaming scene-by-scene hides most of the CPU wait. Close Chrome etc. before CPU runs; on an 8 GB judge laptop use <=3B.
