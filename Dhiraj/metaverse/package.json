@@ -1,0 +1,28 @@
+{
+  "name": "metaverse",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Walkable 3D learning world for Visual Teacher: stations, quiz gates, points, shop.",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/chakra-petch": "5.3.0",
+    "@fontsource/figtree": "5.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.128.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.20",
+    "@types/react-dom": "18.3.6",
+    "@types/three": "0.128.0",
+    "@vitejs/plugin-react": "4.4.1",
+    "typescript": "5.8.3",
+    "vite": "6.3.5"
+  }
+}
