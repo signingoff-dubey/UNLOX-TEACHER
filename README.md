@@ -13,6 +13,28 @@ MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
 - **Data, never code:** the LLM only picks one of 10 templates (title, bullets, flow, cycle, compare, diagram, quiz, summary, **graph**, **code**) and fills in its text fields.
 - **Narration first:** each scene's voice is synthesized before anything is animated, and the scene lasts exactly as long as that audio plus 0.5 s. Item reveals and captions are timed against the same audio.
 
+## Quick start (Windows, PowerShell)
+
+```powershell
+git clone https://github.com/signingoff-dubey/UNLOX-TEACHER.git
+cd UNLOX-TEACHER
+.\setup.ps1 -Gpu     # once, online. Leave out -Gpu for a CPU-only setup (Piper voices + Ollama translation)
+.\start.ps1          # opens http://127.0.0.1:8000; add -Lan to accept other devices
+```
+
+If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+You also need **Ollama** (https://ollama.com); `setup.ps1` pulls the model if it's installed.
+
+**What the UI offers:**
+- Type a concept or click an example, pick languages, and get a narrated lesson in under a minute.
+- Language tabs to switch the same lesson between English, Hindi, Telugu and others.
+- A scene list that jumps the player to any scene and highlights the one playing.
+- MP4 export and `.srt` captions download per language.
+- **Recent lessons:** replay any earlier lesson. Generate backups before the demo.
+- **System status:** shows whether the planner, translator, voices and video export are ready.
+- **Backend address:** the UI can use a backend on another laptop (e.g. `http://192.168.1.20:8000`).
+- Build-time breakdown, and the lesson JSON for judges who ask how it works.
+
 ## Layout
 
 | Path | What |
@@ -25,7 +47,9 @@ MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
 | `backend/app/exporter.py` | Runs `web/render.mjs` to make the MP4 |
 | `backend/app/main.py` | FastAPI app, job queue, serves media/fonts/built frontend |
 | `web/src/remotion/` | Video: templates, icons, captions, fonts |
-| `web/src/App.tsx` | Student UI |
+| `web/src/App.tsx`, `web/src/components/` | Student UI: input, player, scenes, history, status |
+| `web/src/api.ts` | API client, job polling, configurable backend address |
+| `setup.ps1`, `start.ps1` | One-command setup and start |
 
 ## Setup on the machine that runs the backend (the one with the models)
 
@@ -116,7 +140,9 @@ To render a track in any React frontend, pass it to `LessonVideo` (`web/src/remo
 
 - A 6-scene, 40 s English lesson with Hindi and Telugu tracks built through the API (narration: ~3.5 s for Hindi, ~4.2 s for Telugu).
 - MP4 export: 1920×1080 H.264 + AAC, 40.2 s, matching the narration. The first export took 87 s, including the one-time bundle and Chrome download.
-- Not yet run here: the Ollama planner, IndicTrans2, Indic Parler-TTS, and Devanagari/Telugu text in the rendered video. Test these on the models machine first.
+- Devanagari and Telugu render correctly in the video, including conjuncts, using the bundled Noto fonts.
+- The backend serves the built UI, assets, lesson history and deep links (`/#<lessonId>`).
+- Not yet run here: the Ollama planner, IndicTrans2 and Indic Parler-TTS. Test these on the models machine first.
 
 ## Models, Voices & Assets Used (licenses)
 | Component | Name | License | Source |
