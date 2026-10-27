@@ -188,6 +188,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 2f926c5 | 2026-10-27 | Chanakya v0.9.0: grey-glass frontend, rewards, scroll-shrinking prompt home, videos up to 4 min, floating Creating pill |
 | 1cb5b0d | 2026-10-27 | Project setup: docs, lesson schema, Revideo frontend scaffold, fonts |
 | 3d9d818 .. 123513d | 2026-10-27 | Orchestration doc, graph/code scenes, merge of teammate frontend, screen-by-screen UI |
 | d7527c7 | 2026-10-27 | Notes panel, tutor chat, progress |
