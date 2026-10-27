@@ -30,6 +30,15 @@ LANGUAGES: dict[str, Language] = {
 }
 
 
+# Measured speaking speed of each voice (English-plan words per second after translation). The lesson is sized for the
+# slowest language picked, so no track runs past the length the learner asked for.
+WORDS_PER_SEC = {"en": 2.7, "hi": 1.9, "mr": 1.8, "bn": 1.8, "gu": 1.8, "ta": 1.7, "kn": 1.7, "te": 1.6, "ml": 1.6}
+
+
+def words_per_sec(codes: list[str]) -> float:
+    return min((WORDS_PER_SEC.get(c, 1.8) for c in codes), default=2.3)
+
+
 def get(code: str) -> Language:
     try:
         return LANGUAGES[code]

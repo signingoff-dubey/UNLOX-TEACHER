@@ -1,7 +1,30 @@
 # Progress Log
 
-## Current Version: v0.5.0
+## Current Version: v0.6.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.6.0] — 2026-10-27
+### What's New
+- **Real translation working**: IndicTrans2 (en->hi/te/ta/mr/...) running locally from `models/indictrans2` (set `INDICTRANS2_MODEL` to that folder, `HF_HUB_OFFLINE=1`)
+- **Voices verified by round-trip** (speak a known sentence, transcribe with Whisper): hi, ta, kn, en good; te, ml, gu correct sounds; mr was garbled on Piper -> now Indic-TTS (0.77 match); bn unverified (Whisper medium cannot read Bengali). `TTS_PREFER_INDIC=bn,mr`
+- **Multi-agent pipeline** (all local, all data-only): Planner (Qwen2.5-7B, schema JSON) -> Reviewer (ast check + repair) -> Writer (per-scene free-text narration when the lesson is too short) -> Translator (IndicTrans2) -> Narrators (one thread per language) -> Tutor (chat). Lesson size is set from the slowest chosen language (`WORDS_PER_SEC`) so every track stays inside the requested length
+- Per-language TTS locks: all languages record at once
+- Planner model benchmark (see below)
+
+### Planner model benchmark (RTX 5060 8 GB, 3 prompts, JSON-schema planner)
+| Model | avg s/lesson | valid | notes |
+|---|---|---|---|
+| qwen2.5:7b-instruct-q4_K_M | 34 | 3/3 | picks graph for maths, code for programming; writes short lessons (writer agent fixes) |
+| qwen2.5:3b-instruct-q4_K_M | 24-33 | 2/2 run | missed graph scenes on the circle prompt |
+| qwen3:4b | 128 | 3/3 | right length but thinking tokens make it 4x slower; removed |
+| qwen3.5:9b, llama3.2:3b | n/a | n/a | not measured (C: disk and RAM pressure) |
+
+### Known Issues
+- C: drive was nearly full (0.1 GB): HF cache and Ollama models live there. New downloads go to D: (`models/`)
+- Indic Parler-TTS not installed (3.7 GB, not needed). Bengali voice quality unverified
+- Whisper-medium check is a proxy: it cannot judge accent or naturalness; a human ear is still needed
 
 ---
 

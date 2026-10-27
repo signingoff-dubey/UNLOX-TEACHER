@@ -34,7 +34,8 @@ class EngineUnavailable(Exception):
 def synthesize(text: str, lang: str) -> Speech:
     """Speak `text` in `lang`, trying TTS_ENGINE, then TTS_FALLBACK, then silence."""
     # "indic" (CPU ONNX) comes before the GPU-only Parler fallback so CPU-only laptops still get a voice.
-    chain = list(dict.fromkeys([config.TTS_ENGINE, "indic", config.TTS_FALLBACK, "silent"]))
+    first = "indic" if lang in config.TTS_PREFER_INDIC else config.TTS_ENGINE
+    chain = list(dict.fromkeys([first, config.TTS_ENGINE, "indic", config.TTS_FALLBACK, "silent"]))
     for engine in chain:
         out = AUDIO_DIR / f"{hashlib.sha1(f'{engine}|{lang}|{config.PARLER_DESCRIPTION}|{text}'.encode()).hexdigest()}.wav"
         if out.exists():
@@ -60,7 +61,13 @@ def split_sentences(text: str) -> list[str]:
 
 # ---------------------------------------------------------------- Piper (CPU, very fast)
 _piper_voices: dict[str, object] = {}
-_piper_lock = threading.Lock()
+_piper_locks: dict[str, threading.Lock] = {}
+_piper_locks_guard = threading.Lock()
+
+
+def _lock_for(table: dict, lang: str) -> threading.Lock:
+    with _piper_locks_guard:
+        return table.setdefault(lang, threading.Lock())
 
 
 def _piper(text: str, lang: str, out: Path) -> None:
@@ -74,7 +81,7 @@ def _piper(text: str, lang: str, out: Path) -> None:
         from piper import PiperVoice
     except ImportError as e:
         raise EngineUnavailable("piper-tts not installed") from e
-    with _piper_lock:
+    with _lock_for(_piper_locks, lang):
         voice = _piper_voices.get(lang)
         if voice is None:
             voice = _piper_voices[lang] = PiperVoice.load(str(model), use_cuda=config.ort_providers()[0] == "CUDAExecutionProvider")
@@ -142,7 +149,7 @@ def _parler(text: str, lang: str, out: Path) -> None:
 # FastPitch (tokens -> mel) + HiFi-GAN (mel -> audio), 22.05 kHz. Covers en, ta, kn, gu (and more if added).
 INDIC_DIR = config.MODELS_DIR / "indic-tts"
 _indic_models: dict[str, tuple] = {}
-_indic_lock = threading.Lock()
+_indic_locks: dict[str, threading.Lock] = {}
 
 
 def _indic_load(lang: str):
@@ -179,7 +186,7 @@ def _indic_tokenize(text: str, ids: dict[str, int], longest: int) -> list[int]:
 
 def _indic(text: str, lang: str, out: Path) -> None:
     import numpy as np
-    with _indic_lock:
+    with _lock_for(_indic_locks, lang):
         if lang not in _indic_models:
             _indic_models[lang] = _indic_load(lang)
         fastpitch, hifigan, ids, longest = _indic_models[lang]

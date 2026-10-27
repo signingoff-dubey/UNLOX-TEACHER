@@ -178,3 +178,15 @@ See `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md`, `issues.md`, `d
 
 - Home: topic, optional PDFs, level, length, languages. Creating: progress. Lesson: player, scenes, downloads.
 - Document service contract (friend's RAG/OCR): `POST /api/documents` (multipart field `file`) -> `{"id", "name", "pages"?}`; then implement `backend/app/rag.py: retrieve_context(concept, document_ids) -> str` (top passages as plain text). Lesson requests already carry `documents: [ids]`.
+
+## Models and voices (as run on the demo laptop)
+
+| Role | Model | Where |
+|---|---|---|
+| Planner / reviewer / writer / tutor | Qwen2.5-7B-Instruct Q4_K_M via Ollama (GPU layers auto) | Ollama |
+| Translation | AI4Bharat IndicTrans2 dist-200M (MIT, gated) | `models/indictrans2` (`INDICTRANS2_MODEL`) |
+| Voices hi, te, ml, en | Piper | `models/piper` |
+| Voices ta, kn, gu, bn, mr (+ en) | AI4Bharat Indic-TTS ONNX (CPU) | `models/indic-tts/<lang>` |
+| Check only | faster-whisper medium (round-trip test of voices) | HF cache |
+
+Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on some networks).

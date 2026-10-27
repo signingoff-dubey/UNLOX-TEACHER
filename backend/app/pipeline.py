@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import time
 import uuid
@@ -9,7 +10,7 @@ from typing import Callable
 
 from . import config
 from .captions import time_captions, to_srt
-from .languages import get as get_lang
+from .languages import get as get_lang, words_per_sec
 from .planner import plan_lesson
 from .rag import retrieve_context
 from .review import review as review_plan
@@ -35,29 +36,50 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
     # Progress bands: plan 2-55%, review 55-60%, then 60-98% shared by the languages.
     progress("Planning the lesson", 0.02)
     context = retrieve_context(concept, documents or [])   # empty until the RAG service is connected
-    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context,
+    wps = words_per_sec(langs)
+    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context, wps=wps,
                        on_progress=lambda f: progress("Planning the lesson", 0.02 + 0.53 * f))
     progress("Checking the lesson", 0.56)
-    plan, review_notes = review_plan(plan)
+    plan, review_notes = review_plan(plan, duration_s, wps)
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]
     out_dir = LESSONS_DIR / lesson_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    tracks = {}
+    # Stage A: translate every language (one shared model, so one after another).
+    translated: dict[str, tuple] = {}
+    t_translate: dict[str, float] = {}
     for i, code in enumerate(langs):
-        base = 0.60 + 0.38 * i / len(langs)
-        step = 0.38 / len(langs)
         name = get_lang(code).name
-        progress(f"Translating to {name}" if code != "en" else "Preparing English", base)
+        progress(f"Translating to {name}" if code != "en" else "Preparing English", 0.60 + 0.12 * i / len(langs))
         t1 = time.perf_counter()
-        scenes, translator = _translated_scenes(plan, code)
-        progress(f"Recording {name} narration", base + step * 0.25)
-        tracks[code] = _narrate(scenes, code, lambda f, b=base, s=step, n=name: progress(f"Recording {n} narration", b + s * (0.25 + 0.75 * f)))
-        tracks[code]["translator"] = translator
-        timings[f"{code}_s"] = round(time.perf_counter() - t1, 2)
-        (out_dir / f"captions_{code}.srt").write_text(_track_srt(tracks[code]), encoding="utf-8")
+        translated[code] = _translated_scenes(plan, code)
+        t_translate[code] = time.perf_counter() - t1
+
+    # Stage B: record the voices of all languages at the same time (voices run on CPU, one per language).
+    done_frac = {code: 0.0 for code in langs}
+
+    def narrate_one(code: str) -> tuple[str, dict, float]:
+        name = get_lang(code).name
+
+        def report(f: float) -> None:
+            done_frac[code] = f
+            progress(f"Recording {name} narration", 0.72 + 0.26 * sum(done_frac.values()) / len(langs))
+
+        t2 = time.perf_counter()
+        scenes, translator = translated[code]
+        track = _narrate(scenes, code, report)
+        track["translator"] = translator
+        return code, track, time.perf_counter() - t2
+
+    tracks: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(len(langs), 4)) as pool:
+        for code, track, secs in pool.map(narrate_one, langs):
+            tracks[code] = track
+            timings[f"{code}_s"] = round(t_translate[code] + secs, 2)
+            (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
+    tracks = {code: tracks[code] for code in langs}          # keep the order the learner picked
 
     lesson = {
         "id": lesson_id,

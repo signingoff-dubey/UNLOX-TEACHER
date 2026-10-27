@@ -42,6 +42,9 @@ INDICTRANS2_MODEL = os.getenv("INDICTRANS2_MODEL", "ai4bharat/indictrans2-en-ind
 
 # Narration: "piper", "parler" (AI4Bharat Indic Parler-TTS, GPU) or "silent" (timing-only placeholder)
 TTS_ENGINE = os.getenv("TTS_ENGINE", "piper")
+# Languages whose Piper voice is weak: use the Indic-TTS (CPU ONNX) voice first. Checked by round-tripping speech
+# through Whisper: Marathi and Bengali Piper voices were unintelligible, the Indic-TTS ones are not.
+TTS_PREFER_INDIC = [c.strip() for c in os.getenv("TTS_PREFER_INDIC", "bn,mr").split(",") if c.strip()]
 # Used for languages the main engine cannot speak (e.g. Piper has no Kannada/Tamil voice).
 TTS_FALLBACK = os.getenv("TTS_FALLBACK", "parler")
 PARLER_MODEL = os.getenv("PARLER_MODEL", "ai4bharat/indic-parler-tts")

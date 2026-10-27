@@ -50,7 +50,7 @@ Example graph scene 2: {{"template":"graph","heading":"A parabola","narration":"
 Example code scene: {{"template":"code","heading":"A for loop","narration":"The list holds three fruits. The for loop visits each fruit in turn. And print shows it.","code_lang":"python","code":["fruits = ['apple', 'mango', 'kiwi']","for fruit in fruits:","    print(fruit)"],"highlights":[0,1,2],"items":["A list of fruits","Visit each one","Show it"],"output":["apple","mango","kiwi"]}}
 
 Rules:
-- narration is what the teacher says aloud: simple, warm, 1-3 short sentences, no lists, no markdown, no emojis.
+- narration is what the teacher says aloud: simple, warm, 2-3 sentences of about 25 words in total per scene (never fewer than 15 words), no lists, no markdown, no emojis.
 - heading max 6 words. Each item max 5 words.
 - Write the narration so it walks through the items in the same order they appear.
 - For code and graph scenes the narration must follow the same order as items and highlights.
@@ -59,14 +59,14 @@ Rules:
 
 
 def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, context: str = "",
-                on_progress=lambda f: None) -> LessonPlan:
+                on_progress=lambda f: None, wps: float = 2.3) -> LessonPlan:
     if config.LLM_BACKEND == "mock":
         return normalize(sample_for(concept))
     last_error = ""
     for attempt in range(2):
         try:
             try:
-                raw = _ollama_chat(concept, last_error, level, duration_s, context, on_progress)
+                raw = _ollama_chat(concept, last_error, level, duration_s, context, on_progress, wps)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
@@ -81,8 +81,8 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, con
 
 
 def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
-                 context: str = "", on_progress=lambda f: None) -> str:
-    words = round(duration_s * 2.3 / 10) * 10                 # ~2.3 spoken words per second
+                 context: str = "", on_progress=lambda f: None, wps: float = 2.3) -> str:
+    words = round(duration_s * wps / 10) * 10                 # spoken words per second of the slowest chosen language
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
                 else "an intermediate learner: assume the basics, add the why and one deeper detail or edge case")

@@ -43,9 +43,58 @@ def _repair(scene: ScenePlan, error: str) -> list[str] | None:
         return None
 
 
-def review(plan: LessonPlan) -> tuple[LessonPlan, list[str]]:
+def _words(plan: LessonPlan) -> int:
+    return sum(len(s.narration.split()) for s in plan.scenes)
+
+
+def _lengthen(plan: LessonPlan, target_words: int) -> bool:
+    """Writer agent: small models write lessons that are too short, and shorten even more under a JSON constraint.
+    So each scene's narration is rewritten with a short free-text call, in order, each seeing the one before it.
+    The scenes, points and code stay exactly as planned. Returns True if anything was lengthened."""
+    nl = chr(10)
+    per_scene = max(22, round(target_words / len(plan.scenes)))
+    changed, previous = False, ""
+    for i, s in enumerate(plan.scenes):
+        facts = []
+        if s.items:
+            facts.append("Points, in this order: " + "; ".join(s.items))
+        if s.code:
+            facts.append(f"The code shown ({s.code_lang}):{nl}" + nl.join(s.code))
+        if s.equation:
+            facts.append("Equation on screen: " + s.equation)
+        prompt = (
+            f"You write the spoken narration for scene {i + 1} of {len(plan.scenes)} in a short video lesson titled \"{plan.title}\".{nl}"
+            f"Scene type: {s.template}. On-screen heading: {s.heading}.{nl}" + nl.join(facts) + nl
+            + (f"The previous scene said: {previous}{nl}" if previous else "")
+            + f"Current draft: {s.narration}{nl}"
+            f"Write the new narration: {per_scene} to {per_scene + 8} words, 2-3 warm, simple sentences for a school student. "
+            f"Cover every point in the order shown, add one reason or tiny everyday example, and do not repeat the draft word for word. "
+            f"Plain text only: no markdown, no list, no quotes.")
+        try:
+            r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
+                "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
+                "messages": [{"role": "user", "content": prompt}],
+                "options": config.ollama_options({"temperature": 0.6, "num_predict": 110}),
+            }, timeout=120)
+            r.raise_for_status()
+            text = " ".join(r.json()["message"]["content"].replace("\"", "").split())
+        except (requests.RequestException, ValueError, KeyError) as e:
+            log.warning("lengthen: scene %d failed: %s", i + 1, e)
+            previous = s.narration
+            continue
+        if len(text.split()) > len(s.narration.split()) and len(text.split()) <= per_scene * 2:
+            s.narration, changed = text, True
+        previous = s.narration
+    return changed
+
+
+def review(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3) -> tuple[LessonPlan, list[str]]:
     """Returns the (possibly repaired) plan and human-readable notes about what was changed."""
     notes: list[str] = []
+    target = round(duration_s * wps)
+    before = _words(plan)
+    if config.LLM_BACKEND != "mock" and before < 0.85 * target and _lengthen(plan, target):
+        notes.append(f"lengthened narration from {before} to {_words(plan)} words (target about {target})")
     for i, s in enumerate(plan.scenes):
         if s.template == "code" and s.code_lang in ("python", "py"):
             err = _python_error(s.code)
