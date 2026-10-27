@@ -317,6 +317,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| e7f578e | 2026-10-28 | v0.14.3: ask the chat for another video, every course episode streams |
 | ea3b050 | 2026-10-27 | v0.14.2: 5 video course no longer hangs the laptop, GPU errors fall back to CPU, long videos and episode 1 stream, autoplay fixed |
 | fd03bb2 | 2026-10-27 | v0.14.1: Learnverse AI worlds with a building screen, gates open by themselves, jump, saved points and purchases, home plus button aligned |
 | 543e8b5 | 2026-10-27 | v0.14.0: scenes play while they are made, per-stage progress, parallel study tools, profile, spaced repetition, weak spots, exports, offline lesson file, papers, teach-back, resumable jobs |
