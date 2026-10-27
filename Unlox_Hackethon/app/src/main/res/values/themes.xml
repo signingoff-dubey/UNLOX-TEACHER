@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark app. The system splash shows the Chanakya mark on its own light ground, then the dark window takes over. -->
+    <style name="Theme.Unlox_Hackethon" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B0B0D</item>
+        <item name="android:windowSplashScreenBackground">#F6F6F6</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenAnimationDuration">600</item>
+    </style>
+</resources>

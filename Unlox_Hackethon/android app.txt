@@ -1,0 +1,101 @@
+Here's how LiteRT, ONNX, and ML Kit fit together — they're complementary, not competing.
+The Three Runtimes at a Glance
+ 	LiteRT	ONNX Runtime	ML Kit
+What it is	Google's on-device inference runtime (successor to TFLite)	Microsoft's framework-neutral on-device runtime	Google's high-level task API (OCR, translation, etc.)
+Model format	.tflite / .lite	.onnx	Pre-built, no model needed
+Hardware	CPU, GPU (OpenCL/Metal), NPU (Snapdragon/Google Tensor)	CPU, XNNPACK, NNAPI (Android), CoreML (iOS)	Offloaded to system neural engine
+Best for	General ML, LLMs (via LiteRT-LM)	Cross-framework models, embeddings, TTS	OCR, text recognition, translation
+React Native	react-native-litert-lm (LLMs only)	onnxruntime-react-native	expo-mlkit-ocr, react-native-nitro-ocr
+Which Runtime for Each Component
+1. LLM → LiteRT-LM (Recommended)
+ 	 
+Runtime	LiteRT-LM — Google's purpose-built LLM runtime, manages KV cache, streaming, constrained decoding
+RN wrapper	react-native-litert-lm (https://github.com/hung-yueh/react-native-litert-lm) — Nitro Modules, Gemma 4 support, iOS + Android
+Model	Gemma 4 e2b (Apache 2.0, ~1 GB) — best LiteRT-LM compatibility, Google-native
+Alternative model	Qwen3-1.7B (convert to LiteRT format)
+Why not ONNX/llama.rn	LiteRT-LM is optimized for the LLM inference loop (KV cache, token streaming). llama.rn (llama.cpp) is the alternative if you need GGUF models. LiteRT-LM has better NPU support on Android.
+LiteRT-LM vs llama.cpp:
+ 	LiteRT-LM	llama.rn (llama.cpp)
+Android NPU	✅ Snapdragon/Google Tensor	✅ Hexagon NPU (experimental)
+iOS	✅ Metal + Core ML	✅ Metal
+Model format	.tflite (LiteRT)	.gguf
+Best model	Gemma 4 e2b	Qwen3, Phi-4-mini
+KV cache	Built-in, optimized	Built-in
+RN library	react-native-litert-lm	llama.rn
+Recommendation: Use LiteRT-LM + Gemma 4 e2b for best Google-native performance on Android. Use llama.rn + Qwen3-1.7B if you need broader model choice or better multilingual support.
+2. Translation → ML Kit (Recommended) + ONNX Runtime (Fallback)
+ 	 
+Primary	ML Kit Translate — built into Android, 50+ languages including Hindi, Bengali, Tamil, Telugu, Marathi, Urdu. Downloads model on first use, then fully offline.
+RN wrapper	react-native-vision-camera-ocr-plus (https://github.com/jamenamcinteer/react-native-vision-camera-ocr-plus) — live OCR + translation via ML Kit
+Fallback	ONNX Runtime + NLLB-200 600M INT8 / IndicTrans2 INT8 — for languages ML Kit doesn't cover
+ML Kit Translation language support:
+- ✅ English, Hindi, Bengali, Tamil, Telugu, Marathi, Urdu, Gujarati, Kannada, Malayalam, and 40+ more
+- ✅ Fully on-device after model download
+- ✅ No app code changes between languages
+3. TTS → ONNX Runtime (Recommended)
+ 	 
+Runtime	ONNX Runtime — via react-native-sherpa-onnx (wraps Sherpa-ONNX + ONNX Runtime)
+Why not LiteRT	Piper VITS models are ONNX format. LiteRT would require conversion to .tflite. ONNX is the native format.
+Execution providers	CPU (XNNPACK) → GPU (Android) / Metal (iOS)
+Models	Piper VITS ONNX — hi_IN-priyamvada-medium.onnx, te_IN-krishna-medium.onnx, etc.
+4. OCR → ML Kit (Android) + Vision (iOS)
+ 	 
+Android	ML Kit Text Recognition v2 — built-in, ~3.5 MB, supports Latin, Devanagari, CJK
+iOS	Apple Vision Framework (VNRecognizeTextRequest) — built-in, iOS 13+
+RN wrapper	react-native-nitro-ocr (https://github.com/jonathanpalma/react-native-nitro-ocr) — Nitro Modules, unified API, ~3.5 MB
+Alternative	expo-mlkit-ocr (https://www.npmjs.com/package/expo-mlkit-ocr) — ML Kit v2, structured output (blocks/lines/elements)
+Tesseract fallback	react-native-tesseract-ocr — Android only, needs .traineddata files
+Why ML Kit/Vision over Tesseract: Zero model size (built into OS), faster, better accuracy, no tessdata files to bundle.
+5. Embeddings (RAG) → ONNX Runtime
+ 	 
+Runtime	ONNX Runtime — onnxruntime-react-native
+Model	all-MiniLM-L6-v2 ONNX (~80 MB) — 384-dim sentence embeddings
+Why not LiteRT	MiniLM is PyTorch → ONNX is the natural export path. LiteRT would require TFLite conversion with potential operator mismatch.
+Android lib	shubham0204/Sentence-Embeddings-Android (https://github.com/shubham0204/Sentence-Embeddings-Android) — ready-to-use
+6. PDF Rendering → Native (PDFKit / PdfRenderer)
+ 	 
+iOS	PDFKit (built-in)
+Android	PdfRenderer (built-in)
+RN wrapper	react-native-pdf-renderer or @kishannareshpal/expo-pdf
+Text extraction	Digital PDFs: extract directly. Scanned: render page to image → ML Kit/Vision OCR
+7. MP4 Export → Native (AVFoundation / MediaCodec)
+ 	 
+Library	expo-video-encoder — H.264 MP4 from frames + audio
+No runtime dependency	Uses platform codecs directly, not LiteRT/ONNX/ML Kit
+Runtime Decision Matrix
+Component	LiteRT	ONNX Runtime	ML Kit	Native
+LLM (Gemma 4)	✅ LiteRT-LM	 	 	 
+LLM (Qwen3/Phi)	 	✅ llama.rn	 	 
+Translation	 	✅ NLLB CT2	✅ ML Kit Translate	 
+TTS (Piper)	 	✅ sherpa-onnx	 	 
+OCR	 	 	✅ ML Kit / Vision	 
+Embeddings (MiniLM)	 	✅ ONNX Runtime	 	 
+PDF rendering	 	 	 	✅ PDFKit/PdfRenderer
+MP4 export	 	 	 	✅ AVFoundation/MediaCodec
+Dependency List
+{
+  "dependencies": {
+    "expo": "~53.x",
+    "expo-av": "~16.x",
+    "expo-sqlite": "~16.x",
+    "expo-filesystem": "~17.x",
+    "expo-video-encoder": "^1.x",
+    "expo-mlkit-ocr": "^1.x",
+    
+    "react-native-litert-lm": "^1.x",
+    "react-native-sherpa-onnx": "^1.12.x",
+    "onnxruntime-react-native": "^1.13.x",
+    "react-native-skia": "^1.x",
+    "react-native-reanimated": "^3.x",
+    "react-native-pdf-renderer": "^2.x",
+    "react-native-nitro-ocr": "^1.x",
+    
+    "zustand": "^4.x",
+    "react-navigation": "^7.x"
+  }
+}
+Why This Combination
+- LiteRT-LM for LLM: Google's own runtime, best NPU utilization on Android, purpose-built for Gemma
+- ML Kit for OCR + translation: Zero model size, best accuracy, built into the OS
+- ONNX Runtime for TTS + embeddings: Native ONNX format for Piper VITS and MiniLM, no conversion needed
+- Native APIs for PDF + MP4: Platform codecs are faster and smaller than any cross-platform wrapper
