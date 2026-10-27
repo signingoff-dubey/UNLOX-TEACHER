@@ -13,7 +13,7 @@
 - Video content in the chosen language: every heading, point, label and caption is translated and the voice is that language (checked on a Hindi and a Telugu track)
 
 ### Known Issues
-- Whisper-small hears Telugu, Hindi and the other Indian languages roughly: the language is detected right but the words can be wrong. `STT_MODEL=medium` is better but needs ~1 GB more VRAM (the 8 GB card is nearly full with the language model)
+- Speech recognition now defaults to Whisper **medium** (small is the fallback): Hindi words clearer ("खीजता" for "खींचता" instead of "खीछता"), still 0.5-0.9 s per question, GPU memory 6.5 of 8.15 GB with the language model, translation and voices loaded. Telugu and Tamil words are still rough on the synthetic test voices; a real voice is untested. Scanned-PDF OCR (6.8 GB) next to it was not re-tested
 - Hindi tutor answers still take 5-6 s (translation + a longer voice clip)
 
 ---

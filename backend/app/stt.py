@@ -65,8 +65,16 @@ def _load():
         source = config.STT_MODEL
         if not Path(source).exists() and "/" not in source and source not in ("tiny", "base", "small", "medium"):
             raise SttUnavailable(f"STT model '{source}' not found")
-        _model = _gpu_model(WhisperModel, source) or _cpu_model(WhisperModel, source)
-        log.info("STT model loaded: %s", source)
+        small = str(config.MODELS_DIR / "whisper-small")
+        for source in dict.fromkeys([source, small]):         # the default (medium) first; the small model if medium is not on disk
+            try:
+                _model = _gpu_model(WhisperModel, source) or _cpu_model(WhisperModel, source)
+                log.info("STT model loaded: %s", source)
+                break
+            except SttUnavailable as e:
+                log.warning("%s", e)
+        if _model is None:
+            raise SttUnavailable("No speech model could be loaded")
     return _model
 
 

@@ -71,7 +71,8 @@ PARLER_DESCRIPTION = os.getenv(
 # Model locations. INDICTRANS2_MODEL / PARLER_MODEL may also be local folder paths.
 PIPER_DIR = Path(os.getenv("PIPER_DIR", MODELS_DIR / "piper"))
 # Speech to text for the voice assistant (faster-whisper, CPU). A folder under models/ or a size name like "small".
-STT_MODEL = os.getenv("STT_MODEL", str(MODELS_DIR / "whisper-small"))
+# "medium" hears Hindi and the other Indian languages clearly better than "small" for ~1 GB more VRAM; it comes from the Hugging Face cache
+STT_MODEL = os.getenv("STT_MODEL", "medium")
 STT_THREADS = int(os.getenv("STT_THREADS", "4"))
 STT_DEVICE = os.getenv("STT_DEVICE", "auto")      # "cpu" to keep speech recognition off the GPU
 
