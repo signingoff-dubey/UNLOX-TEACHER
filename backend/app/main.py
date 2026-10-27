@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from . import config, jobs, translate, tts
 from .exporter import export_mp4
 from .languages import LANGUAGES
-from .pipeline import build_lesson, load_lesson
+from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("visual-teacher")
@@ -90,6 +90,20 @@ def job_status(job_id: str) -> dict:
     if not job:
         raise HTTPException(404, "No such job")
     return job
+
+
+@app.get("/api/lessons")
+def list_lessons(limit: int = 20) -> list[dict]:
+    """Recent lessons, newest first (for the history list and demo backups)."""
+    out = []
+    for path in LESSONS_DIR.glob("*/lesson.json"):
+        try:
+            lesson = load_lesson(path.parent.name)
+        except (ValueError, OSError):
+            continue
+        out.append({"id": lesson["id"], "concept": lesson["concept"], "created": lesson["created"],
+                    "languages": list(lesson["languages"]), "videos": list(lesson["videos"])})
+    return sorted(out, key=lambda l: l["created"], reverse=True)[:limit]
 
 
 @app.get("/api/lessons/{lesson_id}")

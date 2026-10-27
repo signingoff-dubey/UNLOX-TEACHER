@@ -1,49 +1,53 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Player } from "@remotion/player";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Player, type PlayerRef } from "@remotion/player";
 import type { Job, Lesson } from "./types";
+import { api, getApiBase, runJob, url, type Lang, type LessonSummary } from "./api";
 import { LessonVideo, lessonFrames } from "./remotion/Lesson";
 import { FPS, H, W } from "./remotion/theme";
-
-type Lang = { code: string; name: string; native: string; piper: boolean };
+import { StatusPanel } from "./components/StatusPanel";
+import { SceneList } from "./components/SceneList";
+import { History } from "./components/History";
 
 const EXAMPLES = ["Photosynthesis", "The water cycle", "Newton's third law", "How a rainbow forms", "Fractions"];
-
-async function api<T>(url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, body === undefined ? undefined : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? res.statusText);
-  return res.json();
-}
-
-/** Poll a backend job until it finishes, reporting progress along the way. */
-async function runJob(start: Promise<Job>, onUpdate: (j: Job) => void): Promise<Job> {
-  let job = await start;
-  while (job.status === "queued" || job.status === "running") {
-    onUpdate(job);
-    await new Promise((r) => setTimeout(r, 600));
-    job = await api<Job>(`/api/jobs/${job.id}`);
-  }
-  onUpdate(job);
-  if (job.status === "error") throw new Error(job.error ?? "Job failed");
-  return job;
-}
+const DEFAULT_LANGS = ["hi", "te"];
 
 export default function App() {
   const [languages, setLanguages] = useState<Lang[]>([]);
-  const [selected, setSelected] = useState<string[]>(["hi", "te"]);
+  const [selected, setSelected] = useState<string[]>(DEFAULT_LANGS);
   const [concept, setConcept] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [recent, setRecent] = useState<LessonSummary[]>([]);
   const [active, setActive] = useState("en");
   const [exports, setExports] = useState<Record<string, Job>>({});
   const [error, setError] = useState("");
+  const [sceneIndex, setSceneIndex] = useState(0);
+  const [assetBase, setAssetBase] = useState(getApiBase());
+  const player = useRef<PlayerRef>(null);
+
+  const loadLists = useCallback(() => {
+    setAssetBase(getApiBase());
+    api<Lang[]>("/api/languages").then(setLanguages).catch(() => setLanguages([]));
+    api<LessonSummary[]>("/api/lessons").then(setRecent).catch(() => setRecent([]));
+  }, []);
+
+  const openLesson = useCallback((id: string) => {
+    setError("");
+    api<Lesson>(`/api/lessons/${id}`)
+      .then((l) => {
+        setLesson(l);
+        setExports({});
+        setActive((cur) => (cur in l.languages ? cur : Object.keys(l.languages).find((c) => c !== "en") ?? "en"));
+        window.history.replaceState(null, "", `#${l.id}`);
+      })
+      .catch(() => setError("That lesson could not be loaded."));
+  }, []);
 
   useEffect(() => {
-    api<Lang[]>("/api/languages").then(setLanguages).catch(() => setError("Backend not reachable on port 8000."));
+    loadLists();
     const id = location.hash.slice(1);
-    if (id) api<Lesson>(`/api/lessons/${id}`).then(setLesson).catch(() => undefined);
-  }, []);
+    if (id) openLesson(id);
+  }, [loadLists, openLesson]);
 
   const busy = job?.status === "queued" || job?.status === "running";
 
@@ -57,42 +61,66 @@ export default function App() {
       setLesson(l);
       setExports({});
       setActive(selected.find((c) => c in l.languages) ?? "en");
-      location.hash = l.id;
+      window.history.replaceState(null, "", `#${l.id}`);
+      loadLists();
     } catch (e) {
-      setError(String((e as Error).message));
+      setError((e as Error).message);
     }
   }
 
   async function exportMp4(lang: string) {
     if (!lesson) return;
+    setError("");
     try {
       const done = await runJob(api<Job>(`/api/lessons/${lesson.id}/export`, { lang }),
         (j) => setExports((x) => ({ ...x, [lang]: j })));
       setLesson((l) => l && { ...l, videos: { ...l.videos, [lang]: done.result.url } });
+      loadLists();
     } catch (e) {
-      setError(String((e as Error).message));
+      setError((e as Error).message);
     }
   }
 
   const track = lesson?.languages[active];
-  const inputProps = useMemo(() => track && { track, assetBase: "" }, [track]);
+  const inputProps = useMemo(() => track && { track, assetBase }, [track, assetBase]);
+
+  // Follow playback so the scene list highlights the current scene.
+  useEffect(() => {
+    const p = player.current;
+    if (!p || !track) return;
+    setSceneIndex(0);
+    const onFrame = (e: { detail: { frame: number } }) => {
+      const t = e.detail.frame / FPS;
+      const i = track.scenes.findIndex((s) => t >= s.start_s && t < s.start_s + s.duration_s);
+      if (i >= 0) setSceneIndex(i);
+    };
+    p.addEventListener("frameupdate", onFrame);
+    return () => p.removeEventListener("frameupdate", onFrame);
+  }, [track]);
+
+  const seek = (seconds: number) => {
+    player.current?.seekTo(Math.round(seconds * FPS));
+    player.current?.play();
+  };
+
   const exportJob = exports[active];
   const exporting = exportJob && (exportJob.status === "queued" || exportJob.status === "running");
+  const totalTime = lesson ? Object.values(lesson.timings).reduce((a, b) => a + b, 0) : 0;
 
   return (
     <div className="app">
       <header className="top">
-        <div className="brand"><span className="mark" />Visual Teacher</div>
-        <div className="tag">Offline · English + Indian languages</div>
+        <div className="brand"><span className="mark" aria-hidden />Visual Teacher</div>
+        <div className="tag">Runs offline · English + Indian languages</div>
       </header>
 
       <main className="layout">
-        <section className="panel">
+        <aside className="panel">
           <form onSubmit={(e) => { e.preventDefault(); generate(); }}>
             <label htmlFor="concept" className="label">What do you want to learn?</label>
             <div className="ask">
               <input id="concept" value={concept} onChange={(e) => setConcept(e.target.value)}
-                placeholder="e.g. Photosynthesis" autoComplete="off" disabled={busy} />
+                placeholder="e.g. Photosynthesis" autoComplete="off" disabled={busy} maxLength={200} />
               <button type="submit" disabled={busy || !concept.trim()}>{busy ? "Creating…" : "Create lesson"}</button>
             </div>
           </form>
@@ -107,10 +135,10 @@ export default function App() {
             {languages.filter((l) => l.code !== "en").map((l) => {
               const on = selected.includes(l.code);
               return (
-                <button key={l.code} className={`lang ${on ? "on" : ""}`} disabled={busy}
-                  onClick={() => setSelected((s) => on ? s.filter((c) => c !== l.code) : [...s, l.code])}>
+                <button key={l.code} className={`lang ${on ? "on" : ""}`} disabled={busy} aria-pressed={on}
+                  onClick={() => setSelected((s) => (on ? s.filter((c) => c !== l.code) : [...s, l.code]))}>
                   <span className="native">{l.native}</span>
-                  <span className="muted">{l.name}</span>
+                  <span className="muted">{l.name}{l.piper ? "" : " · GPU voice"}</span>
                 </button>
               );
             })}
@@ -124,33 +152,29 @@ export default function App() {
           )}
           {error && <div className="error" role="alert">{error}</div>}
 
-          {lesson && (
-            <div className="stats">
-              <div className="label">Built in</div>
-              {Object.entries(lesson.timings).map(([k, v]) => (
-                <div key={k} className="stat">
-                  <span>{k === "plan_s" ? "Lesson plan" : `${lesson.languages[k.replace("_s", "")]?.name ?? k} voice`}</span>
-                  <b>{v.toFixed(1)} s</b>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+          <History items={recent} activeId={lesson?.id} onOpen={openLesson} />
+          <StatusPanel onBaseChange={loadLists} />
+        </aside>
 
         <section className="stage">
           {lesson && track && inputProps ? (
             <>
-              <div className="tabs" role="tablist">
-                {Object.values(lesson.languages).map((t) => (
-                  <button key={t.lang} role="tab" aria-selected={t.lang === active}
-                    className={t.lang === active ? "tab on" : "tab"} onClick={() => setActive(t.lang)}>
-                    {t.native}
-                  </button>
-                ))}
+              <div className="stage-head">
+                <h1>{track.title}</h1>
+                <div className="tabs" role="tablist" aria-label="Lesson language">
+                  {Object.values(lesson.languages).map((t) => (
+                    <button key={t.lang} role="tab" aria-selected={t.lang === active}
+                      className={t.lang === active ? "tab on" : "tab"} onClick={() => setActive(t.lang)}>
+                      {t.native}
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <div className="player">
                 <Player
-                  key={`${lesson.id}-${active}`}
+                  ref={player}
+                  key={`${lesson.id}-${active}-${assetBase}`}
                   component={LessonVideo}
                   inputProps={inputProps}
                   durationInFrames={lessonFrames(track)}
@@ -159,27 +183,59 @@ export default function App() {
                   fps={FPS}
                   controls
                   autoPlay
+                  allowFullscreen
+                  clickToPlay
                   style={{ width: "100%", aspectRatio: "16 / 9" }}
                   acknowledgeRemotionLicense
                 />
               </div>
+
               {track.translator === "untranslated" && (
                 <div className="warn">Translation model unavailable; {track.name} shows the English text.</div>
               )}
               {track.tts_engines.includes("silent") && (
                 <div className="warn">No voice model installed for {track.name}; narration is a silent placeholder.</div>
               )}
+
               <div className="actions">
-                <div className="muted">{track.scenes.length} scenes · {track.duration_s.toFixed(0)} s</div>
+                <div className="muted">
+                  {track.scenes.length} scenes · {track.duration_s.toFixed(0)} s · made in {totalTime.toFixed(1)} s
+                </div>
                 <div className="buttons">
-                  <a className="ghost" href={`/media/lessons/${lesson.id}/captions_${active}.srt`} download>Captions (.srt)</a>
+                  <a className="ghost" href={url(`/media/lessons/${lesson.id}/captions_${active}.srt`)} download>
+                    Captions (.srt)
+                  </a>
                   {lesson.videos[active] ? (
-                    <a className="primary" href={lesson.videos[active]} download={`${lesson.concept}-${active}.mp4`}>Download MP4</a>
+                    <a className="primary" href={url(lesson.videos[active])} download={`${lesson.concept}-${active}.mp4`}>
+                      Download MP4
+                    </a>
                   ) : (
                     <button className="primary" disabled={exporting} onClick={() => exportMp4(active)}>
                       {exporting ? `${exportJob.stage} ${Math.round(exportJob.progress * 100)}%` : "Export MP4"}
                     </button>
                   )}
+                </div>
+              </div>
+
+              <div className="details-grid">
+                <div>
+                  <div className="label">Scenes</div>
+                  <SceneList track={track} current={sceneIndex} onSeek={seek} />
+                </div>
+                <div>
+                  <div className="label">Build time</div>
+                  <div className="stats">
+                    {Object.entries(lesson.timings).map(([k, v]) => (
+                      <div key={k} className="stat">
+                        <span>{k === "plan_s" ? "Lesson plan" : `${lesson.languages[k.replace(/_s$/, "")]?.name ?? k} translation + voice`}</span>
+                        <b>{v.toFixed(1)} s</b>
+                      </div>
+                    ))}
+                  </div>
+                  <details className="json">
+                    <summary>Lesson data (JSON)</summary>
+                    <pre>{JSON.stringify(track.scenes.map(({ captions, audio_url, ...s }) => s), null, 2)}</pre>
+                  </details>
                 </div>
               </div>
             </>
