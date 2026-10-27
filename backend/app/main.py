@@ -8,20 +8,22 @@ from typing import Literal
 import requests
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, jobs, knowledge, routes_rag, stt, translate, tts
+from . import config, homework, jobs, knowledge, routes_rag, stt, translate, tts, vision
 from .exporter import export_mp4
 from .ocr.ingest import upload_status
 from .languages import LANGUAGES
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+config.MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                    handlers=[logging.StreamHandler(), logging.FileHandler(config.MEDIA_DIR / "backend.log", encoding="utf-8")])  # the file is how to see why a step failed
 log = logging.getLogger("chanakya")
 
 
@@ -57,15 +59,19 @@ class LessonRequest(BaseModel):
     upload: str | None = Field(None, pattern=r"^[0-9a-f]{16}$")
     focus: str = Field("", max_length=100)
     documents: list[str] = []
+    images: list[str] = Field(default_factory=list, max_length=4)       # ids from POST /api/images
+    mode: Literal["study", "homework", "explain"] = "explain"
 
 
 class PlaylistRequest(BaseModel):
-    topic: str = Field(min_length=2, max_length=200)
+    topic: str = Field("", max_length=200)
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=240)        # per episode
-    episodes: int = Field(5, ge=2, le=8)
+    episodes: int = Field(0, ge=0, le=8)                # 0 = the AI decides: one video per concept (concepts.py)
     documents: list[str] = []
+    images: list[str] = Field(default_factory=list, max_length=4)
+    mode: Literal["study", "homework", "explain"] = "explain"
 
 
 class PlaylistExportRequest(BaseModel):
@@ -138,13 +144,13 @@ def create_lesson(req: LessonRequest) -> dict:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
     concept = req.concept.strip()
     documents = ([req.upload] if req.upload else []) + [d for d in req.documents if d != req.upload]
-    if len(concept) < 2 and not documents:
-        raise HTTPException(400, "Type a concept, or attach a PDF")
+    if len(concept) < 2 and not documents and not req.images:
+        raise HTTPException(400, "Type a concept, or attach a PDF or a photo")
     for d in documents:
         if upload_status(d) is None:
             raise HTTPException(404, "That PDF upload was not found")
     return jobs.submit("lesson", build_lesson, concept, req.languages, req.level, req.duration_s, documents, None,
-                       req.focus.strip())
+                       req.focus.strip(), req.images, req.mode)
 
 
 @app.get("/api/jobs/{job_id}")
@@ -194,9 +200,73 @@ def create_playlist(req: PlaylistRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    pl = playlist.start(req.topic.strip(), req.languages, req.level, req.duration_s, req.episodes, req.documents)
+    topic = req.topic.strip()
+    if len(topic) < 2 and not req.documents and not req.images:
+        raise HTTPException(400, "Type a topic, or attach a PDF or a photo")
+    topic = topic or ("Homework help" if req.mode == "homework" else "Your document" if req.documents else "Your photo")
+    pl = playlist.start(topic, req.languages, req.level, req.duration_s, req.episodes, req.documents, req.images, req.mode)
     job = jobs.submit("playlist", playlist.build, pl["id"])
     return {"playlist": pl, "job": job}
+
+
+class HomeworkRequest(BaseModel):
+    concept: str = Field("", max_length=200)
+    documents: list[str] = []
+    images: list[str] = Field(default_factory=list, max_length=4)
+
+
+@app.post("/api/images")
+async def upload_image(file: UploadFile = File(...)) -> dict:
+    """A photo (homework, a textbook page, a diagram). llava reads it in a background job; the job result is its text and topic."""
+    data = await file.read()
+    try:
+        sha = vision.save(data)
+    except vision.ImageError as e:
+        raise HTTPException(400, str(e))
+    return jobs.submit("vision", vision.describe, sha)
+
+
+@app.get("/api/images/{sha}")
+def get_image(sha: str) -> FileResponse:
+    try:
+        return FileResponse(vision.path_of(sha))
+    except (vision.ImageError, FileNotFoundError):
+        raise HTTPException(404, "No such image")
+
+
+@app.post("/api/homework")
+def create_homework(req: HomeworkRequest) -> dict:
+    """Start the Markdown answer file for a homework (PDF and/or photos). The student chose Homework: nothing guesses it."""
+    if not req.documents and not req.images:
+        raise HTTPException(400, "Attach the homework as a PDF or a photo")
+    for d in req.documents:
+        if upload_status(d) is None:
+            raise HTTPException(404, "That PDF upload was not found")
+    meta = homework.start(req.concept, req.documents, req.images)
+    return {"homework": meta, "job": jobs.submit("homework", homework.build, meta["id"])}
+
+
+@app.get("/api/homework")
+def list_homework(limit: int = 20) -> list[dict]:
+    return homework.list_all(limit)
+
+
+@app.get("/api/homework/{hid}")
+def get_homework(hid: str) -> dict:
+    try:
+        return homework.load(hid)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, "No such homework")
+
+
+@app.get("/api/homework/{hid}/download")
+def download_homework(hid: str) -> PlainTextResponse:
+    try:
+        meta = homework.load(hid)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, "No such homework")
+    return PlainTextResponse(meta["markdown"], media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="homework-answers-{hid}.md"'})
 
 
 @app.get("/api/playlists")

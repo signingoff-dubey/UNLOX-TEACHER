@@ -96,3 +96,30 @@
   .creating-pill.done { animation: none; transform: scale(1.2); }
 }
 @media (max-width: 900px) { .pill-wrap { right: 14px; bottom: 14px; } }
+
+/* ---------- photo attach, mode pills, homework answers ---------- */
+.dock-field { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dock-plus { flex: none; cursor: pointer; margin-top: calc(2px + 6px * var(--p)); background: var(--surface); transition: background 0.15s, transform 0.15s var(--ease); }
+.dock-plus:hover { background: var(--lime); transform: rotate(90deg); }
+.dock-plus:focus-within { box-shadow: 0 0 0 2px var(--ink); }
+.dock-plus.off { opacity: 0.4; pointer-events: none; }
+.dock-photos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; overflow: hidden;
+  max-height: calc(64px * (1 - var(--p))); opacity: calc(1 - var(--p) * 2); }
+.photo { position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: var(--r-pill); background: var(--surface); font-size: 13px; max-width: 240px; }
+.photo img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; }
+.photo-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.photo.reading .photo-state { animation: photo-pulse 1.4s ease-in-out infinite; }
+.photo.error { background: #f7e0cd; }
+.photo-x { position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; }
+@keyframes photo-pulse { 50% { opacity: 0.45; } }
+.seg.modes button { padding: 8px 20px; font-size: 15px; }
+.mode-hint { margin: 8px 4px 0; font-size: 13px; color: var(--muted); }
+.md { padding: 28px 34px; max-width: 880px; line-height: 1.6; font-size: 16px; }
+.md h1 { font-size: 30px; font-weight: 500; letter-spacing: -0.03em; margin: 0 0 12px; }
+.md h2 { font-size: 21px; font-weight: 600; margin: 26px 0 8px; }
+.md blockquote { margin: 8px 0 12px; padding: 10px 16px; border-left: 3px solid var(--lime); background: var(--surface); border-radius: 0 14px 14px 0; color: var(--ink-2); }
+.md p { margin: 6px 0; }
+.md ul, .md ol { margin: 6px 0 6px 22px; padding: 0; }
+.md hr { border: 0; height: 1px; background: var(--line); margin: 22px 0 0; }
+.md code { padding: 1px 6px; border-radius: 6px; background: var(--surface); font-size: 0.92em; }
+.md-cursor { width: 10px; height: 10px; margin-top: 14px; border-radius: 50%; background: var(--lime-hi); animation: photo-pulse 1s ease-in-out infinite; }

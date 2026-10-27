@@ -69,14 +69,15 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     if (!onMetaQuiz || metaBusy) return;
     try { await onMetaQuiz(); } catch (e) { setNote((e as Error).message || "The Meta quiz could not be built."); }
   };
-  const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const rec = useRef<{ mr: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null>(null);
   const player = useRef<HTMLAudioElement | null>(null);
   const id = lesson?.id;
   const micOk = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
 
   useEffect(() => { setMsgs(id ? load(id) : []); }, [id]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end", behavior: "smooth" }); }, [msgs, busy]);
+  // Scroll the message list only: scrollIntoView would move the whole page whenever a message arrives.
+  useEffect(() => { box.current?.scrollTo({ top: box.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => () => { rec.current?.stream.getTracks().forEach((t) => t.stop()); player.current?.pause(); }, []);
 
   const toggleSpeaker = () => {
@@ -182,7 +183,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
         </div>
       )}
 
-      <div className="msgs" role="log" aria-live="polite">
+      <div className="msgs" role="log" aria-live="polite" ref={box}>
         {!lesson ? (
           <div className="panel-empty"><p className="muted">Ask questions about the lesson here once it is ready. The tutor will know every scene.</p></div>
         ) : msgs.length === 0 ? (
@@ -201,7 +202,6 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
           ))
         )}
         {busy && <div className="msg assistant"><div className="bubble typing" aria-label="Tutor is typing"><i /><i /><i /></div></div>}
-        <div ref={end} />
       </div>
 
       {note && <div className="chat-note" role="status">{note}</div>}

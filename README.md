@@ -248,3 +248,8 @@ Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on so
 - The left column holds your awards: streak, score, level, daily goal, badges
 - Videos over 1:30 are planned in parts and joined (`backend/app/longplan.py`); the API takes `duration_s` 30-240
 - While a video is being made you can leave its page: a floating "Creating…" pill (bottom right) leads back and says "Created" when it is done
+
+## Photos, modes and homework (v0.10.0)
+- Plus button in the prompt box: attach photos (read locally by llava)
+- Explanation / Study / Homework pills; Homework also writes an answers file (`#/homework/<id>`, download as .md)
+- Videos: Auto lets the AI pick one video per concept

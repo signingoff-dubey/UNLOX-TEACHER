@@ -15,7 +15,7 @@ def test_parts_for_scales_with_length():
 def test_long_video_joins_parts_in_order(monkeypatch):
     calls = []
 
-    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress):
+    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress, extra="", mode="explain"):
         calls.append(series)
         on_progress(1.0)
         return _part(series["index"]), [{"title": "Book", "section": "Ch 1"}]

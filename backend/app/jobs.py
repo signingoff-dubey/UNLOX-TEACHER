@@ -16,7 +16,9 @@ _pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lesson")
 _pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1, thread_name_prefix="playlist"),
           "export": ThreadPoolExecutor(max_workers=1, thread_name_prefix="export"),
           "upload": ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload"),
-          "studio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio")}
+          "studio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio"),
+          "vision": ThreadPoolExecutor(max_workers=1, thread_name_prefix="vision"),
+          "homework": ThreadPoolExecutor(max_workers=1, thread_name_prefix="homework")}
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 

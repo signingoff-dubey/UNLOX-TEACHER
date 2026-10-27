@@ -69,7 +69,7 @@ export const StudioModal: React.FC<Props> = ({ lesson, lang, kind: first, title,
     switch (result.kind) {
       case "flashcards": return <Flashcards key={result.size + result.difficulty} data={d as StudioData["flashcards"]} lessonId={lesson.id} />;
       case "quiz": return <Quiz key={result.size + result.difficulty} data={d as StudioData["quiz"]} lessonId={lesson.id} />;
-      case "mindmap": return <MindMap data={d as StudioData["mindmap"]} ask={onAsk} />;
+      case "mindmap": return <MindMap data={d as StudioData["mindmap"]} lessonId={lesson.id} lang={lang} ask={onAsk} />;
       case "studyguide": return <StudyGuide data={d as StudioData["studyguide"]} open={setKind} />;
       case "faq": return <Faq data={d as StudioData["faq"]} ask={onAsk} />;
       case "glossary": return <Glossary data={d as StudioData["glossary"]} ask={onAsk} />;

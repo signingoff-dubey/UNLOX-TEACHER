@@ -2,10 +2,12 @@ import React, { useEffect, useRef } from "react";
 import type { Lang, LessonSettings, LessonSummary, Level, PlaylistSummary } from "../api";
 import { Glyph } from "../ds/Glyph";
 import { PdfUpload } from "../components/PdfUpload";
+import type { Mode, PhotoItem } from "../photos";
 import { useRewards } from "../rewards/RewardsContext";
 import { Dashboard } from "./Dashboard";
 
-export const COUNTS = [1, 2, 3, 5, 8];
+export const COUNTS = [0, 1, 2, 3, 5, 8];                  // 0 = Auto: the AI picks one video per concept
+export const MODES: [Mode, string, string][] = [["explain", "Explanation", "Understand it"], ["study", "Study", "Revise for a test"], ["homework", "Homework", "Learn it and get the answers"]];
 /** Up to 4 minutes. Over 1:30 the backend writes the video in parts (see backend/app/longplan.py). */
 export const LENGTHS: [number, string][] = [[30, "0:30"], [60, "1:00"], [90, "1:30"], [120, "2:00"], [150, "2:30"], [180, "3:00"], [210, "3:30"], [240, "4:00"]];
 const TOPICS: [string, string][] = [
@@ -25,6 +27,11 @@ type Props = {
   onSettings: (s: LessonSettings) => void;
   languages: Lang[];
   videos: number;
+  mode: Mode;
+  onMode: (m: Mode) => void;
+  photos: PhotoItem[];
+  onAddPhotos: (files: FileList) => void;
+  onRemovePhoto: (key: string) => void;
   onVideos: (n: number) => void;
   upload: string | null;
   onUpload: (sha: string | null) => void;
@@ -47,8 +54,9 @@ export const Home: React.FC<Props> = (p) => {
   const { state } = useRewards();
   const dock = useRef<HTMLDivElement>(null);
   const { settings: s } = p;
-  const canCreate = !p.busy && (p.concept.trim().length >= 2 || !!p.upload) && s.languages.length > 0;
-  const course = p.videos > 1;
+  const photosReady = p.photos.some((x) => x.status === "ready") && !p.photos.some((x) => x.status === "reading");
+  const canCreate = !p.busy && (p.concept.trim().length >= 2 || !!p.upload || photosReady) && !p.photos.some((x) => x.status === "reading") && s.languages.length > 0;
+  const course = p.videos !== 1;
   const toggleLang = (code: string) =>
     p.onSettings({ ...s, languages: s.languages.includes(code) ? s.languages.filter((c) => c !== code) : [...s.languages, code] });
 
@@ -95,16 +103,31 @@ export const Home: React.FC<Props> = (p) => {
 
         <form className="dock-box" onSubmit={submit}>
           <span className="dock-spark" aria-hidden><Glyph name="sparkle" size={22} /></span>
-          <label htmlFor="concept" className="sr-only">What do you want to learn?</label>
-          <textarea id="concept" value={p.concept} rows={3} maxLength={200} disabled={p.busy} autoComplete="off" spellCheck
-            placeholder={p.upload ? "A topic in your PDF, or leave this empty" : "Type anything you want to learn…"}
-            onChange={(e) => p.onConcept(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (canCreate) p.onCreate(); } }} />
-          {p.concept && !p.busy && (
-            <button type="button" className="round dock-clear" aria-label="Clear" onClick={() => p.onConcept("")}><Glyph name="x" size={16} /></button>
-          )}
+          <div className="dock-field">
+            <label htmlFor="concept" className="sr-only">What do you want to learn?</label>
+            <textarea id="concept" value={p.concept} rows={3} maxLength={200} disabled={p.busy} autoComplete="off" spellCheck
+              placeholder={p.photos.length ? "Add a few words about the photo, or leave this empty" : p.upload ? "A topic in your PDF, or leave this empty" : "Type anything you want to learn…"}
+              onChange={(e) => p.onConcept(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (canCreate) p.onCreate(); } }} />
+            {p.photos.length > 0 && (
+              <ul className="dock-photos" aria-label="Attached photos">
+                {p.photos.map((x) => (
+                  <li key={x.key} className={`photo ${x.status}`} title={x.status === "error" ? x.error : x.topic || x.name}>
+                    <img src={x.preview} alt={x.name} />
+                    <span className="photo-state">{x.status === "reading" ? "Reading…" : x.status === "error" ? "Failed" : x.topic || "Ready"}</span>
+                    {!p.busy && <button type="button" className="photo-x" aria-label={`Remove ${x.name}`} onClick={() => p.onRemovePhoto(x.key)}><Glyph name="x" size={12} /></button>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <label className={`round dock-plus${p.busy || p.photos.length >= 4 ? " off" : ""}`} title="Add a photo (homework, a textbook page, a diagram)">
+            <input type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only" disabled={p.busy || p.photos.length >= 4}
+              aria-label="Add a photo" onChange={(e) => { if (e.target.files?.length) p.onAddPhotos(e.target.files); e.target.value = ""; }} />
+            <Glyph name="plus" size={18} />
+          </label>
           <button type="submit" className="primary dock-go" disabled={!canCreate}>
-            <span className="dock-go-label">{p.busy ? "Creating…" : course ? `Create ${p.videos}-video course` : p.upload && !p.concept.trim() ? "Create from PDF" : "Create lesson"}</span>
+            <span className="dock-go-label">{p.busy ? "Creating…" : course ? (p.videos === 0 ? "Create a course" : `Create ${p.videos}-video course`) : p.upload && !p.concept.trim() ? "Create from PDF" : "Create lesson"}</span>
             <Glyph name="chevron" size={18} />
           </button>
         </form>
@@ -119,11 +142,20 @@ export const Home: React.FC<Props> = (p) => {
       <section className="card white settings" aria-label="Lesson settings">
         <div className="card-title"><Glyph name="settings" size={16} />Settings</div>
         <div className="settings-grid">
+          <div className="wide">
+            <div className="field-label">What is it for?</div>
+            <div className="seg modes" role="radiogroup" aria-label="What is it for">
+              {MODES.map(([m, label, hint]) => (
+                <button type="button" key={m} role="radio" aria-checked={p.mode === m} className={p.mode === m ? "on" : ""} title={hint} onClick={() => p.onMode(m)}>{label}</button>
+              ))}
+            </div>
+            <p className="mode-hint">{MODES.find(([m]) => m === p.mode)?.[2]}{p.mode === "homework" ? ". Attach the homework as a PDF or a photo; the answers are written as a file you read in the browser." : ""}</p>
+          </div>
           <div>
-            <div className="field-label">How many videos?</div>
+            <div className="field-label">How many videos? <span className="muted">{p.videos === 0 ? "the AI counts the concepts" : ""}</span></div>
             <div className="seg" role="radiogroup" aria-label="Number of videos">
               {COUNTS.map((n) => (
-                <button type="button" key={n} role="radio" aria-checked={p.videos === n} className={p.videos === n ? "on" : ""} onClick={() => p.onVideos(n)}>{n}</button>
+                <button type="button" key={n} role="radio" aria-checked={p.videos === n} className={p.videos === n ? "on" : ""} onClick={() => p.onVideos(n)}>{n === 0 ? "Auto" : n}</button>
               ))}
             </div>
           </div>

@@ -53,10 +53,19 @@ export const NotesPanel: React.FC<Props> = ({ lesson, track, current, onSeek }) 
   const [mine, setMine] = useState("");
   const [copied, setCopied] = useState(false);
   const active = useRef<HTMLLIElement>(null);
+  const list = useRef<HTMLOListElement>(null);
   const key = lesson ? `vt.notes.${lesson.id}` : "";
 
   useEffect(() => { setMine(key ? store.get(key) : ""); }, [key]);
-  useEffect(() => { active.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [current, track?.lang]);
+  // Keep the current note in view by scrolling the list itself. scrollIntoView also scrolls the page, which dragged the whole
+  // page down at every new scene.
+  useEffect(() => {
+    const ol = list.current, el = active.current;
+    if (!ol || !el) return;
+    const o = ol.getBoundingClientRect(), e = el.getBoundingClientRect();
+    if (e.top < o.top) ol.scrollTo({ top: ol.scrollTop - (o.top - e.top) - 6, behavior: "smooth" });
+    else if (e.bottom > o.bottom) ol.scrollTo({ top: ol.scrollTop + (e.bottom - o.bottom) + 6, behavior: "smooth" });
+  }, [current, track?.lang]);
 
   const edit = (v: string) => { setMine(v); if (key) store.set(key, v); };
   const md = track ? notesMarkdown(track, mine) : "";
@@ -90,7 +99,7 @@ export const NotesPanel: React.FC<Props> = ({ lesson, track, current, onSeek }) 
         </div>
       ) : (
         <>
-          <ol className="note-list">
+          <ol className="note-list" ref={list}>
             {track.scenes.map((s, i) => {
               const n = sceneNotes(s);
               return (

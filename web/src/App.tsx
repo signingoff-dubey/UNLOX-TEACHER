@@ -6,6 +6,8 @@ import {
 } from "./api";
 import { MetaverseLayer, preloadMetaverse } from "./components/MetaverseLayer";
 import { Home } from "./pages/Home";
+import { HomeworkPage, type HomeworkMeta } from "./pages/HomeworkPage";
+import { uploadPhoto, type Mode, type PhotoItem } from "./photos";
 import { Library } from "./pages/Library";
 import { LessonPage } from "./pages/LessonPage";
 import { RewardsPage } from "./pages/RewardsPage";
@@ -13,7 +15,8 @@ import { CreatingPill, type Creation } from "./shell/CreatingPill";
 import { Sidebar } from "./shell/Sidebar";
 import { useScrollbars } from "./shell/useScrollbars";
 
-type Screen = "home" | "lesson" | "library" | "rewards";
+type Screen = "home" | "lesson" | "library" | "rewards" | "homework";
+const HOMEWORK_HASH = /^\/homework\/([a-z0-9]+)$/;
 const COURSE_HASH = /^c-([a-z0-9]+)(?:-(\d+))?$/;
 
 /** Chanakya. A sidebar (create, library, your streak and score) and a main page: dashboard, lesson, library or rewards.
@@ -24,7 +27,11 @@ export default function App() {
   const [languages, setLanguages] = useState<Lang[]>([]);
   const [settings, setSettings] = useState<LessonSettings>({ level: "beginner", duration_s: 60, languages: ["en", "hi"] });
   const [concept, setConcept] = useState("");
-  const [videos, setVideos] = useState(1);                      // 1 = one video, more = a course of that many
+  const [videos, setVideos] = useState(1);                      // 1 = one video, more = a course of that many, 0 = the AI picks (one video per concept)
+  const [mode, setMode] = useState<Mode>("explain");           // what the student wants it for
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [homework, setHomework] = useState<HomeworkMeta[]>([]);
+  const [homeworkId, setHomeworkId] = useState("");
   const [upload, setUpload] = useState<string | null>(null);   // sha of an uploaded, read PDF
   const [focus, setFocus] = useState("");                       // e.g. "chapter 4" inside that PDF
   // The entrance animation and the world live in MetaverseLayer (its own state), so nothing here re-renders while it plays.
@@ -52,6 +59,7 @@ export default function App() {
     api<Lang[]>("/api/languages").then(setLanguages).catch(() => setLanguages([]));
     api<LessonSummary[]>("/api/lessons").then(setRecent).catch(() => setRecent([]));
     api<PlaylistSummary[]>("/api/playlists").then(setCourses).catch(() => setCourses([]));
+    api<HomeworkMeta[]>("/api/homework").then(setHomework).catch(() => setHomework([]));
   }, []);
 
   const show = useCallback((l: Lesson, preferred?: string[]) => {
@@ -97,7 +105,9 @@ export default function App() {
     watchingRef.current = false;                    // any navigation leaves the progress screen
     setWatching(false);
     const m = COURSE_HASH.exec(h);
-    if (m) openCourse(m[1], m[2] !== undefined ? Number(m[2]) : undefined);
+    const hw = HOMEWORK_HASH.exec(h);
+    if (hw) { setHomeworkId(hw[1]); setScreen("homework"); }
+    else if (m) openCourse(m[1], m[2] !== undefined ? Number(m[2]) : undefined);
     else if (h === "/library") setScreen("library");
     else if (h === "/rewards") setScreen("rewards");
     else if (h && h !== "/") openLesson(h);
@@ -128,11 +138,30 @@ export default function App() {
     if (first >= 0) openEpisode(playlist, first);
   }, [playlist, lesson, screen, openEpisode]);
 
+  const hwActive = homework.some((h) => h.status !== "done" && h.status !== "error");
+  useEffect(() => {
+    if (!hwActive) return;
+    const t = setInterval(() => { api<HomeworkMeta[]>("/api/homework").then(setHomework).catch(() => undefined); }, 3000);
+    return () => clearInterval(t);
+  }, [hwActive]);
+
+  const addPhotos = (files: FileList) => {
+    for (const file of Array.from(files).slice(0, Math.max(0, 4 - photos.length))) {
+      const key = `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setPhotos((cur) => [...cur, { key, name: file.name, preview: URL.createObjectURL(file), status: "reading" }]);
+      uploadPhoto(file, () => undefined)
+        .then((r) => setPhotos((cur) => cur.map((x) => (x.key === key ? { ...x, id: r.id, topic: r.topic, status: "ready" } : x))))
+        .catch((e: Error) => setPhotos((cur) => cur.map((x) => (x.key === key ? { ...x, status: "error", error: e.message } : x))));
+    }
+  };
+  const removePhoto = (key: string) => setPhotos((cur) => { cur.filter((x) => x.key === key).forEach((x) => URL.revokeObjectURL(x.preview)); return cur.filter((x) => x.key !== key); });
+
   const busy = job?.status === "queued" || job?.status === "running";
 
   async function create(topic = concept) {
     const text = topic.trim();
-    if (busy || (text.length < 2 && !upload)) return;
+    const images = photos.filter((x) => x.status === "ready" && x.id).map((x) => x.id as string);
+    if (busy || (text.length < 2 && !upload && !images.length)) return;
     setConcept(text);
     setError("");
     setJob(null);
@@ -140,13 +169,20 @@ export default function App() {
     setPlaylist(null);
     setEpisode(0);
     setScreen("lesson");                      // straight to the lesson page; the progress card shows beside the player
+    const course = videos !== 1;
     const mine = ++run.current;
     watch(true);
-    setCreation({ status: "running", kind: videos > 1 ? "course" : "lesson", concept: text });
+    setCreation({ status: "running", kind: course ? "course" : "lesson", concept: text || "Your photo" });
     const pdf = { upload, focus: upload ? focus.trim() : "" };
+    if (mode === "homework" && (upload || images.length)) {           // the answer file is written alongside the lessons
+      api<{ homework: HomeworkMeta }>("/api/homework", { concept: text, documents: upload ? [upload] : [], images })
+        .then((r) => { setHomework((cur) => [r.homework, ...cur]); })
+        .catch((e: Error) => setError(e.message));
+    }
+    setPhotos([]);
     try {
-      if (videos > 1) {
-        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes: videos, documents: upload ? [upload] : [] });
+      if (course) {
+        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes: videos, documents: upload ? [upload] : [], images, mode });
         if (mine !== run.current) return;
         const id = started.playlist.id;
         setCreation((c) => c && { ...c, playlistId: id, hash: `c-${id}` });
@@ -163,7 +199,7 @@ export default function App() {
         return;
       }
       const done = await runJob(
-        api<Job>("/api/lessons", { concept: text, ...settings, ...pdf }),
+        api<Job>("/api/lessons", { concept: text, ...settings, ...pdf, images, mode }),
         (j) => { if (mine === run.current) setJob(j); },
       );
       if (mine !== run.current) return;
@@ -231,17 +267,19 @@ export default function App() {
       <Sidebar
         screen={screen} recent={recent} courses={courses} activeId={activeId}
         onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)}
+        homework={homework} onOpenHomework={(id) => go(`/homework/${id}`)}
         onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
       />
 
       {screen === "home" && (
         <Home concept={concept} onConcept={setConcept} settings={settings} onSettings={setSettings} languages={languages}
-          videos={videos} onVideos={setVideos} upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus}
+          videos={videos} onVideos={setVideos} mode={mode} onMode={setMode} photos={photos} onAddPhotos={addPhotos} onRemovePhoto={removePhoto} upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus}
           busy={busy} error={error} onCreate={create} recent={recent} courses={courses}
           onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} onRewards={() => go("/rewards")} onLibrary={() => go("/library")} />
       )}
       {screen === "library" && <Library recent={recent} courses={courses} onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} />}
       {screen === "rewards" && <RewardsPage />}
+      {screen === "homework" && <HomeworkPage id={homeworkId} />}
       {screen === "lesson" && (
         <LessonPage lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}
           lang={active} onLang={setActive} assetBase={assetBase} onVideo={onVideo}

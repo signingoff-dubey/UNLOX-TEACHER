@@ -6,9 +6,12 @@ import { DotNumber } from "../ds/DotNumber";
 import { Glyph } from "../ds/Glyph";
 import { useRewards } from "../rewards/RewardsContext";
 import { WeekRow } from "../pages/RewardsPage";
+import type { HomeworkMeta } from "../pages/HomeworkPage";
 
 export type SidebarProps = {
-  screen: "home" | "lesson" | "library" | "rewards";
+  screen: "home" | "lesson" | "library" | "rewards" | "homework";
+  homework: HomeworkMeta[];
+  onOpenHomework: (id: string) => void;
   recent: LessonSummary[];
   courses: PlaylistSummary[];
   activeId?: string;
@@ -29,16 +32,16 @@ export const Sidebar: React.FC<SidebarProps> = (p) => {
   const earned = state ? state.badges.filter((b) => b.earned) : [];
 
   return (
-    <aside className="side" aria-label="Chanakya">
+    <aside className={p.screen === "lesson" ? "side compact" : "side"} aria-label="Chanakya">
       <button type="button" className="brand" onClick={p.onHome} aria-label="Chanakya home">
-        <span className="brand-mark" aria-hidden><i /></span>chanakya
+        <span className="brand-mark" aria-hidden><i /></span><span className="lbl">chanakya</span>
       </button>
 
       <nav className="side-nav" aria-label="Pages">
-        <button type="button" className={p.screen === "home" ? "on" : ""} aria-current={p.screen === "home" ? "page" : undefined} onClick={p.onHome}><Glyph name="home" size={18} />Home</button>
-        <button type="button" className={p.screen === "library" ? "on" : ""} aria-current={p.screen === "library" ? "page" : undefined} onClick={p.onLibrary}><Glyph name="library" size={18} />Library</button>
-        <button type="button" className={p.screen === "rewards" ? "on" : ""} aria-current={p.screen === "rewards" ? "page" : undefined} onClick={p.onRewards}><Glyph name="trophy" size={18} />Rewards</button>
-        <button type="button" onClick={p.onMetaverse} onPointerEnter={preloadMetaverse} onFocus={preloadMetaverse}><Glyph name="cube" size={18} />Learnverse</button>
+        <button type="button" className={p.screen === "home" ? "on" : ""} aria-current={p.screen === "home" ? "page" : undefined} onClick={p.onHome}><Glyph name="home" size={18} /><span className="lbl">Home</span></button>
+        <button type="button" className={p.screen === "library" ? "on" : ""} aria-current={p.screen === "library" ? "page" : undefined} onClick={p.onLibrary}><Glyph name="library" size={18} /><span className="lbl">Library</span></button>
+        <button type="button" className={p.screen === "rewards" ? "on" : ""} aria-current={p.screen === "rewards" ? "page" : undefined} onClick={p.onRewards}><Glyph name="trophy" size={18} /><span className="lbl">Rewards</span></button>
+        <button type="button" onClick={p.onMetaverse} onPointerEnter={preloadMetaverse} onFocus={preloadMetaverse}><Glyph name="cube" size={18} /><span className="lbl">Learnverse</span></button>
       </nav>
 
       {state && (
@@ -78,6 +81,22 @@ export const Sidebar: React.FC<SidebarProps> = (p) => {
             <button type="button" className="ghost" onClick={p.onRewards}>{earned.length}/{state.badges.length}<Glyph name="chevron" size={14} /></button>
           </div>
         </div>
+      )}
+
+      {p.homework.length > 0 && (
+        <>
+          <div className="divider"><span>Homework answers</span></div>
+          <ul className="rows">
+            {p.homework.slice(0, 4).map((h) => (
+              <li key={h.id}>
+                <button type="button" className="row" onClick={() => p.onOpenHomework(h.id)}>
+                  <Glyph name="book" /><span>{h.title}</span>
+                  <span className={h.status === "done" ? "chip lime" : "chip"}>{h.status === "done" ? "Ready" : h.status === "error" ? "Failed" : h.total ? `${h.done}/${h.total}` : "Reading"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {(p.courses.length > 0 || p.recent.length > 0) && (

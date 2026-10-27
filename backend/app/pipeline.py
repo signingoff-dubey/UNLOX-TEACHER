@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import Callable
 
-from . import config
+from . import config, vision
 from .captions import time_captions, to_srt
 from .languages import get as get_lang, words_per_sec
 from .longplan import LONG_MIN, plan_long
@@ -27,13 +27,14 @@ Progress = Callable[[str, float], None]
 
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
                  documents: list[str] | None = None, series: dict | None = None, focus: str = "",
+                 images: list[str] | None = None, mode: str = "explain",
                  progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
     """Builds a lesson. `documents` holds uploaded PDFs (their sha): facts come from the first one before the
     library; with an empty concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
     # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
     # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
     with _gpu_slot():
-        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus)
+        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus, images or [], mode)
 
 
 def _gpu_slot():
@@ -46,8 +47,11 @@ def _gpu_slot():
 
 
 def _build(concept: str, languages: list[str], level: str, duration_s: int, documents: list[str],
-           series: dict | None, progress: Progress, focus: str) -> dict:
+           series: dict | None, progress: Progress, focus: str, images: list[str], mode: str) -> dict:
     upload = documents[0] if documents else None
+    extra = vision.context(images)                            # what the attached photos show (read earlier by llava)
+    if not concept.strip() and not documents and extra:
+        concept = vision.topics(images) or "the topic in the attached photo"
     t0 = time.perf_counter()
     langs = list(dict.fromkeys(languages))                    # English is just another option now
     if not langs:
@@ -61,10 +65,10 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     wps = words_per_sec(langs)
     on_plan = lambda f: progress(stage, 0.02 + 0.40 * f)  # noqa: E731
     if duration_s > LONG_MIN and config.LLM_BACKEND != "mock":
-        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan)      # 1.5-4 min: planned in parts
+        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode)      # 1.5-4 min: planned in parts
     else:
         plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
-                                    series=series, on_progress=on_plan)
+                                    series=series, on_progress=on_plan, extra=extra, mode=mode)
     note = source_note(sources)
     progress("Designing the visuals", 0.43)
     plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
@@ -99,7 +103,8 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
 
         t2 = time.perf_counter()
         scenes, translator = translated[code]
-        track = _narrate(scenes, code, report)
+        # Untranslated text must not be read by a Hindi voice (English words with a Hindi accent): use the English voice.
+        track = _narrate(scenes, code, report, voice_lang="en" if translator == "untranslated" else code)
         track["translator"] = translator
         track["source_note"] = note
         return code, track, time.perf_counter() - t2
@@ -161,14 +166,14 @@ def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dic
     return (title, scenes), engine
 
 
-def _narrate(translated: tuple[str, list[dict]], lang: str, on_progress=lambda f: None) -> dict:
+def _narrate(translated: tuple[str, list[dict]], lang: str, on_progress=lambda f: None, voice_lang: str | None = None) -> dict:
     """Narration first: each scene lasts exactly as long as its voice plus a short pause."""
     title, scenes = translated
     start = 0.0
     engines = set()
     for k, s in enumerate(scenes):
         on_progress(k / max(len(scenes), 1))
-        speech = synthesize(s["narration"], lang)
+        speech = synthesize(s["narration"], voice_lang or lang)
         engines.add(speech.engine)
         s["audio_url"] = f"/media/audio/{speech.path.name}"
         s["speech_s"] = round(speech.duration_s, 3)

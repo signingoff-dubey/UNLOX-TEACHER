@@ -245,7 +245,9 @@ export const LessonPage: React.FC<Props> = (
       )}
       {error && <div className="notice bad" role="alert">{error}</div>}
 
-      <div className="board">
+      <div className="board lesson-board">
+        <NotesPanel lesson={lesson} track={track} current={sceneIndex} onSeek={seekPlay} />
+
         <div className="stack">
           <section className="aura green player-card" aria-label="Lesson player">
             <div className="aura-title">{lesson ? "Lesson player" : "Your lesson"}</div>
@@ -302,7 +304,6 @@ export const LessonPage: React.FC<Props> = (
             <EpisodeRail playlist={playlist} current={episode} waitingForNext={waitingNext || undefined} onPick={(i) => onEpisode?.(i)} />
           )}
 
-          {lesson && track && <NotesPanel lesson={lesson} track={track} current={sceneIndex} onSeek={seekPlay} />}
         </div>
 
         <div className="stack">

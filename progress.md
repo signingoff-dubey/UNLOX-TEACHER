@@ -1,7 +1,28 @@
 # Progress Log
 
-## Current Version: v0.9.0
+## Current Version: v0.10.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.10.0] — 2026-10-27
+### What's New
+- **Photos**: a plus button in the prompt box attaches up to 4 photos; llava reads them on this computer (`backend/app/vision.py`, `POST /api/images`) and the lesson uses what they show
+- **Modes**: Explanation, Study, Homework pills in the settings card; Study adds key terms, a memory trick and a recall quiz, Homework teaches only the concepts needed and never gives answers inside the video
+- **Homework answers**: choosing Homework with a PDF or photo also writes a Markdown answer file question by question (`backend/app/homework.py`), viewed in the browser while it grows (`#/homework/<id>`) and downloadable as .md. Nothing guesses whether a file is homework
+- **"Auto" video count**: the AI lists the concepts first (`backend/app/concepts.py`, rules plus worked examples, capped at 8) and makes one video per concept
+- **Parallel long videos**: parts of a 2-4 minute video are planned two at a time from the outline (`longplan.py`); 2:30 test: plan 120 s -> 66 s, length 211 s -> 156 s
+- **Lesson page**: notes are the left column, the sidebar collapses to icons while a lesson is open
+- **Mind map redone**: two-sided SVG tree with curved coloured branches (replaces Mermaid); click a box for its notes and an inline "Explain this" answer from the tutor
+- Fixes: page no longer scrolls down at every scene (notes and chat scrolled with scrollIntoView); Hindi falls back GPU -> CPU -> Ollama before English, English text is never read with a Hindi voice; backend log at `media/backend.log`; steps strip above the video redesigned
+
+### Known Issues
+- Photo reading needs llava:7b in Ollama (it shares the GPU with the language model, so the first photo takes a while)
+- Code scenes can still appear in non-code topics
+- The new Home photo/mode UI, mind map and lesson layout were type-checked but not looked at in a browser (browser tests were stopped because the laptop hung)
+
+### Future Scope
+- Progressive videos that start playing before later parts exist
 
 ---
 

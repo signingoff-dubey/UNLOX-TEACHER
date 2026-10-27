@@ -29,6 +29,7 @@ _load_dotenv()
 LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+VISION_MODEL = os.getenv("VISION_MODEL", "llava:7b")        # reads photos (see vision.py)
 # "0" unloads the LLM from the GPU right after planning, freeing VRAM for TTS.
 # How long the LLM stays loaded after planning. Keeping it loaded makes repeat lessons fast; "0" frees VRAM at once.
 # The model stays loaded between lessons (a cold load is ~24 s). One context size for EVERY call: Ollama reloads the model

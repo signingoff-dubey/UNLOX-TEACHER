@@ -35,23 +35,52 @@ def translate_batch(texts: list[str], lang: str) -> tuple[list[str], str]:
         return list(texts), "none"
     todo = sorted({t for t in texts if t.strip() and _key(lang, t) not in _cache})
     if todo:
-        try:
-            if config.TRANSLATE_BACKEND == "indictrans2":
-                out = _IndicTrans2.get().translate(todo, get_lang(lang).flores)
-            elif config.TRANSLATE_BACKEND == "nllb":
-                out = _NLLB.get().translate(todo, get_lang(lang).flores)
-            elif config.TRANSLATE_BACKEND == "ollama":
-                out = _ollama_translate_batch(todo, lang)
-            else:
-                raise ValueError(f"Unknown TRANSLATE_BACKEND {config.TRANSLATE_BACKEND}")
-        except (ImportError, OSError, RuntimeError, requests.RequestException) as e:
-            log.error("Translation to %s failed (%s); keeping English text", lang, e)
+        out, engine = _translate_with_fallbacks(todo, lang)
+        if out is None:
+            log.error("Translation to %s failed with every engine; keeping English text", lang)
             return list(texts), "untranslated"
         with _lock:
             for src, dst in zip(todo, out):
                 _cache[_key(lang, src)] = dst
             _CACHE_FILE.write_text(json.dumps(_cache, ensure_ascii=False), encoding="utf-8")
     return [_cache.get(_key(lang, t), t) if t.strip() else t for t in texts], config.TRANSLATE_BACKEND
+
+
+def _translate_with_fallbacks(todo: list[str], lang: str) -> tuple[list[str] | None, str]:
+    """The configured model on the GPU; if that fails for any reason (the GPU is nearly full while the language model is
+    loaded, a driver hiccup) the same model on the CPU; then the language model through Ollama. English is the last resort,
+    never the first: a Hindi lesson that comes out in English is worse than one that takes a few seconds longer."""
+    backend = config.TRANSLATE_BACKEND
+    flores = get_lang(lang).flores
+    attempts: list[tuple[str, object]] = []
+    if backend in ("indictrans2", "nllb"):
+        model = _IndicTrans2 if backend == "indictrans2" else _NLLB
+        attempts.append((backend, lambda: model.get().translate(todo, flores)))
+        if config.torch_device() != "cpu":
+            attempts.append((f"{backend} on CPU", lambda: model.get("cpu").translate(todo, flores)))
+    attempts.append(("ollama", lambda: _ollama_translate_batch(todo, lang)))
+    for label, run in attempts:
+        try:
+            out = run()
+            if len(out) == len(todo):
+                if label != backend:
+                    log.warning("Translation to %s used %s", lang, label)
+                return out, label.split(" ")[0]
+        except Exception as e:  # noqa: BLE001  any failure moves on to the next engine
+            log.error("Translation to %s with %s failed: %s", lang, label, e, exc_info=True)
+            _free_gpu()
+    return None, "untranslated"
+
+
+def _free_gpu() -> None:
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
 
 
 def preload() -> None:
@@ -113,21 +142,22 @@ def _ollama_translate_batch(texts: list[str], lang: str, size: int = 8) -> list[
 
 class _NLLB:
     """Meta NLLB-200 (distilled 600M): one model for 200 languages including all Indic ones here."""
-    _instance: "_NLLB | None" = None
+    _instances: dict[str, "_NLLB"] = {}
 
     @classmethod
-    def get(cls) -> "_NLLB":
+    def get(cls, device: str | None = None) -> "_NLLB":
+        device = device or config.torch_device()
         with _lock:
-            if cls._instance is None:
-                cls._instance = cls()
-            return cls._instance
+            if device not in cls._instances:
+                cls._instances[device] = cls(device)
+            return cls._instances[device]
 
-    def __init__(self) -> None:
+    def __init__(self, device: str) -> None:
         import torch
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
         self.torch = torch
-        self.device = config.torch_device()
+        self.device = device
         log.info("Loading %s on %s", config.NLLB_MODEL, self.device)
         self.tok = AutoTokenizer.from_pretrained(config.NLLB_MODEL, src_lang="eng_Latn")
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -149,16 +179,17 @@ class _NLLB:
 
 class _IndicTrans2:
     """AI4Bharat IndicTrans2 (trained on BPCC). Loaded once, on first use."""
-    _instance: "_IndicTrans2 | None" = None
+    _instances: dict[str, "_IndicTrans2"] = {}
 
     @classmethod
-    def get(cls) -> "_IndicTrans2":
+    def get(cls, device: str | None = None) -> "_IndicTrans2":
+        device = device or config.torch_device()
         with _lock:
-            if cls._instance is None:
-                cls._instance = cls()
-            return cls._instance
+            if device not in cls._instances:
+                cls._instances[device] = cls(device)
+            return cls._instances[device]
 
-    def __init__(self) -> None:
+    def __init__(self, device: str) -> None:
         import torch
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
         try:
@@ -167,7 +198,7 @@ class _IndicTrans2:
             from IndicTransToolkit import IndicProcessor
 
         self.torch = torch
-        self.device = config.torch_device()
+        self.device = device
         name = config.INDICTRANS2_MODEL
         log.info("Loading %s on %s", name, self.device)
         self.tok = AutoTokenizer.from_pretrained(name, trust_remote_code=True)

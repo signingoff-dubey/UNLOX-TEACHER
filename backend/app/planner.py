@@ -70,8 +70,17 @@ Rules:
 PAGE_REQUEST = re.compile(r"\b(chapter|ch\.?|unit|lesson|section|page|pages|pp?\.)\s*\d", re.I)
 
 
+MODE_HINTS = {
+    "study": ("This is for studying and revising: name the key terms, give one memory trick or mnemonic, and end with a quiz scene "
+              "that tests recall of the most important facts."),
+    "homework": ("The student must finish a homework on this. Teach only the concepts needed to solve it, with one worked example in "
+                 "the style of the homework. Do NOT give the answers to the homework questions."),
+}
+
+
 def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upload: str | None = None, focus: str = "",
-                on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None) -> tuple[LessonPlan, list[dict]]:
+                on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None,
+                extra: str = "", mode: str = "explain") -> tuple[LessonPlan, list[dict]]:
     """Returns the lesson plan and the sources it was grounded in.
 
     - concept only: search the knowledge base / library.
@@ -86,7 +95,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
         passages = pages_passages(upload, focus or (concept if PAGE_REQUEST.search(concept) else ""))
     if not passages:
         page_mode = False
-        passages = retrieve(concept or focus, upload=upload)
+        passages = retrieve(concept or focus or extra[:200], upload=upload)
     sources = _page_sources(passages) if page_mode else _sources(passages)
     reference = _condensed_block(passages) if page_mode else _reference_block(passages)
     if upload and not focus and not concept.strip():
@@ -103,7 +112,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
     for attempt in range(3):
         try:
             try:
-                raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series)
+                raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series, extra, mode)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
@@ -223,7 +232,8 @@ def _span(pages: list[int]) -> str:
 
 
 def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
-                 context: str = "", on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None) -> str:
+                 context: str = "", on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None,
+                 extra: str = "", mode: str = "explain") -> str:
     words = round(duration_s * wps / 10) * 10                 # spoken words per second of the slowest chosen language
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
@@ -257,6 +267,10 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             user += f"\nThe last scene must end with a one-line teaser for the next episode: {series['next']}."
         else:
             user += "\nThis is the final episode: finish with a recap and one small challenge."
+    if MODE_HINTS.get(mode):
+        user += "\n" + MODE_HINTS[mode]
+    if extra:
+        user += "\nThe student attached a photo or a document. This is what it shows (read by a computer, so there may be mistakes):\n" + extra
     if context:
         user += ("\nReference material from the knowledge base or the uploaded PDF. Use it for correct facts, numbers and terms, "
                  "but explain in your own simple words. Ignore anything not about the concept:\n" + context)

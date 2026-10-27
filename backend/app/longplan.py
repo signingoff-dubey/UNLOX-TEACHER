@@ -9,6 +9,9 @@ voices) treats the result like any other lesson.
 from __future__ import annotations
 
 import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from pydantic import BaseModel, Field
@@ -61,32 +64,49 @@ def outline(concept: str, n: int, level: str, duration_s: int) -> Storyboard:
     return Storyboard(title=sb.title.strip() or fallback.title, chapters=chapters)
 
 
-def _summary(plan: LessonPlan) -> str:
-    return "; ".join(s.heading for s in plan.scenes[:4] if s.heading)
+WORKERS = int(os.getenv("LONGPLAN_WORKERS", "2"))     # Ollama runs 2 requests at once (OLLAMA_NUM_PARALLEL=2); the parts do not wait for each other
 
 
 def plan_long(concept: str, level: str, duration_s: int, upload: str | None, focus: str, wps: float,
-              on_progress: Callable[[float], None] = lambda f: None) -> tuple[LessonPlan, list[dict]]:
-    """Plan a long video part by part. Returns the joined plan and the sources of all parts."""
+              on_progress: Callable[[float], None] = lambda f: None, extra: str = "", mode: str = "explain") -> tuple[LessonPlan, list[dict]]:
+    """Plan a long video part by part, two parts at a time. Returns the joined plan and the sources of all parts.
+    The outline already says what each part is about, so a part knows what came before from the outline's titles, not from the
+    scenes of the part before it: that is what lets the parts be written at the same time."""
     n = parts_for(duration_s)
     part_s = round(duration_s / n)
     on_progress(0.02)
     sb = outline(concept or focus or "the topic", n, level, duration_s)
     on_progress(0.08)
-    scenes, previous, sources, seen = [], [], [], set()
-    for i, ch in enumerate(sb.chapters):
+    frac = [0.0] * n
+    lock = threading.Lock()
+    best = [0.08]
+
+    def report(i: int, f: float) -> None:
+        with lock:
+            frac[i] = f
+            best[0] = max(best[0], 0.08 + 0.92 * sum(frac) / n)       # parts finish in any order: never let the bar go back
+            on_progress(best[0])
+
+    def one(i: int) -> tuple[LessonPlan, list[dict]]:
+        ch = sb.chapters[i]
         series = {"segment": True, "title": sb.title, "topic": concept or focus or sb.title, "index": i + 1, "total": n,
-                  "previous": list(previous), "this": ch.goal or ch.title,
+                  "previous": [f"{c.title}: {c.goal}" for c in sb.chapters[:i]], "this": ch.goal or ch.title,
                   "next": sb.chapters[i + 1].title if i + 1 < n else ""}
         topic = f"{concept}: {ch.title}" if concept else ch.title
-        part, src = plan_lesson(topic, level=level, duration_s=part_s, upload=upload, focus=focus, wps=wps, series=series,
-                                on_progress=lambda f, i=i: on_progress(0.08 + 0.92 * (i + f) / n))
+        got = plan_lesson(topic, level=level, duration_s=part_s, upload=upload, focus=focus, wps=wps, series=series,
+                          extra=extra, mode=mode, on_progress=lambda f: report(i, f))
+        report(i, 1.0)
+        return got
+
+    with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, n))) as pool:
+        parts = list(pool.map(one, range(n)))                          # results come back in order
+    scenes, sources, seen = [], [], set()
+    for part, src in parts:
         scenes += part.scenes
-        previous.append(f"{ch.title} ({_summary(part)})")
-        for s in src:
-            key = (s.get("title"), s.get("section"))
+        for s_ in src:
+            key = (s_.get("title"), s_.get("section"))
             if key not in seen:
                 seen.add(key)
-                sources.append(s)
+                sources.append(s_)
     on_progress(1.0)
     return LessonPlan(title=sb.title, scenes=scenes), sources

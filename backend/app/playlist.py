@@ -73,7 +73,12 @@ def list_playlists(limit: int = 20) -> list[dict]:
 
 
 # ------------------------------------------------------------------ curriculum agent
-def design_curriculum(topic: str, n: int, level: str, duration_s: int) -> Curriculum:
+def design_curriculum(topic: str, n: int, level: str, duration_s: int, source: str = "", mode: str = "explain") -> Curriculum:
+    """n = 0 means "let the AI decide": one video per concept the learner has to understand (see concepts.py)."""
+    if n == 0:
+        from .concepts import plan_concepts
+        title, cs = plan_concepts(topic, level, source, mode)
+        return Curriculum(title=title, episodes=[Episode(title=c.title, focus=c.focus) for c in cs])
     n = min(max(n, MIN_EPISODES), MAX_EPISODES)
     if config.LLM_BACKEND != "mock":
         prompt = (
@@ -83,6 +88,8 @@ def design_curriculum(topic: str, n: int, level: str, duration_s: int) -> Curric
             "The middle episodes each add one new idea with an example. The last episode is a recap with a small challenge. "
             "No overlaps between episodes. Titles are at most 6 words and describe the idea (not 'Part 2'). "
             "Each focus is one concrete sentence naming what the learner will be able to do or understand afterwards.")
+        if source:
+            prompt += "\n\nMaterial from the student (a document or a photo):\n" + source[:5000]
         try:
             cur = llm.ask_json(Curriculum, prompt, options={"temperature": 0.4, "num_predict": 700}, timeout=180, expected_tokens=350)
             eps = [e for e in cur.episodes if e.title.strip() and e.focus.strip()]
@@ -105,13 +112,31 @@ def series_context(pl: dict, i: int) -> dict:
 
 
 # ------------------------------------------------------------------ build
-def start(topic: str, languages: list[str], level: str, duration_s: int, n_episodes: int, documents: list[str]) -> dict:
+def start(topic: str, languages: list[str], level: str, duration_s: int, n_episodes: int, documents: list[str],
+          images: list[str] | None = None, mode: str = "explain") -> dict:
     """Create the playlist record right away so the client has an id to poll before the long job starts."""
     pl = {"id": uuid.uuid4().hex[:10], "topic": topic, "title": topic, "created": int(time.time()), "status": "planning",
           "languages": languages, "level": level, "duration_s": duration_s, "documents": documents,
-          "requested": min(max(n_episodes, MIN_EPISODES), MAX_EPISODES), "episodes": [], "error": None}
+          "images": images or [], "mode": mode,
+          "requested": 0 if n_episodes == 0 else min(max(n_episodes, MIN_EPISODES), MAX_EPISODES), "episodes": [], "error": None}
     save(pl)
     return pl
+
+
+def _source(pl: dict) -> str:
+    """The student's own material as text for the planner: the homework pages and the photos (notes for a long book)."""
+    from . import homework
+    try:
+        if pl["documents"] and not pl["images"]:
+            from .ocr import digest
+            from .ocr.ingest import read_info, upload_dir
+            info = read_info(pl["documents"][0]) or {}
+            if info.get("pages", 0) > 40:
+                return digest.reference(upload_dir(pl["documents"][0]), budget=6000)
+        return homework.source_text(pl["documents"], pl.get("images", []), limit=7000)
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not read the student's material: %s", e)
+        return ""
 
 
 def build(playlist_id: str, progress=lambda s, p: None) -> dict:
@@ -119,7 +144,7 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
     t0 = time.perf_counter()
     progress("Designing the course", 0.02)
     try:
-        cur = design_curriculum(pl["topic"], pl["requested"], pl["level"], pl["duration_s"])
+        cur = design_curriculum(pl["topic"], pl["requested"], pl["level"], pl["duration_s"], _source(pl), pl.get("mode", "explain"))
     except Exception as e:                       # noqa: BLE001
         pl.update(status="error", error=f"{type(e).__name__}: {e}")
         save(pl)
@@ -150,7 +175,8 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
 
         try:
             lesson = build_lesson(f"{pl['topic']}: {ep['title']}", pl["languages"], pl["level"], pl["duration_s"],
-                                  pl["documents"], series=series_context(pl, i), progress=report)
+                                  pl["documents"], series=series_context(pl, i), images=pl.get("images", []),
+                                  mode=pl.get("mode", "explain"), progress=report)
             ep.update(lesson_id=lesson["id"], status="ready", duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
         except Exception as e:                   # noqa: BLE001   one bad episode must not sink the course
             log.error("playlist %s episode %d failed: %s", playlist_id, i + 1, e)
