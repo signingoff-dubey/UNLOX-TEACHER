@@ -271,6 +271,8 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 543e8b5 | 2026-10-27 | v0.14.0: scenes play while they are made, per-stage progress, parallel study tools, profile, spaced repetition, weak spots, exports, offline lesson file, papers, teach-back, resumable jobs |
+| 2c9fb16 | 2026-10-27 | progress.md: git history for v0.13.0 |
 | cddcb2a | 2026-10-27 | Android app (native Kotlin + Compose, fully on-device): Figma screens, Gemma tutor and lesson planner, Piper voices, Whisper and Vosk speech, ML Kit translation and OCR, study tools, homework, rewards, profile with name and age |
 | 5f07b0c | 2026-10-27 | v0.13.0 web: Progress and Settings pages, rewards history endpoint, voice ripple and waveform in the tutor chat, opening animation switch |
 | 2f926c5 | 2026-10-27 | Chanakya v0.9.0: grey-glass frontend, rewards, scroll-shrinking prompt home, videos up to 4 min, floating Creating pill |
