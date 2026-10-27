@@ -13,6 +13,7 @@ from .captions import time_captions, to_srt
 from .languages import get as get_lang, words_per_sec
 from .planner import plan_lesson
 from .rag import retrieve_context
+from .director import direct
 from .review import review as review_plan
 from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
 from .translate import translate_batch
@@ -25,7 +26,8 @@ Progress = Callable[[str, float], None]
 
 
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
-                 documents: list[str] | None = None, progress: Progress = lambda s, p: None) -> dict:
+                 documents: list[str] | None = None, series: dict | None = None,
+                 progress: Progress = lambda s, p: None) -> dict:
     t0 = time.perf_counter()
     langs = list(dict.fromkeys(languages))                    # English is just another option now
     if not langs:
@@ -37,10 +39,13 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
     progress("Planning the lesson", 0.02)
     context = retrieve_context(concept, documents or [])   # empty until the RAG service is connected
     wps = words_per_sec(langs)
-    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context, wps=wps,
-                       on_progress=lambda f: progress("Planning the lesson", 0.02 + 0.53 * f))
-    progress("Checking the lesson", 0.56)
+    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context, wps=wps, series=series,
+                       on_progress=lambda f: progress("Planning the lesson", 0.02 + 0.40 * f))
+    progress("Designing the visuals", 0.43)
+    plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
+    progress("Checking the lesson", 0.57)
     plan, review_notes = review_plan(plan, duration_s, wps)
+    review_notes = director_notes + review_notes
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]
@@ -87,6 +92,7 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
         "created": int(time.time()),
         "plan": plan.model_dump(),                    # English source plan: context for the tutor chat
         "documents": documents or [],
+        "series": series,                             # set when this lesson is an episode of a playlist
         "review": review_notes,
         "languages": tracks,
         "timings": timings,

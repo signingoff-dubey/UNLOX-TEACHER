@@ -82,7 +82,7 @@ def _lengthen(plan: LessonPlan, target_words: int) -> bool:
             log.warning("lengthen: scene %d failed: %s", i + 1, e)
             previous = s.narration
             continue
-        if len(text.split()) > len(s.narration.split()) and len(text.split()) <= per_scene * 2:
+        if len(text.split()) > len(s.narration.split()) and len(text.split()) <= per_scene + 14:
             s.narration, changed = text, True
         previous = s.narration
     return changed

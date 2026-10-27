@@ -2,13 +2,14 @@
 and fills its slots, and the renderer (our code) decides how it looks and moves."""
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 Template = Literal["title", "bullets", "flow", "cycle", "compare", "diagram", "quiz", "summary", "graph", "code"]
 CurveType = Literal["line", "parabola", "cubic", "sine", "cosine", "exp", "abs", "sqrt", "reciprocal", "circle", "ellipse"]
-MarkKind = Literal["center", "radius", "diameter", "chord", "tangent", "point"]
+MarkKind = Literal["center", "radius", "diameter", "chord", "tangent", "point", "link"]
 Icon = Literal[
     "lightbulb", "sun", "leaf", "water", "atom", "cell", "heart", "brain",
     "earth", "bolt", "gear", "book", "flask", "cloud", "magnet", "rocket",
@@ -49,6 +50,7 @@ class ScenePlan(BaseModel):
     left: list[str] = Field(default_factory=list)
     right: list[str] = Field(default_factory=list)
     answer_index: int = 0
+    _wanted: str = PrivateAttr("")      # template the model asked for before normalize() changed it (director input)
     # graph scenes: curves then marks are revealed in order; items[k] labels the k-th revealed thing
     curves: list[Curve] = Field(default_factory=list, description="graph scenes: 1-3 curves")
     marks: list[Mark] = Field(default_factory=list, description="graph scenes: up to 4 highlights")
@@ -76,7 +78,7 @@ MAX_CODE_LINES, MAX_CODE_COLS = 11, 72
 CURVE_NAMES = {"line": "Line", "parabola": "Parabola", "cubic": "Cubic curve", "sine": "Sine wave", "cosine": "Cosine wave",
                "exp": "Exponential curve", "abs": "Absolute value", "sqrt": "Square root", "reciprocal": "Reciprocal",
                "circle": "Circle", "ellipse": "Ellipse"}
-MARK_NAMES = {"center": "Centre", "radius": "Radius", "diameter": "Diameter", "chord": "Chord", "tangent": "Tangent", "point": "Point"}
+MARK_NAMES = {"center": "Centre", "radius": "Radius", "diameter": "Diameter", "chord": "Chord", "tangent": "Tangent", "point": "Point", "link": "Segment"}
 
 
 def _finite(*vals: float) -> bool:
@@ -89,12 +91,13 @@ def _normalize_graph(s: ScenePlan) -> None:
     s.curves = [c for c in s.curves if not (c.type == "circle" and c.c <= 0)
                 and not (c.type == "ellipse" and (c.c <= 0 or c.d <= 0))]
     has_circle = any(c.type == "circle" for c in s.curves)
-    s.marks = [m for m in s.marks if _finite(m.x, m.y) and (has_circle or m.kind == "point")][:4]
+    s.marks = [m for m in s.marks if _finite(m.x, m.y) and (has_circle or m.kind in ("point", "link"))][:6]
     for name in ("x_range", "y_range"):
         r = getattr(s, name)
         setattr(s, name, sorted(r[:2]) if len(r) >= 2 and _finite(*r[:2]) and r[0] != r[1] else [])
     s.equation = s.equation.strip()[:60]
-    if s.template == "graph" and not s.curves:
+    if s.template == "graph" and not s.curves and not any(m.kind == "point" for m in s.marks):
+        s._wanted = "graph"                       # nothing to draw: the director can still rebuild this scene
         s.template = "bullets" if len(s.items) >= 2 else "title"
     if s.template == "graph":
         # One label per revealed thing (curves, then marks). Fill gaps so a terse LLM answer still looks finished;
@@ -121,6 +124,16 @@ def _normalize_code(s: ScenePlan) -> None:
         s.code, s.output, s.highlights, s.code_lang = [], [], [], ""
 
 
+def points_from_narration(narration: str, limit: int = 4) -> list[str]:
+    """Short labels (max 5 words) from the sentences of a narration, used when the model gave no points."""
+    out: list[str] = []
+    for sentence in re.split(r"(?<=[.!?।])\s+", narration.strip()):
+        words = sentence.strip(" .!?।,;:").split()
+        if len(words) >= 2:
+            out.append(" ".join(words[:5]) + ("…" if len(words) > 5 else ""))
+    return out[:limit]
+
+
 def normalize(plan: LessonPlan) -> LessonPlan:
     """Repair the small mistakes local models make so the renderer never sees bad data."""
     scenes: list[ScenePlan] = []
@@ -135,9 +148,19 @@ def normalize(plan: LessonPlan) -> LessonPlan:
         _normalize_graph(s)
         _normalize_code(s)
         if s.template == "compare" and not (s.left and s.right):
+            s._wanted = s._wanted or "compare"
             s.template = "bullets" if len(s.items) >= 2 else "title"
         if len(s.items) < MIN_ITEMS.get(s.template, 0):
-            s.template = "title"
+            # Do not silently turn the scene into a plain title card (that made whole videos of identical bulb
+            # scenes): rebuild points from the narration, and remember what was wanted for the director agent.
+            s._wanted = s._wanted or s.template
+            points = points_from_narration(s.narration)
+            if len(points) >= 2 and s.template in ("bullets", "flow", "cycle", "diagram", "summary"):
+                s.items = points[:5]
+            elif len(points) >= 2:
+                s.items, s.template = points[:5], "bullets"
+            else:
+                s.template = "title"
         if s.template == "quiz":
             s.answer_index = min(max(s.answer_index, 0), len(s.items) - 1)
         scenes.append(s)

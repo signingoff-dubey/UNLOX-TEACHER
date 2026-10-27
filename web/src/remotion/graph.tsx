@@ -39,18 +39,21 @@ const autoRanges = (s: Scene) => {
   let [x0, x1] = s.x_range?.length === 2 ? s.x_range : [NaN, NaN];
   let [y0, y1] = s.y_range?.length === 2 ? s.y_range : [NaN, NaN];
   const round = curves.filter(isRound);
+  const pts = (s.marks ?? []).filter((m) => m.kind === "point" || m.kind === "link");
+  const pointExtX = pts.length ? Math.max(...pts.map((m) => Math.abs(m.x))) + 2 : 0;
+  const pointExtY = pts.length ? Math.max(...pts.map((m) => Math.abs(m.y))) + 2 : 0;
   if (!Number.isFinite(x0) || !Number.isFinite(x1)) {
     if (round.length) {
       const ext = Math.max(...round.map((c) => Math.abs(c.a) + radii(c).rx));
       x0 = -ext * 1.35; x1 = ext * 1.35;
-    } else { x0 = -6; x1 = 6; }
+    } else { const e = Math.max(6, Math.ceil(pointExtX)); x0 = -e; x1 = e; }
   }
   if (!Number.isFinite(y0) || !Number.isFinite(y1)) {
     if (round.length) {
       const ext = Math.max(...round.map((c) => Math.abs(c.b) + radii(c).ry));
       y0 = -ext * 1.35; y1 = ext * 1.35;
     } else {
-      const ys: number[] = [0];
+      const ys: number[] = [0, -pointExtY, pointExtY];
       for (const c of curves) for (let i = 0; i <= 120; i++) {
         const y = fnY(c, x0 + ((x1 - x0) * i) / 120);
         if (y !== null && Number.isFinite(y) && Math.abs(y) < 1e4) ys.push(y);
@@ -136,7 +139,7 @@ export const GraphScene: React.FC<TemplateProps> = ({ scene, speechFrames }) => 
     return { x: circle!.a + circle!.c * Math.cos(t), y: circle!.b + circle!.c * Math.sin(t) };
   };
 
-  const markShape = (m: Mark, p: number, col: string, text: string): React.ReactNode => {
+  const markShape = (m: Mark, p: number, col: string, text: string, idx: number): React.ReactNode => {
     const dot = (pt: Pt, r = 9) => <circle cx={sx(pt.x)} cy={sy(pt.y)} r={r * p} fill={col} />;
     const line = (a: Pt, b: Pt, dash?: string) => (
       <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(a.x + (b.x - a.x) * p)} y2={sy(a.y + (b.y - a.y) * p)}
@@ -154,10 +157,15 @@ export const GraphScene: React.FC<TemplateProps> = ({ scene, speechFrames }) => 
         </g>
       );
     };
+    if (m.kind === "link") {
+      const before = marks.slice(0, idx).filter((q) => q.kind === "point" || q.kind === "link").pop();
+      const pt = { x: m.x, y: m.y };
+      return <>{before ? line({ x: before.x, y: before.y }, pt) : null}{dot(pt)}{tag(pt, 14, -14)}</>;
+    }
     if (m.kind === "point") {
       const pt = { x: m.x, y: m.y };
       return <>{dot(pt)}{tag(pt, 14, -14)}
-        <text x={sx(pt.x) + 14} y={sy(pt.y) + 36} fontSize={24} fill={C.muted} opacity={p}>({fmt(m.x)}, {fmt(m.y)})</text></>;
+        {text.includes("(") ? null : <text x={sx(pt.x) + 14} y={sy(pt.y) + 36} fontSize={24} fill={C.muted} opacity={p}>({fmt(m.x)}, {fmt(m.y)})</text>}</>;
     }
     if (!circle) return null;
     const ctr = { x: circle.a, y: circle.b };
@@ -192,6 +200,14 @@ export const GraphScene: React.FC<TemplateProps> = ({ scene, speechFrames }) => 
           <text x={PLOT.x + PLOT.w - 18} y={sy(ay) - 12} fontSize={28} fontWeight={700} fill={C.ink} textAnchor="end">x</text>
           <text x={sx(ax) + 14} y={PLOT.y + 30} fontSize={28} fontWeight={700} fill={C.ink}>y</text>
         </g>
+        {curves.length === 0 && (
+          <g opacity={gridIn * 0.5} fontSize={26} fontWeight={800} fill={C.muted}>
+            <text x={sx(x1) - 24} y={sy(y1) + 40} textAnchor="end">I</text>
+            <text x={sx(x0) + 24} y={sy(y1) + 40}>II</text>
+            <text x={sx(x0) + 24} y={sy(y0) - 22}>III</text>
+            <text x={sx(x1) - 24} y={sy(y0) - 22} textAnchor="end">IV</text>
+          </g>
+        )}
         <clipPath id="plotclip"><rect x={PLOT.x} y={PLOT.y} width={PLOT.w} height={PLOT.h} rx={22} /></clipPath>
         <g clipPath="url(#plotclip)">
           {curves.map((c, k) => {
@@ -203,7 +219,7 @@ export const GraphScene: React.FC<TemplateProps> = ({ scene, speechFrames }) => 
         {marks.map((m, i) => {
           const k = curves.length + i;
           const p = ease(frame, revealFrame(k, steps, speechFrames), revealFrame(k, steps, speechFrames) + 18);
-          return <g key={`m${i}`}>{markShape(m, p, color(k), label(k))}</g>;
+          return <g key={`m${i}`}>{markShape(m, p, color(k), label(k), i)}</g>;
         })}
       </svg>
 

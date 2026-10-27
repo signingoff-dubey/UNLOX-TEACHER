@@ -49,6 +49,20 @@ class LessonRequest(BaseModel):
     documents: list[str] = []
 
 
+class PlaylistRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=200)
+    languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
+    level: Literal["beginner", "intermediate"] = "beginner"
+    duration_s: int = Field(60, ge=30, le=90)         # per episode
+    episodes: int = Field(5, ge=5, le=8)
+    documents: list[str] = []
+
+
+class PlaylistExportRequest(BaseModel):
+    lang: str = "en"
+    height: int = 720
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     lang: str = "en"
@@ -126,6 +140,8 @@ def list_lessons(limit: int = 20) -> list[dict]:
             lesson = load_lesson(path.parent.name)
         except (ValueError, OSError):
             continue
+        if lesson.get("series"):                    # episodes of a playlist are listed under the playlist, not here
+            continue
         out.append({"id": lesson["id"], "concept": lesson["concept"], "created": lesson["created"],
                     "languages": list(lesson["languages"]), "videos": list(lesson["videos"])})
     return sorted(out, key=lambda l: l["created"], reverse=True)[:limit]
@@ -137,6 +153,40 @@ def get_lesson(lesson_id: str) -> dict:
         return load_lesson(lesson_id)
     except (FileNotFoundError, ValueError):
         raise HTTPException(404, "No such lesson")
+
+
+@app.post("/api/playlists")
+def create_playlist(req: PlaylistRequest) -> dict:
+    from . import playlist
+    unknown = [c for c in req.languages if c not in LANGUAGES]
+    if unknown:
+        raise HTTPException(400, f"Unsupported languages: {unknown}")
+    pl = playlist.start(req.topic.strip(), req.languages, req.level, req.duration_s, req.episodes, req.documents)
+    job = jobs.submit("playlist", playlist.build, pl["id"])
+    return {"playlist": pl, "job": job}
+
+
+@app.get("/api/playlists")
+def playlists(limit: int = 20) -> list[dict]:
+    from . import playlist
+    return playlist.list_playlists(limit)
+
+
+@app.get("/api/playlists/{playlist_id}")
+def get_playlist(playlist_id: str) -> dict:
+    from . import playlist
+    try:
+        return playlist.load(playlist_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, "No such playlist")
+
+
+@app.post("/api/playlists/{playlist_id}/export")
+def export_playlist(playlist_id: str, req: PlaylistExportRequest) -> dict:
+    from . import playlist
+    if req.lang not in LANGUAGES:
+        raise HTTPException(400, "Unsupported language")
+    return jobs.submit("export", playlist.export_all, playlist_id, req.lang, 1080 if req.height == 1080 else 720)
 
 
 @app.post("/api/lessons/{lesson_id}/chat")

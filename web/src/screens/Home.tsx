@@ -1,5 +1,5 @@
 import React from "react";
-import type { Lang, LessonSettings, LessonSummary, Level } from "../api";
+import type { Lang, LessonSettings, LessonSummary, Level, PlaylistSummary } from "../api";
 import { History } from "../components/History";
 import { StatusPanel } from "../components/StatusPanel";
 import { UploadArea, type UploadItem } from "../components/UploadArea";
@@ -21,6 +21,12 @@ type Props = {
   onCreate: (topic?: string) => void;
   onOpen: (id: string) => void;
   onBaseChange: () => void;
+  course: boolean;
+  onCourse: (on: boolean) => void;
+  episodes: number;
+  onEpisodes: (n: number) => void;
+  courses: PlaylistSummary[];
+  onOpenCourse: (id: string) => void;
 };
 
 /** Screen 1: ask for a lesson. Topic, optional documents, level, length, languages. */
@@ -45,7 +51,7 @@ export const Home: React.FC<Props> = (p) => {
           <input id="concept" value={p.concept} onChange={(e) => p.onConcept(e.target.value)} autoFocus autoComplete="off"
             maxLength={200} placeholder="e.g. Teach me Python loops" aria-label="Topic to learn" />
           <button type="submit" className="go" disabled={p.concept.trim().length < 2 || uploading || noLang}>
-            <Ui name="sparkle" size={20} />Create lesson
+            <Ui name="sparkle" size={20} />{p.course ? `Create ${p.episodes}-video course` : "Create lesson"}
           </button>
         </div>
         <div className="examples">
@@ -68,6 +74,21 @@ export const Home: React.FC<Props> = (p) => {
           <h2 id="set-h">Lesson settings</h2>
 
           <div className="field">
+            <div className="label">Format</div>
+            <div className="seg" role="radiogroup" aria-label="Format">
+              <button type="button" role="radio" aria-checked={!p.course} className={!p.course ? "on" : ""} onClick={() => p.onCourse(false)}>One video</button>
+              <button type="button" role="radio" aria-checked={p.course} className={p.course ? "on" : ""} onClick={() => p.onCourse(true)}>Course (playlist)</button>
+            </div>
+            {p.course && (
+              <div className="seg sub" role="radiogroup" aria-label="Number of videos">
+                {[5, 6, 7, 8].map((n) => (
+                  <button type="button" key={n} role="radio" aria-checked={p.episodes === n} className={p.episodes === n ? "on" : ""} onClick={() => p.onEpisodes(n)}>{n} videos</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="field">
             <div className="label">Level</div>
             <div className="seg" role="radiogroup" aria-label="Level">
               {(["beginner", "intermediate"] as Level[]).map((l) => (
@@ -78,7 +99,7 @@ export const Home: React.FC<Props> = (p) => {
           </div>
 
           <div className="field">
-            <div className="label">Length</div>
+            <div className="label">Length{p.course ? " of each video" : ""}</div>
             <div className="seg" role="radiogroup" aria-label="Length">
               {LENGTHS.map((d) => (
                 <button type="button" key={d} role="radio" aria-checked={s.duration_s === d} className={s.duration_s === d ? "on" : ""}
@@ -105,7 +126,24 @@ export const Home: React.FC<Props> = (p) => {
       </div>
 
       <div className="home-foot">
-        <History items={p.recent} onOpen={p.onOpen} />
+        <div>
+          <History items={p.recent} onOpen={p.onOpen} />
+          {p.courses.length > 0 && (
+            <div className="history">
+              <div className="label">Recent courses</div>
+              <ul>
+                {p.courses.map((c) => (
+                  <li key={c.id}>
+                    <button type="button" className="past" onClick={() => p.onOpenCourse(c.id)}>
+                      <span className="concept">{c.title}</span>
+                      <span className="muted">{c.ready}/{c.episodes} videos{c.status === "building" ? " · still making" : ""}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
         <StatusPanel onBaseChange={p.onBaseChange} />
       </div>
     </div>

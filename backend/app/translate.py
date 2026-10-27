@@ -96,7 +96,13 @@ class _IndicTrans2:
         ).to(self.device).eval()
         self.ip = IndicProcessor(inference=True)
 
+    _gen_lock = threading.Lock()                 # episodes of a playlist are built concurrently; the model is shared
+
     def translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:
+        with self._gen_lock:
+            return self._translate(texts, tgt, batch_size)
+
+    def _translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:
         out: list[str] = []
         for i in range(0, len(texts), batch_size):
             chunk = texts[i:i + batch_size]

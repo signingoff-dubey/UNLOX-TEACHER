@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { Job, Lesson } from "../types";
-import { api, runJob, url } from "../api";
+import { api, runJob, url, type Playlist } from "../api";
+import { EpisodeRail } from "../components/EpisodeRail";
 import { LessonVideo, lessonFrames } from "../remotion/Lesson";
 import { FPS, H, W } from "../remotion/theme";
 import { ChatPanel } from "../components/ChatPanel";
@@ -19,10 +20,16 @@ type Props = {
   assetBase: string;
   onBack: () => void;
   onVideo: (key: string, url: string) => void;
+  /** Set when this lesson is an episode of a course: the player moves on to the next episode by itself. */
+  playlist?: Playlist | null;
+  episode?: number;
+  onEpisode?: (index: number) => void;
 };
 
 /** The lesson screen: notes on the left, video in the middle, tutor chat on the right. */
-export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang, assetBase, onBack, onVideo }) => {
+export const LessonScreen: React.FC<Props> = (
+  { lesson, generating, lang, onLang, assetBase, onBack, onVideo, playlist, episode = 0, onEpisode },
+) => {
   const track = lesson?.languages[lang];
   const player = useRef<PlayerRef>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -37,6 +44,9 @@ export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang
   const [flash, setFlash] = useState<{ side: "l" | "r"; n: number } | null>(null);
   const [exportJobs, setExportJobs] = useState<Record<string, Job>>({});
   const [error, setError] = useState("");
+  const [waitingNext, setWaitingNext] = useState(false);
+  const [courseJob, setCourseJob] = useState<Job | null>(null);
+  const [courseUrls, setCourseUrls] = useState<Record<string, string>>({});
 
   const inputProps = useMemo(() => (track ? { track, assetBase, captions } : null), [track, assetBase, captions]);
   const frames = track ? lessonFrames(track) : 1;
@@ -54,6 +64,24 @@ export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang
     p.addEventListener("frameupdate", onFrame);
     return () => p.removeEventListener("frameupdate", onFrame);
   }, [track]);
+
+  // Continuous flow: when an episode ends, start the next one; if it is still being made, wait and start it when ready.
+  useEffect(() => {
+    const p = player.current;
+    if (!p || !playlist) return;
+    const onEnd = () => {
+      const next = playlist.episodes[episode + 1];
+      if (!next) return;
+      if (next.status === "ready") onEpisode?.(episode + 1);
+      else if (next.status !== "failed") setWaitingNext(true);
+    };
+    p.addEventListener("ended", onEnd);
+    return () => p.removeEventListener("ended", onEnd);
+  }, [track, playlist, episode, onEpisode]);
+  useEffect(() => {
+    if (waitingNext && playlist?.episodes[episode + 1]?.status === "ready") { setWaitingNext(false); onEpisode?.(episode + 1); }
+  }, [waitingNext, playlist, episode, onEpisode]);
+  useEffect(() => { setWaitingNext(false); }, [episode, lesson?.id]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === frame.current);
@@ -131,13 +159,32 @@ export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang
     }
   }
   const totalTime = lesson ? Object.values(lesson.timings).reduce((a, b) => a + b, 0) : 0;
+
+  // ---- the whole course as one MP4
+  const courseKey = `${lang}_${quality}p`;
+  const courseUrl = courseUrls[courseKey] ?? playlist?.videos?.[courseKey];
+  const courseBusy = courseJob && (courseJob.status === "queued" || courseJob.status === "running");
+  async function exportCourse() {
+    if (!playlist) return;
+    setError("");
+    try {
+      const done = await runJob(api<Job>(`/api/playlists/${playlist.id}/export`, { lang, height: quality }), setCourseJob);
+      setCourseUrls((u) => ({ ...u, [courseKey]: done.result.url }));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  const courseDone = playlist && playlist.status !== "planning" && playlist.status !== "building";
   const untranslated = track && (track.translator === "untranslated" || (track.translator === "none" && track.lang !== "en"));
 
   return (
     <div className="screen lesson">
       <header className="lesson-top">
         <button type="button" className="ghost back" onClick={onBack}><Ui name="arrowLeft" size={18} />New lesson</button>
-        <h1>{track?.title ?? generating?.concept ?? "Lesson"}</h1>
+        <h1>
+          {playlist && track && <span className="ep-chip">Episode {episode + 1} of {playlist.episodes.length}</span>}
+          {track?.title ?? generating?.concept ?? "Lesson"}
+        </h1>
         {lesson && (
           <div className="tabs" role="tablist" aria-label="Lesson language">
             {Object.values(lesson.languages).map((t) => (
@@ -221,9 +268,23 @@ export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang
                   </button>
                 )}
                 <a className="ghost" href={url(`/media/lessons/${lesson.id}/captions_${lang}.srt`)} download>Captions (.srt)</a>
+                {playlist && courseDone && (courseUrl ? (
+                  <a className="primary alt" href={url(courseUrl)} download={`${playlist.title}-${lang}-${quality}p.mp4`}>
+                    <Ui name="download" size={18} />Whole course · {quality}p
+                  </a>
+                ) : (
+                  <button type="button" className="primary alt" disabled={!!courseBusy} onClick={exportCourse}>
+                    <Ui name="download" size={18} />
+                    {courseBusy ? `${courseJob.stage} ${Math.round(courseJob.progress * 100)}%` : `Make whole course MP4 · ${quality}p`}
+                  </button>
+                ))}
                 <span className="muted dl-note">{track.scenes.length} scenes · {track.duration_s.toFixed(0)} s · made in {totalTime.toFixed(1)} s</span>
               </div>
             </>
+          )}
+
+          {playlist && playlist.episodes.length > 0 && (
+            <EpisodeRail playlist={playlist} current={episode} waitingForNext={waitingNext || undefined} onPick={(i) => onEpisode?.(i)} />
           )}
         </div>
 

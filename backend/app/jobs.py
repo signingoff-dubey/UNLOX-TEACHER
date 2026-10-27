@@ -11,6 +11,7 @@ from typing import Any, Callable
 log = logging.getLogger(__name__)
 
 _pool = ThreadPoolExecutor(max_workers=1)
+_pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1), "export": ThreadPoolExecutor(max_workers=1)}
 _jobs: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
@@ -35,7 +36,7 @@ def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
             log.error("Job %s failed:\n%s", job_id, traceback.format_exc())
             job.update(status="error", error=f"{type(e).__name__}: {e}")
 
-    _pool.submit(run)
+    _pools.get(kind, _pool).submit(run)
     return job
 
 

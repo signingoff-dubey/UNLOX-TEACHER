@@ -66,6 +66,17 @@ export type LessonSummary = {
 
 export type Lang = { code: string; name: string; native: string; piper: boolean };
 
+export type PlaylistEpisode = {
+  index: number; title: string; focus: string; lesson_id: string | null;
+  status: "pending" | "building" | "ready" | "failed"; duration_s?: number; error?: string | null;
+};
+export type Playlist = {
+  id: string; topic: string; title: string; languages: string[];
+  status: "planning" | "building" | "ready" | "partial" | "error";
+  episodes: PlaylistEpisode[]; videos?: Record<string, string>; error?: string | null;
+};
+export type PlaylistSummary = { id: string; topic: string; title: string; created: number; status: string; episodes: number; ready: number };
+
 export type Level = "beginner" | "intermediate";
 export type LessonSettings = { level: Level; duration_s: number; languages: string[] };
 

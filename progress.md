@@ -1,7 +1,22 @@
 # Progress Log
 
-## Current Version: v0.6.0
+## Current Version: v0.7.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.7.0] — 2026-10-27
+### What's New
+- **Fixed the repeated "bulb" scenes.** Root cause: `normalize()` demoted any scene with too few points to a plain `title` card, so a graph lesson became 4 identical lightbulb cards. Now points are rebuilt from the narration and the originally wanted template is remembered
+- **Visual director agent** (`backend/app/director.py`): finds weak scenes (title mid-lesson, same type twice in a row, bullets on a maths/code topic) and redesigns each with a focused call: graphs for maths, code for programming, diagrams/flows for processes. Visual fields only; narration kept
+- **Coordinate geometry**: graph scenes can plot points without a curve, draw segments between points (`link` mark), show quadrants I-IV, auto-fit the plane to the points
+- **Playlists / courses** (`backend/app/playlist.py`): curriculum agent outlines 5-8 episodes, each built as a series-aware lesson (links to the previous episode, teases the next, no repeats); playlist file saved after every episode so playback starts on episode 1 while the rest are made; episodes build 2 at a time (voice of one overlaps planning of the next, episode 2 waits until episode 1 is past planning); one failed episode does not sink the course; `POST /api/playlists`, `GET /api/playlists[/{id}]`, `POST /api/playlists/{id}/export` (renders every episode and joins them into one MP4). Playlists and exports get their own job workers
+- **Course UI**: Format switch on Home (One video / Course of 5-8), episode rail under the video, auto-advance when a video ends (waits if the next is still being made), deep links `#c-<id>[-<episode>]`, "whole course MP4" button
+- **Multimodal visual QA** (`backend/scripts/visual_qa.py`): renders-frames-to-vision-model check. moondream (1.7B) gave unusable answers; llava:7b works: it described the old lesson's scenes 1-4 as the same "question mark and light bulb" graphic and flagged them
+
+### Known Issues
+- Planner still sometimes puts a quiz early; title/summary/quiz ordering is not enforced
+- llava:7b QA needs the planner model unloaded first (8 GB VRAM) and is a script, not part of the pipeline
 
 ---
 
