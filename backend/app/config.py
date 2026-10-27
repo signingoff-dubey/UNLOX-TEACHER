@@ -40,8 +40,8 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
 # nomic-embed-text: on-topic school passages score >= ~0.73, loosely related ones ~0.6.
 RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.68"))
 
-# Translation: "indictrans2", "ollama" (LLM translates) or "none" (copy English)
-TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "indictrans2")
+# Translation: "nllb" (Meta NLLB-200, GPU), "indictrans2" (AI4Bharat, gated), "ollama" (LLM) or "none"
+TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "nllb")
 INDICTRANS2_MODEL = os.getenv("INDICTRANS2_MODEL", "ai4bharat/indictrans2-en-indic-dist-200M")  # gated on HF
 # Not gated: works without a Hugging Face login. Same FLORES language codes as IndicTrans2.
 NLLB_MODEL = os.getenv("NLLB_MODEL", "facebook/nllb-200-distilled-600M")

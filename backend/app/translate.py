@@ -131,7 +131,7 @@ class _NLLB:
         log.info("Loading %s on %s", config.NLLB_MODEL, self.device)
         self.tok = AutoTokenizer.from_pretrained(config.NLLB_MODEL, src_lang="eng_Latn")
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
-            config.NLLB_MODEL, torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+            config.NLLB_MODEL, dtype=torch.float16 if self.device == "cuda" else torch.float32,
         ).to(self.device).eval()
 
     def translate(self, texts: list[str], tgt: str, batch_size: int = 16) -> list[str]:

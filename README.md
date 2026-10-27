@@ -161,4 +161,13 @@ To render a track in any React frontend, pass it to `LessonVideo` (`web/src/remo
 - MP4 export: 1920×1080 H.264 + AAC, 40.2 s, matching the narration. The first export took 87 s, including the one-time bundle and Chrome download.
 - Devanagari and Telugu render correctly in the video, including conjuncts, using the bundled Noto fonts.
 - The backend serves the built UI, assets, lesson history and deep links (`/#<lessonId>`).
-- Not yet run here: the Ollama planner, IndicTrans2 and Indic Parler-TTS. Test these on the models machine first.
+- **Full offline pipeline:** Ollama `qwen2.5:7b-instruct-q4_K_M` with RAG, NLLB-200 on the GPU, and Piper.
+  - "Why do we have seasons?" in English, Hindi and Telugu was built in **32 s**: plan 22 s, Hindi 4.5 s, Telugu 3.9 s.
+  - It drew on 5 knowledge-base sources (top match "Season", 0.80) and produced a 6-scene lesson of 47 s in English and 73 s in Hindi.
+  - The Hindi MP4 export took 60 s.
+  - The server starts in ~14 s with models preloaded.
+- **Translation comparison:** NLLB-200 gives fluent Hindi and Telugu. Qwen-7B mixed scripts in Hindi and produced mostly wrong Telugu, and is now only a fallback.
+- **Known limits:**
+  - Very short labels can be mistranslated because they lack context ("Light bends" became "lightweight bends").
+  - Kannada and Tamil need Indic Parler-TTS for a voice; without it they get timed silence.
+  - IndicTrans2 is gated on Hugging Face and its toolkit needs a C compiler on Windows.
