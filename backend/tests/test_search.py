@@ -36,7 +36,7 @@ def test_rrf_orders_by_combined_rank():
 
 
 def test_upload_first_library_max_two(dirs):
-    fill(dirs / "library", "lib", [f"photosynthesis in leaves fact {i}" for i in range(10)])
+    fill(dirs / "library" / "index", "lib", [f"photosynthesis in leaves fact {i}" for i in range(10)])
     fill(dirs / "uploads" / "abc" / "index", "up", [f"photosynthesis in leaves page {i}" for i in range(10)])
     hits = run("photosynthesis leaves", "both:abc", k=8)
     scopes = [h.scope for h in hits]
@@ -52,7 +52,7 @@ def test_low_confidence_downweighted(dirs):
 
 
 def test_irrelevant_upload_returns_library_only(dirs):
-    fill(dirs / "library", "lib", ["photosynthesis makes glucose in plants", "the moon orbits earth"])
+    fill(dirs / "library" / "index", "lib", ["photosynthesis makes glucose in plants", "the moon orbits earth"])
     fill(dirs / "uploads" / "abc" / "index", "up", ["cricket bat and ball", "the wicket keeper"])
     hits = run("photosynthesis", "both:abc")
     assert hits and all(h.scope == "library" for h in hits)

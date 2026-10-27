@@ -17,6 +17,8 @@ class Embedder:
     def __init__(self, model_dir: Path = EMBED_DIR, device: str = "cpu", batch_size: int = 64) -> None:
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(str(model_dir), device=device)
+        if device == "cuda":
+            self.model.half()
         self.batch_size = batch_size
         self._lock = threading.Lock()
 

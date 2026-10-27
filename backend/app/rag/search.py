@@ -44,7 +44,7 @@ def rrf(rankings: list[list[str]], k: int = RRF_K) -> list[tuple[str, float]]:
 
 def collection_path(scope: str):
     if scope == "library":
-        return LIBRARY_DIR
+        return LIBRARY_DIR / "index"
     if scope.startswith("upload:"):
         sha = scope.split(":", 1)[1]
         if not sha.isalnum():

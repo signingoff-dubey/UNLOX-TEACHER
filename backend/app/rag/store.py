@@ -20,6 +20,7 @@ from .chunker import Chunk
 
 FIELDS = [f.name for f in fields(Chunk)]
 _WORD = re.compile(r"\w+", re.UNICODE)
+NPROBE = 32          # IVF lists searched per query in the library index (recall vs speed)
 
 
 class Collection:
@@ -47,6 +48,11 @@ class Collection:
         self.index = faiss.read_index(str(index_file)) if index_file.exists() else \
             faiss.IndexIDMap2(faiss.IndexFlatIP(embedder.dim))
         self.read_only = not isinstance(self.index, faiss.IndexIDMap2)
+        if self.read_only:
+            try:
+                faiss.extract_index_ivf(self.index).nprobe = NPROBE
+            except RuntimeError:
+                pass
 
     def _save_meta(self) -> None:
         (self.path / "meta.json").write_text(json.dumps(self.meta, indent=1), encoding="utf-8")
