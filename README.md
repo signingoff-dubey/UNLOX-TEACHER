@@ -288,3 +288,6 @@ Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_h
 - Videos start playing by themselves again after a language switch or a new episode.
 - Resource limits (all optional): `MIN_FREE_RAM_GB` (1.5), `MIN_FREE_VRAM_GB` (0.8), `MODEL_IDLE_S` (600), `PIPER_CUDA` (0), `PRELOAD_STT` (0), `STT_MIN_FREE_GB` (3), `STUDIO_WORKERS` (2), `PLAYLIST_WORKERS` (2). See `docs/presentation-mode.md`.
 - `TORCH_VRAM_FRACTION` (0.35): the share of the graphics card PyTorch may hold.
+
+## What is new in v0.14.3
+- Say "generate one more video on ..." in the tutor chat: the video is built scene by scene, shows up in the chat with its first frame and a play button, and is added to the playlist under the player. Every episode of a course now plays while it is made.

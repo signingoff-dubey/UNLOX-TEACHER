@@ -9,8 +9,9 @@ import { useRewards } from "../rewards/RewardsContext";
 import type { Lesson, Track } from "../types";
 import { Ui } from "./ui-icons";
 import { VoiceRipple } from "./VoiceRipple";
+import { VideoCard, type ChatVideo } from "./VideoCard";
 
-type Msg = { role: "user" | "assistant"; content: string; scene?: number | null; error?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; scene?: number | null; error?: boolean; video?: ChatVideo };
 
 const SUGGEST = ["Explain this part again", "Give me another example", "Quiz me", "Why does it work like that?"];
 const ckey = (id: string) => `vt.chat.${id}`;
@@ -31,10 +32,14 @@ type Props = {
   /** Meta quiz: build one metaverse world from every study tool and every video. `metaBusy` is its progress while it runs. */
   onMetaQuiz?: () => Promise<void>;
   metaBusy?: { progress: number; stage: string } | null;
+  /** The tutor started a new video because the learner asked for one in the chat: the page adds it to the playlist. */
+  onVideoStarted?: (video: ChatVideo) => void;
+  /** Play button of a video card: show it in the player. */
+  onPlayVideo?: (playlistId: string, index: number) => void;
 };
 
 /** Right panel: a tutor that knows the whole lesson and which scene you are watching. */
-export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTime, onMetaQuiz, metaBusy }) => {
+export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTime, onMetaQuiz, metaBusy, onVideoStarted, onPlayVideo }) => {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -154,12 +159,13 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     setBusy(true);
     try {
       const history = msgs.filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
-      const res = await api<{ reply: string; scene: number | null; audio_url?: string }>(`/api/lessons/${lesson.id}/chat`,
+      const res = await api<{ reply: string; scene: number | null; audio_url?: string; video?: ChatVideo }>(`/api/lessons/${lesson.id}/chat`,
         { message, lang: askedIn, watching: lang, time_s: getTime(), history, speak: speaker && (spoken || voice === "off") });
       award({ type: "tutor_question" });
-      const done: Msg[] = [...next, { role: "assistant", content: res.reply, scene: res.scene }];
+      const done: Msg[] = [...next, { role: "assistant", content: res.reply, scene: res.scene, video: res.video }];
       setMsgs(done);
       save(lesson.id, done);
+      if (res.video) onVideoStarted?.(res.video);                    // "generate one more video on ...": it is being made, the playlist gets it now
       if (res.audio_url && speaker) say(res.audio_url);
     } catch (e) {
       setMsgs([...next, { role: "assistant", content: (e as Error).message || "The tutor could not answer.", error: true }]);
@@ -210,6 +216,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
             <div key={i} className={`msg ${m.role}${m.error ? " err" : ""}`}>
               <div className="bubble">{m.content}</div>
               {m.scene != null && track?.scenes[m.scene] && <div className="msg-scene">scene {m.scene + 1}</div>}
+              {m.video && <VideoCard video={m.video} lang={lang} onPlay={(pid, idx) => onPlayVideo?.(pid, idx)} />}
             </div>
           ))
         )}
@@ -232,7 +239,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
         )}
         <input value={text} onChange={(e) => setText(e.target.value)} disabled={!lesson || busy || voice !== "off"} maxLength={1000}
           placeholder={voice === "listening" ? "Listening… tap the mic to send" : voice === "hearing" ? "Understanding…"
-            : lesson ? "Ask about this lesson…" : "Available when the lesson is ready"} aria-label="Your question" />
+            : lesson ? "Ask about this lesson, or say make one more video on …" : "Available when the lesson is ready"} aria-label="Your question" />
         <button type="submit" className="send" disabled={!lesson || busy || !text.trim()} aria-label="Send">
           <Ui name="arrowLeft" size={20} />
         </button>

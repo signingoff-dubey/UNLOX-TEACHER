@@ -45,6 +45,7 @@ export default function App() {
   const [job, setJob] = useState<Job | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  const [chatJob, setChatJob] = useState<{ job: Job; topic: string; lessonId: string | null } | null>(null);     // a video asked for in the chat
   const [episode, setEpisode] = useState(0);
   const [active, setActive] = useState("en");
   const [recent, setRecent] = useState<LessonSummary[]>([]);
@@ -255,6 +256,15 @@ export default function App() {
     }
   }
 
+  /** The tutor chat started a new video: the playlist (made on the spot for a lesson that had none) shows it at once, and its progress is followed. */
+  const videoStarted = (v: { playlist_id: string; job_id: string; topic: string }) => {
+    api<Playlist>(`/api/playlists/${v.playlist_id}`).then((pl) => setPlaylist((cur) => (cur && cur.id !== pl.id ? cur : pl))).catch(() => undefined);
+    api<Job>(`/api/jobs/${v.job_id}`).then((j0) => runJob(Promise.resolve(j0), (j) => setChatJob({ job: j, topic: v.topic, lessonId: j.lesson_id ?? null }))).catch(() => undefined);
+  };
+  const playNewVideo = (playlistId: string, index: number) => {
+    api<Playlist>(`/api/playlists/${playlistId}`).then((pl) => { setPlaylist(pl); openEpisode(pl, index); }).catch(() => setError("That video could not be opened."));
+  };
+
   const enterMetaverse = () => { setMvWorld(null); setMvTrigger((n) => n + 1); };
 
   /** Meta quiz: every video's lesson and every study tool the AI wrote, as one world. The button shows the progress. */
@@ -322,10 +332,12 @@ export default function App() {
       {screen === "review" && <ReviewPage />}
       {screen === "homework" && <HomeworkPage id={homeworkId} />}
       {screen === "lesson" && (
-        <LessonPage lesson={lesson} generating={!lesson || lesson.building ? { concept, job, languages: settings.languages } : undefined}
+        <LessonPage lesson={lesson} generating={!lesson || lesson.building ? (chatJob && lesson && chatJob.lessonId === lesson.id
+            ? { concept: chatJob.topic, job: chatJob.job, languages: settings.languages } : { concept, job, languages: settings.languages }) : undefined}
           lang={active} onLang={setActive} assetBase={assetBase} onVideo={onVideo}
           playlist={playlist} episode={episode} onEpisode={(i) => playlist && openEpisode(playlist, i)}
-          onMetaverse={enterMetaverse} onMetaQuiz={startMetaQuiz} metaBusy={meta} />
+          onMetaverse={enterMetaverse} onMetaQuiz={startMetaQuiz} metaBusy={meta}
+          onVideoStarted={videoStarted} onPlayVideo={playNewVideo} />
       )}
       {creation && !viewing && <CreatingPill creation={creation} onOpen={openCreation} />}
       <MetaverseLayer trigger={mvTrigger} lesson={lesson} lang={active} world={mvWorld} />

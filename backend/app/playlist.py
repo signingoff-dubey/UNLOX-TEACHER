@@ -182,7 +182,7 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
             try:
                 lesson = build_lesson(f"{pl['topic']}: {ep['title']}", pl["languages"], pl["level"], pl["duration_s"],
                                       pl["documents"], series=series_context(pl, i), images=pl.get("images", []),
-                                      mode=pl.get("mode", "explain"), progressive=(i == 0), progress=report)
+                                      mode=pl.get("mode", "explain"), progressive=True, progress=report)      # every episode streams its scenes
                 ep.pop("preview", None)
                 ep.update(lesson_id=lesson["id"], status="ready", error=None, duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
                 break
@@ -245,3 +245,98 @@ def export_all(playlist_id: str, lang: str, height: int = 720, progress=lambda s
     save(pl)
     progress("Done", 1.0)
     return {"url": url, "episodes": len(files)}
+
+
+# ------------------------------------------------------------------ one more video, asked for in the chat (see videochat.py)
+MAX_TOTAL = 12
+_extra_lock = threading.Lock()          # the playlist file is read, changed and written back under this lock, so two new videos never overwrite each other
+
+
+def of_lesson(lesson_id: str) -> dict | None:
+    """The playlist a lesson is an episode of, if any."""
+    for f in PLAYLISTS_DIR.glob("*/playlist.json"):
+        try:
+            pl = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if any(e.get("lesson_id") == lesson_id for e in pl.get("episodes", [])):
+            return pl
+    return None
+
+
+def wrap_lesson(lesson: dict) -> dict:
+    """A playlist with this single lesson as episode 1, so a new video can be added next to it."""
+    track = lesson["languages"][next(iter(lesson["languages"]))]
+    title = track.get("title") or lesson.get("concept") or "Your lesson"
+    pl = {"id": uuid.uuid4().hex[:10], "topic": lesson.get("concept") or title, "title": title, "created": int(time.time()), "status": "ready",
+          "languages": lesson.get("order") or list(lesson["languages"]), "level": "beginner",
+          "duration_s": int(max(30, min(240, round(track["duration_s"] / 30) * 30))),
+          "documents": lesson.get("documents") or [], "images": [], "mode": "explain", "requested": 2,
+          "episodes": [{"index": 0, "title": title, "focus": lesson.get("concept") or title, "lesson_id": lesson["id"], "status": "ready", "error": None,
+                        "duration_s": track["duration_s"]}],
+          "error": None, "built_s": 0}
+    with _extra_lock:
+        save(pl)
+    return pl
+
+
+def _status(pl: dict) -> str:
+    eps = pl["episodes"]
+    if any(e["status"] in ("building", "pending") for e in eps):
+        return "building"
+    ok = sum(1 for e in eps if e["status"] == "ready")
+    return "ready" if ok == len(eps) else ("partial" if ok else "error")
+
+
+def append_episode(playlist_id: str, title: str, topic: str, duration_s: int, continues: bool = False) -> tuple[dict, int]:
+    """Add a pending episode (right away, so the page has its position before the video exists). Returns (playlist, index)."""
+    with _extra_lock:
+        pl = load(playlist_id)
+        if len(pl["episodes"]) >= MAX_TOTAL:
+            raise ValueError(f"This playlist already has {MAX_TOTAL} videos. Start a new one from the home page.")
+        if pl["status"] == "planning" or any(not e.get("extra") and e["status"] in ("building", "pending") for e in pl["episodes"]):
+            raise ValueError("The course is still being made. Ask again when it has finished.")
+        index = len(pl["episodes"])
+        pl["episodes"].append({"index": index, "title": title, "focus": topic, "lesson_id": None, "status": "pending", "error": None,
+                               "extra": True, "topic": topic, "continues": continues, "target_s": int(max(30, min(240, duration_s)))})
+        pl["status"] = "building"
+        save(pl)
+    return pl, index
+
+
+def _update_episode(playlist_id: str, index: int, **fields) -> None:
+    with _extra_lock:
+        pl = load(playlist_id)
+        pl["episodes"][index].update(fields)
+        pl["status"] = _status(pl)
+        save(pl)
+
+
+def build_extra(playlist_id: str, index: int, progress=lambda s, p, **kw: None) -> dict:
+    """Build the episode added by `append_episode`, scene by scene like every other video (the job reports `lesson_id` as soon as scene 1 exists)."""
+    pl = load(playlist_id)
+    ep = pl["episodes"][index]
+    _update_episode(playlist_id, index, status="building")
+
+    def report(stage: str, value: float, **extra) -> None:
+        if extra.get("lesson_id"):
+            _update_episode(playlist_id, index, lesson_id=extra["lesson_id"], preview=True)
+        progress(stage, value, **extra)
+
+    continues = bool(ep.get("continues"))
+    for attempt in (1, 2):
+        try:
+            lesson = build_lesson(ep.get("topic") or ep["title"], pl["languages"], pl["level"], ep.get("target_s") or pl["duration_s"],
+                                  pl["documents"] if continues else [], series=series_context(pl, index) if continues else None,
+                                  mode=pl.get("mode", "explain"), progressive=True, progress=report)
+            _update_episode(playlist_id, index, lesson_id=lesson["id"], status="ready", error=None, preview=False,
+                            duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
+            return {"playlist_id": playlist_id, "index": index, "lesson_id": lesson["id"]}
+        except Exception as e:                   # noqa: BLE001
+            log.error("playlist %s extra video %d failed (attempt %d): %s", playlist_id, index + 1, attempt, e)
+            if config.is_cuda_error(e):
+                config.mark_cuda_broken(str(e))
+            if attempt == 2 or not config.is_cuda_error(e):
+                _update_episode(playlist_id, index, status="failed", error=f"{type(e).__name__}: {e}", preview=False)
+                raise
+    return {"playlist_id": playlist_id, "index": index}

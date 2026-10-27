@@ -1,7 +1,18 @@
 # Progress Log
 
-## Current Version: v0.14.2
+## Current Version: v0.14.3
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.14.3] — 2026-10-28
+### What's New
+- **Ask the chat for another video**: "generate one more video on black holes", "make another one about volcanoes, 2 minutes", "another lesson on tides" (`videochat.py`; recognised by its words, so it is instant and uses no GPU; questions like "how do I make a video?" or "give me one more example" still go to the tutor). The backend adds the video to the playlist of the lesson being watched (a lesson with no playlist is wrapped into one, as episode 1) and starts building it at once, scene by scene. In the chat a card shows its first frame with a play button as soon as scene 1 exists ("7 of about 7 scenes ready"); the play button opens it in the center player (it starts by itself) and the playlist under the player lists it ("playing, more coming..."). Verified in the browser
+- **Every course episode streams**, not only episode 1: episodes 2 and 3 of a test course were watchable 13 s after they started; the player moves on to a streaming episode by itself
+
+### Known Issues
+- A video asked for in the chat is as long as the model writes it (90 s asked, 51 s made)
+- Only one extra video is built at a time (they queue); a course that is still being made cannot take extra videos
 
 ---
 

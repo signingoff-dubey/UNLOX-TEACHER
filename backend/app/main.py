@@ -321,9 +321,13 @@ def export_playlist(playlist_id: str, req: PlaylistExportRequest) -> dict:
 
 @app.post("/api/lessons/{lesson_id}/chat")
 def chat_about_lesson(lesson_id: str, req: ChatRequest) -> dict:
-    from . import chat
+    from . import chat, videochat
     try:
-        res = chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history, req.watching)
+        intent = videochat.detect(req.message)
+        if intent:                         # "generate one more video on ...": no tutor answer, a new video is started (see videochat.py)
+            res = videochat.handle(lesson_id, intent, req.lang, req.watching, req.message)
+        else:
+            res = chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history, req.watching)
         if req.speak:
             res["audio_url"] = chat.speak(res["reply"], res["lang"])
         return res

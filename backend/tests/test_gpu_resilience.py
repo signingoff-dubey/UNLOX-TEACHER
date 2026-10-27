@@ -99,3 +99,23 @@ def test_a_course_episode_with_a_cuda_error_is_retried_and_the_first_episode_ope
     assert calls == [True, True]                                            # episode 1 streams its scenes; the retry ran after the GPU broke
     assert any(e[0].get("preview") and e[0]["lesson_id"] == "early123" for e in saved)      # the course page could open it while it was made
     assert config.torch_device() == "cpu"
+
+
+def test_every_course_episode_streams_its_scenes(monkeypatch):
+    seen = []
+
+    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, progress=None):
+        seen.append((concept, progressive))
+        progress("Planning", 0.7, lesson_id=f"early-{len(seen)}")             # past planning: the next episode may start
+        return {"id": f"early-{len(seen)}", "languages": {"en": {"duration_s": 40.0}}}
+
+    pl = {"id": "p2", "topic": "Tides", "title": "", "languages": ["en"], "level": "beginner", "duration_s": 60, "documents": [], "images": [],
+          "mode": "explain", "requested": 3, "episodes": [], "status": "planning"}
+    cur = playlist.Curriculum(title="Tides", episodes=[playlist.Episode(title=f"Part {k}", focus="x") for k in range(3)])
+    monkeypatch.setattr(playlist, "load", lambda pid: pl)
+    monkeypatch.setattr(playlist, "save", lambda p: None)
+    monkeypatch.setattr(playlist, "design_curriculum", lambda *a, **k: cur)
+    monkeypatch.setattr(playlist, "build_lesson", fake_build)
+    out = playlist.build("p2")
+    assert [p for _, p in seen] == [True, True, True]                         # episodes 2 and 3 stream too, not only episode 1
+    assert [e["status"] for e in out["episodes"]] == ["ready"] * 3

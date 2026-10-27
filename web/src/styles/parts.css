@@ -249,3 +249,18 @@ button.chip:hover { background: var(--white); color: var(--ink); }
 .tb-list li .small { margin-left: 8px; }
 .import-btn { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
 .gloss-row .small { margin-left: 6px; }
+
+/* ---------- a video the tutor made on request: first frame, play button, progress line ---------- */
+.vcard { margin-top: 8px; width: min(100%, 300px); border-radius: 20px; background: var(--surface); overflow: hidden; box-shadow: var(--shadow); }
+.vposter { position: relative; aspect-ratio: 16 / 9; background: #1b1b1f; display: grid; place-items: center; overflow: hidden; }
+.vposter > div:first-child { width: 100%; height: 100%; }
+.vwait { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #fff; font-size: 12px; padding: 8px; text-align: center; }
+.vwait .tab-spin { width: 18px; height: 18px; }
+.vplay { position: absolute; inset: 0; margin: auto; width: 54px; height: 54px; border: 0; border-radius: 50%; background: var(--lime); color: var(--ink); display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); cursor: pointer; transition: transform 0.15s var(--ease); }
+.vplay:hover { transform: scale(1.08); }
+.vplay:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.vmeta { display: grid; gap: 2px; padding: 10px 14px 12px; }
+.vmeta b { font-size: 14px; letter-spacing: -0.01em; }
+.vmeta span { font-size: 12px; color: var(--muted); }
+.vcard.failed .vmeta span { color: #8f1f3a; }

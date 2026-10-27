@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 import type { Job, Lesson } from "../types";
-import { api, runJob, url, type Playlist } from "../api";
+import { api, playable, runJob, url, type Playlist } from "../api";
 import { EpisodeRail } from "../components/EpisodeRail";
 import { LessonVideo, lessonFrames } from "../remotion/Lesson";
 import { FPS, H, W } from "../remotion/theme";
 import { ChatPanel } from "../components/ChatPanel";
+import type { ChatVideo } from "../components/VideoCard";
 import { preloadMetaverse } from "../components/MetaverseLayer";
 import { NotesPanel } from "../components/NotesPanel";
 import { Pending } from "../components/Pending";
@@ -34,11 +35,14 @@ type Props = {
   onMetaverse?: () => void;
   onMetaQuiz?: () => Promise<void>;
   metaBusy?: { progress: number; stage: string } | null;
+  /** A video asked for in the chat was started / its play button was pressed. */
+  onVideoStarted?: (video: ChatVideo) => void;
+  onPlayVideo?: (playlistId: string, index: number) => void;
 };
 
 /** The lesson page in the grey glass layout: scene timeline, player card, side stack (progress or downloads, tutor), notes and sources. */
 export const LessonPage: React.FC<Props> = (
-  { lesson, generating, lang, onLang, assetBase, onVideo, playlist, episode = 0, onEpisode, onMetaverse, onMetaQuiz, metaBusy },
+  { lesson, generating, lang, onLang, assetBase, onVideo, playlist, episode = 0, onEpisode, onMetaverse, onMetaQuiz, metaBusy, onVideoStarted, onPlayVideo },
 ) => {
   const { award } = useRewards();
   const track = lesson?.languages[lang];
@@ -105,14 +109,14 @@ export const LessonPage: React.FC<Props> = (
     const onEnd = () => {
       const next = playlist.episodes[episode + 1];
       if (!next) { award({ type: "course_complete", course_id: playlist.id }); return; }
-      if (next.status === "ready") onEpisode?.(episode + 1);        // (an episode still being made waits until it is complete)
+      if (playable(next)) onEpisode?.(episode + 1);                 // ready, or already playing while it is made
       else if (next.status !== "failed") setWaitingNext(true);
     };
     p.addEventListener("ended", onEnd);
     return () => p.removeEventListener("ended", onEnd);
   }, [track, playlist, episode, onEpisode, award]);
   useEffect(() => {
-    if (waitingNext && playlist?.episodes[episode + 1]?.status === "ready") { setWaitingNext(false); onEpisode?.(episode + 1); }
+    if (waitingNext && playable(playlist?.episodes[episode + 1])) { setWaitingNext(false); onEpisode?.(episode + 1); }
   }, [waitingNext, playlist, episode, onEpisode]);
   useEffect(() => { setWaitingNext(false); }, [episode, lesson?.id]);
 
@@ -364,7 +368,8 @@ export const LessonPage: React.FC<Props> = (
             </section>
           )}
           {lesson && !lesson.building && <TakeAway lesson={lesson} lang={lang} />}
-          <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} onMetaQuiz={onMetaQuiz} metaBusy={metaBusy} />
+          <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} onMetaQuiz={onMetaQuiz} metaBusy={metaBusy}
+            onVideoStarted={onVideoStarted} onPlayVideo={onPlayVideo} />
           {lesson && !lesson.building && <TeachBack lesson={lesson} onSeekScene={(i) => { const s = track?.scenes[i]; if (s) seekPlay(s.start_s); }} />}
           {lesson && track && (
             <>
