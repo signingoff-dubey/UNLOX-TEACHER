@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 Template = Literal["title", "bullets", "flow", "cycle", "compare", "diagram", "quiz", "summary", "graph", "code"]
 CurveType = Literal["line", "parabola", "cubic", "sine", "cosine", "exp", "abs", "sqrt", "reciprocal", "circle", "ellipse"]
@@ -40,9 +40,9 @@ class Mark(BaseModel):
 
 
 class ScenePlan(BaseModel):
-    template: Template
-    heading: str = Field(description="Short on-screen heading, max 6 words")
-    narration: str = Field(description="What the teacher says in this scene: 1-3 short sentences")
+    template: Template = "bullets"
+    heading: str = Field("", description="Short on-screen heading, max 6 words")
+    narration: str = Field("", description="What the teacher says in this scene: 1-3 short sentences")
     items: list[str] = Field(default_factory=list, description="Short labels, max 5 words each")
     icon: Icon = "lightbulb"
     left_title: str = ""
@@ -63,10 +63,100 @@ class ScenePlan(BaseModel):
     highlights: list[int] = Field(default_factory=list, description="code scenes: 0-based line numbers, in narration order")
     output: list[str] = Field(default_factory=list, description="code scenes: what the program prints (optional)")
 
+    # Small models slip on types (an icon that is not in the list, code as one string, a range that is not a pair).
+    # The plan is asked for as plain JSON text, without Ollama's slow constrained decoding, so these are repaired here.
+    @field_validator("template", mode="before")
+    @classmethod
+    def _template(cls, v):
+        v = str(v or "").strip().lower()
+        return v if v in TEMPLATES else "bullets"
+
+    @field_validator("icon", mode="before")
+    @classmethod
+    def _icon(cls, v):
+        return v if v in ICONS else "lightbulb"
+
+    @field_validator("heading", "narration", "equation", "code_lang", "left_title", "right_title", mode="before")
+    @classmethod
+    def _text(cls, v):
+        return "" if v is None else v if isinstance(v, str) else str(v)
+
+    @field_validator("items", "left", "right", mode="before")
+    @classmethod
+    def _labels(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [x.strip(" -*") for x in v.splitlines()] if len(v.splitlines()) > 1 else [v]
+        return [str(x) for x in v if x is not None and str(x).strip()] if isinstance(v, (list, tuple)) else []
+
+    @field_validator("code", "output", mode="before")
+    @classmethod
+    def _lines(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [ln for ln in v.splitlines() if ln.strip()]
+        return [str(x) for x in v] if isinstance(v, (list, tuple)) else []
+
+    @field_validator("highlights", mode="before")
+    @classmethod
+    def _highlights(cls, v):
+        if isinstance(v, str):
+            v = re.findall(r"\d+", v)
+        if not isinstance(v, (list, tuple)):
+            return []
+        out = []
+        for x in v:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @field_validator("x_range", "y_range", mode="before")
+    @classmethod
+    def _range(cls, v):
+        ok = isinstance(v, (list, tuple)) and len(v) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
+        return list(v) if ok else []
+
+    @field_validator("answer_index", mode="before")
+    @classmethod
+    def _answer(cls, v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+
+    @field_validator("curves", mode="before")
+    @classmethod
+    def _curves(cls, v):
+        kinds = CurveType.__args__  # type: ignore[attr-defined]
+        return [c for c in v if isinstance(c, dict) and c.get("type") in kinds] if isinstance(v, list) else []
+
+    @field_validator("marks", mode="before")
+    @classmethod
+    def _marks(cls, v):
+        kinds = MarkKind.__args__  # type: ignore[attr-defined]
+        return [m for m in v if isinstance(m, dict) and m.get("kind") in kinds] if isinstance(v, list) else []
+
 
 class LessonPlan(BaseModel):
-    title: str
-    scenes: list[ScenePlan]
+    title: str = ""
+    scenes: list[ScenePlan] = []
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _title(cls, v):
+        if isinstance(v, dict):                      # the model sometimes nests the first scene here
+            v = v.get("heading") or v.get("title") or ""
+        return "" if v is None else str(v)
+
+    @field_validator("scenes", mode="before")
+    @classmethod
+    def _real_scenes(cls, v):
+        """Drop what is not a scene (an empty {} or a stray string): the rest of the plan is still good."""
+        return [x for x in v if isinstance(x, dict) and (x.get("narration") or x.get("heading"))] if isinstance(v, list) else []
 
 
 # Which fields hold text a viewer sees or hears (and so must be translated).

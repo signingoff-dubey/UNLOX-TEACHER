@@ -19,7 +19,7 @@ from typing import Any, Callable
 import requests
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config, jobs
+from . import config, jobs, llm
 from .knowledge import retrieve
 from .pipeline import LESSONS_DIR, load_lesson
 from .translate import translate_batch
@@ -222,35 +222,14 @@ def _ask(kind: str, lesson: dict, size: str, difficulty: str, on_progress: Calla
     system = ("You make study material for a student from the lesson below. Use only the lesson and its source passages: never invent facts. "
               "Write in simple English (it is translated later). Return ONLY JSON that matches the schema.")
     user = f"{source_text(lesson)}\n\nTASK: {_task(kind, size, difficulty)}"
-    err = ""
-    for attempt in range(2):
-        try:
-            r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-                "model": config.OLLAMA_MODEL, "stream": True, "keep_alive": config.OLLAMA_KEEP_ALIVE,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user + (f"\n\nFix this problem: {err}" if err else "")}],
-                "format": schema.model_json_schema(),
-                "options": config.ollama_options({"temperature": 0.3, "num_ctx": 4096}),
-            }, timeout=300, stream=True)
-            r.raise_for_status()
-            parts, n = [], 0
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                chunk = json.loads(line)
-                parts.append(chunk.get("message", {}).get("content", ""))
-                n += 1
-                if n % 5 == 0:
-                    on_progress(min(n / EXPECTED_TOKENS[kind], 0.97))
-                if chunk.get("done"):
-                    break
-            on_progress(1.0)
-            return clean(kind, schema.model_validate_json("".join(parts)).model_dump(), size)
-        except requests.RequestException as e:
-            raise RuntimeError(f"Cannot reach Ollama for study tools: {e}") from e
-        except (ValidationError, ValueError) as e:
-            err = f"invalid JSON ({str(e)[:200]})"
-            log.warning("studio %s attempt %d: %s", kind, attempt + 1, err)
-    raise RuntimeError("The model could not make that study tool. Try again.")
+    try:
+        data = llm.ask_json(schema, user, system, options={"temperature": 0.3}, retries=1, timeout=300,
+                            expected_tokens=EXPECTED_TOKENS[kind], on_progress=on_progress)
+    except requests.RequestException as e:
+        raise RuntimeError(f"Cannot reach Ollama for study tools: {e}") from e
+    except ValueError as e:
+        raise RuntimeError("The model could not make that study tool. Try again.") from e
+    return clean(kind, data.model_dump(), size)
 
 
 def _s(v: Any) -> str:

@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 from pydantic import BaseModel, Field
 
-from . import config
+from . import config, llm
 from .exporter import export_mp4
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
@@ -84,13 +84,7 @@ def design_curriculum(topic: str, n: int, level: str, duration_s: int) -> Curric
             "No overlaps between episodes. Titles are at most 6 words and describe the idea (not 'Part 2'). "
             "Each focus is one concrete sentence naming what the learner will be able to do or understand afterwards.")
         try:
-            r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-                "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
-                "messages": [{"role": "user", "content": prompt}], "format": Curriculum.model_json_schema(),
-                "options": config.ollama_options({"temperature": 0.4, "num_ctx": 4096, "num_predict": 700}),
-            }, timeout=180)
-            r.raise_for_status()
-            cur = Curriculum.model_validate(json.loads(r.json()["message"]["content"]))
+            cur = llm.ask_json(Curriculum, prompt, options={"temperature": 0.4, "num_predict": 700}, timeout=180, expected_tokens=350)
             eps = [e for e in cur.episodes if e.title.strip() and e.focus.strip()]
             if len(eps) >= MIN_EPISODES:
                 return Curriculum(title=cur.title.strip() or topic, episodes=eps[:MAX_EPISODES])

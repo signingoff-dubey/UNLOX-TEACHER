@@ -18,7 +18,7 @@ from typing import Callable
 import requests
 from pydantic import BaseModel, Field, ValidationError
 
-from .. import config
+from .. import config, llm
 
 log = logging.getLogger(__name__)
 
@@ -70,15 +70,9 @@ def window_text(pages: dict[int, str], first: int, last: int) -> str:
 
 def ask_ollama(text: str, first: int, last: int) -> WindowNotes:
     system = ("You write study notes for a student from pages of a textbook. Use only the pages given: never invent facts. "
-              "Write simple English. Return ONLY JSON that matches the schema.")
+              "Write simple English.")
     user = f"Pages {first}-{last}:\n{text}\n\nWrite the study notes for these pages."
-    r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-        "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "format": WindowNotes.model_json_schema(), "options": config.ollama_options({"temperature": 0.2, "num_ctx": 4096}),
-    }, timeout=240)
-    r.raise_for_status()
-    return WindowNotes.model_validate_json(r.json()["message"]["content"])
+    return llm.ask_json(WindowNotes, user, system, options={"temperature": 0.2}, retries=1, timeout=240, expected_tokens=260)
 
 
 def heuristic(text: str, first: int, last: int) -> WindowNotes:

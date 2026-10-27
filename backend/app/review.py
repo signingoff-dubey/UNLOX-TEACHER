@@ -11,7 +11,9 @@ import logging
 
 import requests
 
-from . import config
+from pydantic import BaseModel
+
+from . import config, llm
 from .schema import LessonPlan, MAX_CODE_COLS, ScenePlan
 
 log = logging.getLogger(__name__)
@@ -25,19 +27,17 @@ def _python_error(lines: list[str]) -> str | None:
         return f"line {e.lineno}: {e.msg}"
 
 
+class _Fixed(BaseModel):
+    code: list[str]
+
+
 def _repair(scene: ScenePlan, error: str) -> list[str] | None:
     prompt = (f"This {scene.code_lang} snippet is meant to be valid. Problem: {error}.\n"
               "Return the corrected snippet as JSON {\"code\": [lines]}, each line under 45 characters, same meaning, "
               "no markdown.\n\n" + "\n".join(scene.code))
     try:
-        r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-            "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "messages": [{"role": "user", "content": prompt}],
-            "format": {"type": "object", "properties": {"code": {"type": "array", "items": {"type": "string"}}}, "required": ["code"]},
-            "options": config.ollama_options({"temperature": 0.1, "num_predict": 300}),
-        }, timeout=120)
-        r.raise_for_status()
-        fixed = [ln.rstrip()[:MAX_CODE_COLS] for ln in json.loads(r.json()["message"]["content"])["code"] if ln.strip()]
+        fixed = [ln.rstrip()[:MAX_CODE_COLS] for ln in llm.ask_json(_Fixed, prompt, options={"temperature": 0.1, "num_predict": 300},
+                                                                      retries=0, timeout=120, expected_tokens=150).code if ln.strip()]
         return fixed if fixed and _python_error(fixed) is None else None
     except (requests.RequestException, ValueError, KeyError):
         return None

@@ -16,7 +16,7 @@ import re
 
 import requests
 
-from . import config
+from . import config, llm
 from .schema import LessonPlan, ScenePlan, normalize
 
 log = logging.getLogger(__name__)
@@ -81,14 +81,7 @@ def _ask(scene: ScenePlan, plan: LessonPlan, i: int, concept: str, domain: str, 
         f"in the same order. Each item at most 5 words. Return the scene as JSON with template, heading, narration and the fields the template needs."
     )
     try:
-        r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-            "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "messages": [{"role": "user", "content": prompt}],
-            "format": ScenePlan.model_json_schema(),
-            "options": config.ollama_options({"temperature": 0.5, "num_ctx": 4096, "num_predict": 450}),
-        }, timeout=120)
-        r.raise_for_status()
-        new = ScenePlan.model_validate(json.loads(r.json()["message"]["content"]))
+        new = llm.ask_json(ScenePlan, prompt, options={"temperature": 0.5, "num_predict": 450}, retries=0, timeout=120, expected_tokens=250)
     except (requests.RequestException, ValueError, KeyError) as e:
         log.warning("director: scene %d call failed: %s", i + 1, e)
         return None

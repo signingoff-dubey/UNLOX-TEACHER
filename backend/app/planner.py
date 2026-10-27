@@ -8,7 +8,7 @@ import re
 import requests
 from pydantic import ValidationError
 
-from . import config
+from . import config, llm
 from .knowledge import Passage, pages_passages, retrieve
 from .schema import ICONS, LessonPlan, ScenePlan, normalize
 
@@ -109,12 +109,12 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
                     f"Start it with `ollama serve` and `ollama pull {config.OLLAMA_MODEL}`. ({e})"
                 ) from e
-            plan = normalize(LessonPlan.model_validate_json(raw))
+            plan = normalize(LessonPlan.model_validate_json(llm.extract_json(raw)))
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
             last_error = f"invalid JSON: {str(e)[:400]}"
             log.warning("Plan attempt %d invalid: %s", attempt + 1, last_error)
             continue
-        issue = quality_issue(plan)
+        issue = quality_issue(plan, min_scenes=2 if (series and series.get('segment')) else 4)
         if not issue:
             return plan, sources
         log.info("Plan attempt %d needs work: %s", attempt + 1, issue)
@@ -131,11 +131,11 @@ def _words(plan: LessonPlan) -> int:
     return sum(len(s.narration.split()) for s in plan.scenes)
 
 
-def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3) -> str | None:
+def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_scenes: int = 4) -> str | None:
     """Cheap checks for the ways small models write weak lessons. Returns feedback for a retry.
     Narration length is NOT checked here: the writer agent in review.py lengthens short scenes."""
-    if len(plan.scenes) < 4:
-        return "use 5-7 scenes: a hook, 2-4 teaching scenes, a quiz and a summary"
+    if len(plan.scenes) < min_scenes:
+        return "use 5-7 scenes: a hook, 2-4 teaching scenes, a quiz and a summary" if min_scenes >= 4 else f"write at least {min_scenes} scenes"
     lists = [set(i.lower() for i in s.items) for s in plan.scenes if s.template not in ("summary", "quiz") and s.items]
     for a in range(len(lists)):
         for b in range(a + 1, len(lists)):
@@ -231,7 +231,23 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
     user = (f"Create a lesson plan that explains: {concept}\n"
             f"Audience: {audience}.\n"
             f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
-    if series:
+    if series and series.get("segment"):
+        # One part of ONE continuous video: it must flow on from the part before and into the part after.
+        scenes = max(2, min(5, round(duration_s / 8)))
+        user = (f"Create part {series['index']} of {series['total']} of ONE continuous video titled \"{series['title']}\" about {series['topic']}.\n"
+                f"Audience: {audience}.\n"
+                f"This part teaches only: {series['this']}\n"
+                f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
+        if series["previous"]:
+            user += ("\nAlready covered in earlier parts (do NOT repeat, build on it): " + " | ".join(series["previous"][-4:])
+                     + "\nDo NOT start with a title scene and do not greet or say welcome: continue straight on; the first scene links to what was just taught in a few words.")
+        else:
+            user += "\nThe first scene is a title scene that hooks the student with a question or a surprising fact."
+        if series["next"]:
+            user += f"\nNo quiz scene and no summary scene in this part. The last scene ends with one sentence that leads into: {series['next']}."
+        else:
+            user += "\nThis is the last part: it ends with a quiz scene and then a summary scene."
+    elif series:
         user += (f"\nThis is episode {series['index']} of {series['total']} in the video course \"{series['title']}\" on {series['topic']}."
                  f"\nThis episode teaches only: {series['this']}")
         if series["previous"]:
@@ -246,39 +262,10 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
                  "but explain in your own simple words. Ignore anything not about the concept:\n" + context)
     if previous_error:
         user += f"\n\nYour previous lesson plan had a problem: {previous_error}. Write a better one."
-    resp = requests.post(
-        f"{config.OLLAMA_URL}/api/chat",
-        json={
-            "model": config.OLLAMA_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            "format": LessonPlan.model_json_schema(),
-            "stream": True,
-            "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "options": config.ollama_options({"temperature": 0.4, "num_ctx": 8192 if context else 4096}),
-        },
-        timeout=300,
-        stream=True,
-    )
-    resp.raise_for_status()
-    # Streamed: each chunk is about one token, so progress = tokens so far / tokens a lesson of this length needs.
-    expected = max(350, duration_s * 12)
-    parts: list[str] = []
-    n = 0
-    for line in resp.iter_lines():
-        if not line:
-            continue
-        chunk = json.loads(line)
-        parts.append(chunk.get("message", {}).get("content", ""))
-        n += 1
-        if n % 6 == 0:
-            on_progress(min(n / expected, 0.97))
-        if chunk.get("done"):
-            break
-    on_progress(1.0)
-    return "".join(parts)
+    # No Ollama `format`: constrained decoding made this call 2-4x slower (see llm.py). The schema goes in the prompt instead.
+    return llm.stream_chat(
+        [{"role": "system", "content": llm.with_schema(SYSTEM_PROMPT, LessonPlan)}, {"role": "user", "content": user}],
+        {"temperature": 0.4}, expected_tokens=max(350, duration_s * 12), on_progress=on_progress)
 
 
 def ollama_generate(prompt: str, max_tokens: int = 512) -> str:

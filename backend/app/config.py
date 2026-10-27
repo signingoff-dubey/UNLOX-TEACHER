@@ -31,7 +31,10 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 # "0" unloads the LLM from the GPU right after planning, freeing VRAM for TTS.
 # How long the LLM stays loaded after planning. Keeping it loaded makes repeat lessons fast; "0" frees VRAM at once.
-OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
+# The model stays loaded between lessons (a cold load is ~24 s). One context size for EVERY call: Ollama reloads the model
+# whenever num_ctx changes between requests, which used to happen between the planner (8192/4096) and the other agents.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "15m")
+NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "6144"))
 # LLM layers on the GPU: "auto" = Ollama offloads as many layers as fit in VRAM (rest run on CPU),
 # a number = exactly that many layers, 0 = CPU only. DEVICE=cpu forces 0.
 OLLAMA_NUM_GPU = os.getenv("OLLAMA_NUM_GPU", "auto")
@@ -95,8 +98,9 @@ def torch_device() -> str:
 
 
 def ollama_options(base: dict) -> dict:
-    """Add the GPU-layer setting to an Ollama `options` dict."""
+    """Add the GPU-layer and context settings to an Ollama `options` dict (the same num_ctx for every call, see NUM_CTX)."""
     opts = dict(base)
+    opts["num_ctx"] = NUM_CTX
     if DEVICE == "cpu":
         opts["num_gpu"] = 0
     elif OLLAMA_NUM_GPU != "auto":
