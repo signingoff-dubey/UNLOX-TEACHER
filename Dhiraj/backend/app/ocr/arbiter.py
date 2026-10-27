@@ -7,11 +7,11 @@ non-words. When the two disagree a lot, the page is marked low-confidence so ret
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
 
+from ..words import words
 from .types import EngineResult
 
 LOOP_NGRAM = 30
@@ -29,7 +29,6 @@ SCRIPTS: dict[str, tuple[int, int]] = {
     "te": (0x0C00, 0x0C7F), "kn": (0x0C80, 0x0CFF), "ml": (0x0D00, 0x0D7F),
 }
 
-_WORD = re.compile(r"\w+", re.UNICODE)
 
 
 @dataclass
@@ -68,10 +67,10 @@ def script_validity(text: str, lang: str) -> float:
 def lexicon_hit_rate(text: str, lexicon: set[str] | None) -> float | None:
     if not lexicon:
         return None
-    words = [w.lower() for w in _WORD.findall(text) if not w.isdigit()]
-    if not words:
+    tokens = [w.lower() for w in words(text) if not w.isdigit()]
+    if not tokens:
         return 0.0
-    return sum(1 for w in words if w in lexicon) / len(words)
+    return sum(1 for w in tokens if w in lexicon) / len(tokens)
 
 
 def _native_share(text: str, lang: str) -> float:

@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import hashlib
-import re
 
 import numpy as np
 
-_WORD = re.compile(r"\w+", re.UNICODE)
+from app.words import WORD as _WORD
 
 
 def _bucket(word: str, dim: int) -> int:

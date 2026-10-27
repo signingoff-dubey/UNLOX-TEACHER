@@ -75,3 +75,18 @@ def test_ivfpq_path_is_searchable_and_read_only(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         col.delete_section("w1", 0)
     col.close()
+
+
+def test_refresh_text_index_rebuilds_keyword_index_and_lexicons(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    write_jsonl(raw / "indic.jsonl", [
+        {"doc_id": "h1", "source": "wikipedia-hi", "title": "प्रकाश संश्लेषण", "lang": "hi", "url": "", "license": "",
+         "text": "प्रकाश संश्लेषण पौधों में होता है। " * 40}])
+    build_library.build(raw, tmp_path / "index", ["indic"], FakeEmbedder(), log=lambda *_: None)
+    build_library.refresh_text_index(raw, tmp_path / "index", ["indic"], log=lambda *_: None)
+    from app.rag.store import Collection
+    col = Collection(tmp_path / "index", FakeEmbedder())
+    assert col.keyword("संश्लेषण", 3) and col.count() > 0
+    col.close()
+    assert "संश्लेषण" in (tmp_path / "lexicon_hi.txt").read_text(encoding="utf-8").split()

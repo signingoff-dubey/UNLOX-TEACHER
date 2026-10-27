@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import re
 import shutil
 import sqlite3
 import sys
@@ -27,13 +26,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.rag.chunker import chunk_section  # noqa: E402
 from app.rag.paths import LIBRARY_DIR  # noqa: E402
 from app.rag.store import FIELDS, Collection  # noqa: E402
+from app.words import words  # noqa: E402
 
 SOURCES = ["vital", "simple", "indic", "ncert", "openstax", "archive"]
 NLIST, PQ_M, PQ_BITS, TRAIN = 4096, 48, 8, 200_000
 FLAT_BELOW = 39 * NLIST                 # faiss needs >= 39 training points per list
 EMBED_BATCH = 4096
 LEXICON_SIZE = 200_000
-_WORD = re.compile(r"\w+", re.UNICODE)
 
 
 def records(raw_dir: Path, sources: list[str]):
@@ -82,7 +81,7 @@ def build(raw_dir: Path, out_dir: Path, sources: list[str], embedder, log=print)
             pending += chunk_section(meta, (0, rec["title"], 0, 0), [(0, rec["text"], False)],
                                      embedder.count_tokens)
             lex = lexicons.setdefault(rec.get("lang") or "en", Counter())
-            lex.update(w.lower() for w in _WORD.findall(rec["text"][:100_000]) if not w.isdigit())
+            lex.update(w.lower() for w in words(rec["text"][:100_000]) if not w.isdigit())
             if len(pending) >= EMBED_BATCH:
                 flush()
         flush()
@@ -108,9 +107,7 @@ def build(raw_dir: Path, out_dir: Path, sources: list[str], embedder, log=print)
     col._save_meta()
     col.close()
 
-    for lang, counts in lexicons.items():
-        (out_dir.parent / f"lexicon_{lang}.txt").write_text(
-            "\n".join(w for w, _ in counts.most_common(LEXICON_SIZE)), encoding="utf-8")
+    write_lexicons(lexicons, out_dir.parent)
 
     old = out_dir.parent / f"{out_dir.name}.old"
     if old.exists():
@@ -124,11 +121,39 @@ def build(raw_dir: Path, out_dir: Path, sources: list[str], embedder, log=print)
     return total
 
 
+def write_lexicons(lexicons: dict[str, Counter], folder: Path) -> None:
+    for lang, counts in lexicons.items():
+        (folder / f"lexicon_{lang}.txt").write_text(
+            "\n".join(w for w, _ in counts.most_common(LEXICON_SIZE)), encoding="utf-8")
+
+
+def refresh_text_index(raw_dir: Path, out_dir: Path, sources: list[str], log=print) -> None:
+    """Rebuild only the keyword index and lexicons (after a tokenizer change); embeddings are kept."""
+    class _Dims:                           # Collection only needs the dimension once meta.json exists
+        name, dim = "existing", 384
+    col = Collection(out_dir, _Dims())
+    t0 = time.perf_counter()
+    col.rebuild_fts()
+    col.close()
+    log(f"keyword index rebuilt in {time.perf_counter() - t0:.0f}s")
+    lexicons: dict[str, Counter] = {}
+    for rec in records(raw_dir, sources):
+        lexicons.setdefault(rec.get("lang") or "en", Counter()).update(
+            w.lower() for w in words(rec["text"][:100_000]) if not w.isdigit())
+    write_lexicons(lexicons, out_dir.parent)
+    log(f"lexicons rewritten: {', '.join(sorted(lexicons))}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sources", nargs="*", default=SOURCES, choices=SOURCES)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--refresh-text-index", action="store_true",
+                    help="only rebuild the keyword index and lexicons of the existing library")
     args = ap.parse_args()
+    if args.refresh_text_index:
+        refresh_text_index(LIBRARY_DIR / "raw", LIBRARY_DIR / "index", args.sources)
+        return
     from app.rag.embed import Embedder
     build(LIBRARY_DIR / "raw", LIBRARY_DIR / "index", args.sources, Embedder(device=args.device, batch_size=256))
 
