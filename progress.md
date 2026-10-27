@@ -1,9 +1,15 @@
 # Progress Log
 
-## Current Version: v0.10.0
+## Current Version: v0.11.0
 ## Status: In Progress (pre-Gate 1)
 
 ---
+
+## [v0.11.0] — 2026-10-27
+### What's New
+- **Intro splash on every page load** (`web/src/shell/Intro.tsx`, logo drawing in `logoPaths.ts`, from Niharika's `intro-animation/`); click or Esc skips it; reduced-motion skips it
+- **Wordmark in the top-left corner**: the logo mark is gone, the sidebar shows only the name in the splash lettering (`Wordmark.tsx`); icon-only sidebar shows its first letter
+- **Voice agent faster**: Whisper now runs on the GPU (cuBLAS/cuDNN 9 DLLs live in torch's `lib` folder, added to the DLL path in `stt.py`, CPU fallback kept); recordings decode in-process (WAV with the standard library, webm/opus with PyAV) instead of starting ffmpeg. A short question: 3.4 s + 1.4 s decode -> 0.25 s
 
 ## [v0.10.0] — 2026-10-27
 ### What's New

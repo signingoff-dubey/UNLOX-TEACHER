@@ -73,6 +73,7 @@ PIPER_DIR = Path(os.getenv("PIPER_DIR", MODELS_DIR / "piper"))
 # Speech to text for the voice assistant (faster-whisper, CPU). A folder under models/ or a size name like "small".
 STT_MODEL = os.getenv("STT_MODEL", str(MODELS_DIR / "whisper-small"))
 STT_THREADS = int(os.getenv("STT_THREADS", "4"))
+STT_DEVICE = os.getenv("STT_DEVICE", "auto")      # "cpu" to keep speech recognition off the GPU
 
 DEVICE = os.getenv("DEVICE", "auto")                 # auto | cuda | cpu
 # Load translation + TTS models at startup so the first lesson is fast.

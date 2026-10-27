@@ -6,6 +6,7 @@ import { DotNumber } from "../ds/DotNumber";
 import { Glyph } from "../ds/Glyph";
 import { useRewards } from "../rewards/RewardsContext";
 import { WeekRow } from "../pages/RewardsPage";
+import { Wordmark } from "./Wordmark";
 import type { HomeworkMeta } from "../pages/HomeworkPage";
 
 export type SidebarProps = {
@@ -34,7 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = (p) => {
   return (
     <aside className={p.screen === "lesson" ? "side compact" : "side"} aria-label="Chanakya">
       <button type="button" className="brand" onClick={p.onHome} aria-label="Chanakya home">
-        <span className="brand-mark" aria-hidden><i /></span><span className="lbl">chanakya</span>
+        <Wordmark height={p.screen === "lesson" ? 30 : 26} short={p.screen === "lesson"} />
       </button>
 
       <nav className="side-nav" aria-label="Pages">

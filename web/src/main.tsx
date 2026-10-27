@@ -4,6 +4,7 @@ import App from "./App";
 import { getApiBase } from "./api";
 import { loadFonts } from "./remotion/fonts";
 import { RewardsProvider } from "./rewards/RewardsContext";
+import { Intro } from "./shell/Intro";
 import "@fontsource/figtree/400.css";
 import "@fontsource/figtree/500.css";
 import "@fontsource/figtree/600.css";
@@ -20,5 +21,6 @@ createRoot(document.getElementById("root")!).render(
     <RewardsProvider>
       <App />
     </RewardsProvider>
+    <Intro />
   </React.StrictMode>,
 );

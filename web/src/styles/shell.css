@@ -175,3 +175,9 @@
 }
 @media (max-width: 1180px) { .board.lesson-board { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .has-lesson { grid-template-columns: 1fr; } .side.compact { flex-direction: row; justify-content: space-between; } .side.compact .side-nav { flex-direction: row; margin: 0; } }
+
+/* ---------- the opening animation (shell/Intro.tsx) and the wordmark ---------- */
+.intro { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #F6F6F6; cursor: pointer; will-change: transform; }
+.intro svg { width: min(86vw, 980px); height: auto; overflow: visible; }
+.brand { color: var(--ink); }
+.brand svg { display: block; }

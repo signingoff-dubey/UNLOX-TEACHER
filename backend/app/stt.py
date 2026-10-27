@@ -7,6 +7,7 @@ wrong guess is avoided by letting Whisper detect between the hint and English.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import threading
 from pathlib import Path
@@ -24,6 +25,36 @@ class SttUnavailable(RuntimeError):
     pass
 
 
+def _gpu_model(cls, source):
+    """Whisper on the GPU: 0.2 s for a short question instead of 3.4 s on the CPU. The cuBLAS and cuDNN 9 DLLs it needs ship inside
+    PyTorch's `lib` folder (this venv has a CUDA build of torch); Windows only finds them if that folder is added to the DLL search path.
+    A warm-up run proves the GPU path works end to end (a missing library only shows up when the first audio is encoded)."""
+    if config.STT_DEVICE == "cpu":
+        return None
+    try:
+        import numpy as np
+        import torch
+        if not torch.cuda.is_available():
+            return None
+        lib = Path(torch.__file__).parent / "lib"
+        if hasattr(os, "add_dll_directory") and lib.exists():
+            os.add_dll_directory(str(lib))
+        model = cls(source, device="cuda", compute_type="int8_float16")
+        list(model.transcribe(np.zeros(16000, dtype="float32"), beam_size=1)[0])
+        log.info("STT runs on the GPU")
+        return model
+    except Exception as e:  # noqa: BLE001  no GPU, no cuBLAS, or the GPU is full: the CPU does it
+        log.warning("STT on the GPU is not available (%s); using the CPU", str(e)[:160])
+        return None
+
+
+def _cpu_model(cls, source):
+    try:
+        return cls(source, device="cpu", compute_type="int8", cpu_threads=config.STT_THREADS)
+    except Exception as e:  # noqa: BLE001  missing weights (offline) or a bad path
+        raise SttUnavailable(f"Could not load the speech model '{source}': {e}") from e
+
+
 def _load():
     global _model
     if _model is None:
@@ -34,10 +65,7 @@ def _load():
         source = config.STT_MODEL
         if not Path(source).exists() and "/" not in source and source not in ("tiny", "base", "small", "medium"):
             raise SttUnavailable(f"STT model '{source}' not found")
-        try:
-            _model = WhisperModel(source, device="cpu", compute_type="int8", cpu_threads=config.STT_THREADS)
-        except Exception as e:  # noqa: BLE001  missing weights (offline) or a bad path
-            raise SttUnavailable(f"Could not load the speech model '{source}': {e}") from e
+        _model = _gpu_model(WhisperModel, source) or _cpu_model(WhisperModel, source)
         log.info("STT model loaded: %s", source)
     return _model
 
@@ -71,10 +99,62 @@ def transcribe(audio: bytes, lang_hint: str | None = None, vocabulary: str = "")
     return {"text": text, "lang": info.language, "duration_s": round(samples.size / 16000, 2)}
 
 
+def _decode_wav(audio: bytes):
+    """16-bit PCM WAV -> 16 kHz mono float32 with the standard library; None for anything else (ffmpeg handles it)."""
+    import io
+    import wave
+
+    import numpy as np
+    try:
+        with wave.open(io.BytesIO(audio)) as w:
+            if w.getsampwidth() != 2:
+                return None
+            rate, ch = w.getframerate(), w.getnchannels()
+            x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+    except (wave.Error, EOFError):
+        return None
+    if ch > 1:
+        x = x.reshape(-1, ch).mean(axis=1)
+    if rate != 16000 and x.size:
+        n = int(round(x.size * 16000 / rate))
+        x = np.interp(np.linspace(0, x.size - 1, n), np.arange(x.size), x).astype(np.float32)
+    return x
+
+
+def _decode_av(audio: bytes):
+    """Any container PyAV can open -> 16 kHz mono float32, or None (then ffmpeg is tried)."""
+    import io
+
+    import numpy as np
+    try:
+        import av
+        out = []
+        with av.open(io.BytesIO(audio)) as c:
+            stream = c.streams.audio[0]
+            rs = av.AudioResampler(format="flt", layout="mono", rate=16000)
+            for frame in c.decode(stream):
+                for f in rs.resample(frame):
+                    out.append(f.to_ndarray().reshape(-1))
+            for f in rs.resample(None):
+                out.append(f.to_ndarray().reshape(-1))
+        return np.concatenate(out).astype(np.float32) if out else None
+    except Exception as e:  # noqa: BLE001
+        log.debug("PyAV could not decode the recording (%s); using ffmpeg", e)
+        return None
+
+
 def _decode(audio: bytes):
     """Any browser container (webm/opus, ogg, wav, mp4) -> 16 kHz mono float32, using the ffmpeg already needed for export."""
     import numpy as np
-    proc = subprocess.run(["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"],
+    if audio[:4] == b"RIFF" and audio[8:12] == b"WAVE":
+        wav = _decode_wav(audio)                      # no process to start: that alone cost 1-2 s on Windows
+        if wav is not None:
+            return wav
+    got = _decode_av(audio)                           # webm/opus from the browser, in this process (PyAV is installed with faster-whisper)
+    if got is not None:
+        return got
+    proc = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-probesize", "64k", "-analyzeduration", "0", "-threads", "1",
+                           "-i", "pipe:0", "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"],
                           input=audio, capture_output=True)
     if proc.returncode != 0 or not proc.stdout:
         raise ValueError("That recording could not be read. Try again.")
