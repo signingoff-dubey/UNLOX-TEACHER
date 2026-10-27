@@ -28,8 +28,19 @@ PROMPT = (
 )
 
 
+FIGURE_PROMPT = (
+    "This is a figure from a textbook or worksheet. In two or three plain sentences say what it shows. "
+    "Copy every label, title, axis name, number and unit exactly as written. Mention only what you can actually see: if something is unclear, "
+    "say it is unclear instead of guessing. Do not use markdown."
+)
+
+
 class ImageError(ValueError):
     pass
+
+
+class VisionUnavailable(RuntimeError):
+    """The vision model is not installed or Ollama is not running: stop asking, the rest would fail the same way."""
 
 
 def _kind(data: bytes) -> str:
@@ -119,3 +130,34 @@ def context(images: list[str], limit: int = 3500) -> str:
 
 def topics(images: list[str]) -> str:
     return "; ".join(t for t in (topic_of(cached(s)) for s in images or []) if t)
+
+
+def describe_figure(data: bytes) -> str:
+    """What one picture cut out of a PDF shows, in two or three sentences (cached by the picture's hash, so it is read once ever)."""
+    sha = hashlib.sha256(data).hexdigest()[:16]
+    cache = IMAGES_DIR / f"fig_{sha}.txt"
+    if cache.exists():
+        return cache.read_text(encoding="utf-8")
+    from PIL import Image, ImageOps
+    with Image.open(io.BytesIO(data)) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((MAX_SIDE, MAX_SIDE))
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=88)
+    body = {"model": VISION_MODEL, "stream": False, "keep_alive": "30s",
+            "messages": [{"role": "user", "content": FIGURE_PROMPT, "images": [base64.b64encode(out.getvalue()).decode()]}],
+            "options": config.ollama_options({"temperature": 0.1, "num_predict": 260})}
+    try:
+        r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=body, timeout=300)
+        if r.status_code == 404:
+            raise VisionUnavailable(f"'{VISION_MODEL}' is not installed in Ollama (ollama pull {VISION_MODEL})")
+        r.raise_for_status()
+    except requests.ConnectionError as e:
+        raise VisionUnavailable(f"Ollama is not running: {e}") from e
+    except requests.RequestException as e:
+        raise RuntimeError(f"The figure could not be read: {e}") from e
+    text = " ".join(r.json()["message"]["content"].split())
+    if text:
+        cache.write_text(text, encoding="utf-8")
+    return text
+

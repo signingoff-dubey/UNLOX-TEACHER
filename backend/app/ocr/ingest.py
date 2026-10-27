@@ -27,13 +27,15 @@ from typing import Callable
 import fitz
 from rapidfuzz import fuzz
 
+from .. import config
 from ..gpu import big_slot
 from ..rag import search as rag_search
 from ..rag.chunker import Section, chunk_section, sections_from_toc
-from . import digest
+from . import digest, figures
 from .arbiter import choose
 from .paths import UNLIMITED_BATCH, UNLIMITED_SCRIPTS_DISABLED
 from .tesseract import dpi_for as tess_dpi, ocr_image, ocr_pdf, tess_langs
+from .markdown import page_markdown
 from .triage import classify_page, read_toc, render_png
 from .types import EngineResult, PageRecord, TocEntry
 from .unlimited import OcrOOM
@@ -45,6 +47,7 @@ MAX_PAGES = 1000
 UNLIMITED_DPI = 200
 FRONT_PAGES = 15         # scanned books without bookmarks: OCR their contents pages first
 FOCUS_MATCH = 80
+FORMAT = 2               # PageRecord.fmt of a digital page stored as Markdown
 
 Progress = Callable[[str, float], None]
 
@@ -78,6 +81,21 @@ def save_page(sha: str, rec: PageRecord) -> None:
     tmp = d / f"{rec.page}.json.tmp"
     tmp.write_text(json.dumps(rec.to_json(), ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, d / f"{rec.page}.json")
+
+
+_page_lock = threading.Lock()
+
+
+def update_page(sha: str, page: int, change: Callable[[PageRecord], None]) -> PageRecord | None:
+    """Load the page's record fresh from disk, change it, save it. The OCR upgrade and the figure pass write to the same files from two
+    threads; going through here (under one lock, from a fresh copy) means neither overwrites what the other just stored."""
+    with _page_lock:
+        rec = load_page(sha, page)
+        if rec is None:
+            return None
+        change(rec)
+        save_page(sha, rec)
+        return rec
 
 
 def _write_info(sha: str, info: dict) -> None:
@@ -177,13 +195,13 @@ def _section_of(sections: list[Section], page: int) -> Section:
 
 def _reindex(col, sha: str, meta: dict, section: Section, records: dict[int, PageRecord], count) -> None:
     idx, _, first, last = section
-    recs = [records[p] for p in range(first, last + 1) if p in records and records[p].text.strip()]
+    recs = [records[p] for p in range(first, last + 1) if p in records and records[p].indexed_text().strip()]
     col.delete_section(sha, idx)
     if not recs:
         return
     engines = "+".join(sorted({r.engine for r in recs}))
     chunks = chunk_section({**meta, "engine": engines}, section,
-                           [(r.page, r.text, r.low_confidence) for r in recs], count)
+                           [(r.page, r.indexed_text(), r.low_confidence) for r in recs], count)
     col.add(chunks)
 
 
@@ -232,7 +250,7 @@ def _read_order(todo: list[int], focus_pages: list[int], front_pages: list[int])
 # ---------------------------------------------------------------- pass 1
 
 def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progress, *,
-               unlimited=None, embedder=None, notes: bool = True, digester=None) -> dict:
+               unlimited=None, embedder=None, notes: bool = True, digester=None, describer=None) -> dict:
     path = Path(path)
     n = validate_pdf(path)
     sha = file_sha(path)
@@ -259,11 +277,12 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
         records: dict[int, PageRecord] = {}
         for p in range(1, n + 1):
             rec = load_page(sha, p)
+            if rec is not None and rec.kind == "digital" and rec.fmt < FORMAT:
+                rec = None                                       # stored as plain text by an older version: redo it as Markdown (cheap)
             if rec is None:
                 page = doc[p - 1]
-                if classify_page(page) == "digital":
-                    text = page.get_text("text").strip()
-                    rec = PageRecord(p, "digital", text, "text-layer", status="final")
+                if classify_page(page, lang) == "digital":
+                    rec = PageRecord(p, "digital", page_markdown(doc, p - 1), "text-layer", status="final", fmt=FORMAT)
                 else:
                     rec = PageRecord(p, "scanned")
                 save_page(sha, rec)
@@ -308,6 +327,7 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
             if s[0] not in indexed:
                 _reindex(col, sha, meta, s, records, embedder.count_tokens)
                 indexed.add(s[0])
+        figs = figures.find(doc) if describer is not False and (describer is not None or config.PDF_FIGURES) else []
 
     if fast is not None:                         # pass 1 is done: hand the collection back to the CPU embedder, free the GPU
         col.embedder = embedder
@@ -323,7 +343,7 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
 
     info = {"sha": sha, "title": title, "pages": n, "digital": n - len(scanned), "scanned": len(scanned),
             "lang": lang, "toc": [t.__dict__ for t in toc], "focus_pages": focus_pages,
-            "indexed_sections": sorted(indexed)}
+            "indexed_sections": sorted(indexed), "figures": len(figs)}
     _write_info(sha, info)
     progress("PDF is searchable", 1.0)
 
@@ -334,7 +354,77 @@ def ingest_pdf(path: Path, lang: str | None, focus: str | None, progress: Progre
                  if records[p].kind == "scanned" and records[p].status != "final"]
         if order:
             _start_upgrade(sha, src, sections, meta, lang or "en", order, unlimited, embedder)
+    if figs:
+        _start_figures(sha, src, sections, meta, figures.order(figs, focus_pages), embedder, describer)
     return {k: v for k, v in info.items() if k != "indexed_sections"}
+
+
+# ---------------------------------------------------------------- figures: what the pictures in the PDF show (llava, in the background)
+
+_fig_threads: dict[str, threading.Thread] = {}
+
+
+def _fig_state(sha: str) -> dict:
+    p = upload_dir(sha) / "figures.json"
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"found": 0, "described": 0, "state": "none"}
+
+
+def _write_fig_state(sha: str, **kw) -> None:
+    (upload_dir(sha) / "figures.json").write_text(json.dumps({**_fig_state(sha), **kw}), encoding="utf-8")
+
+
+def _start_figures(sha, src, sections, meta, order, embedder, describer) -> None:
+    with _up_lock:
+        t = _fig_threads.get(sha)
+        if t and t.is_alive():
+            return
+        _write_fig_state(sha, found=len(order), described=0, state="describing")
+        t = threading.Thread(target=_describe_figures, name=f"figures-{sha}", daemon=True, args=(sha, src, sections, meta, order, embedder, describer))
+        _fig_threads[sha] = t
+        t.start()
+
+
+def _describe_figures(sha, src, sections, meta, order, embedder, describer) -> None:
+    """One figure at a time, in the order the student needs them. Holds the big GPU slot like the OCR upgrade does and steps aside whenever a
+    lesson needs the language model; every description is saved on its page and that section is searched again with it."""
+    from .. import vision
+    describe = describer or vision.describe_figure
+    col = rag_search.writable_collection(f"upload:{sha}", embedder)
+    done, i = 0, 0
+    state = "done"
+    try:
+        with fitz.open(src) as doc:
+            while i < len(order):
+                with big_slot.hold("vision"):
+                    while i < len(order) and not big_slot.should_yield("vision"):
+                        f = order[i]
+                        try:
+                            caption = describe(figures.png_of(doc, f["xref"]))
+                        except vision.VisionUnavailable as e:
+                            log.warning("PDF figures of %s skipped: %s", sha, e)
+                            state, i = "unavailable", len(order)
+                            break
+                        except Exception as e:  # noqa: BLE001  one picture that cannot be read does not stop the others
+                            log.warning("figure %s of %s could not be described: %s", f["xref"], sha, e)
+                            caption = ""
+                        i += 1
+                        if not caption:
+                            continue
+                        done += 1
+                        rec = update_page(sha, f["page"], lambda r, x=f["xref"], c=caption: r.figures.append({"xref": x, "caption": c}))
+                        if rec is not None:
+                            section = _section_of(sections, f["page"])
+                            records = {p: load_page(sha, p) for p in range(section[2], section[3] + 1)}
+                            _reindex(col, sha, meta, section, {p: r for p, r in records.items() if r}, embedder.count_tokens)
+                        _write_fig_state(sha, described=done)
+    except Exception:
+        log.exception("describing the figures of %s stopped", sha)
+        state = "error"
+    finally:
+        _write_fig_state(sha, state=state, described=done)
 
 
 # ---------------------------------------------------------------- pass 2
@@ -365,7 +455,7 @@ def _start_upgrade(sha, src, sections, meta, lang, order, unlimited, embedder) -
 def wait_for_upgrades(timeout: float | None = None) -> bool:
     """Join running pass-2 threads (tests, shutdown). True if all finished."""
     with _up_lock:
-        threads = list(_upgraders.values())
+        threads = list(_upgraders.values()) + list(_fig_threads.values())
     for t in threads:
         t.join(timeout)
     return not any(t.is_alive() for t in threads)
@@ -399,11 +489,14 @@ def _upgrade(sha, src, sections, meta, lang, order, unlimited, embedder) -> None
                             rec = records[p]
                             tess = EngineResult("tesseract", rec.tess_text, rec.tess_conf)
                             dec = choose(tess, res, lang, lexicon)
-                            rec.uni_text = res.text if res else ""
-                            rec.text, rec.engine = dec.text, dec.engine
-                            rec.agreement, rec.low_confidence = dec.agreement, dec.low_confidence
-                            rec.status = "final" if rec.text.strip() else "failed"
-                            save_page(sha, rec)
+
+                            def upgrade(r, res=res, dec=dec):                  # on a fresh copy of the page: figures stored meanwhile stay
+                                r.uni_text = res.text if res else ""
+                                r.text, r.engine = dec.text, dec.engine
+                                r.agreement, r.low_confidence = dec.agreement, dec.low_confidence
+                                r.status = "final" if r.text.strip() else "failed"
+
+                            records[p] = update_page(sha, p, upgrade) or rec
                         for s in {_section_of(sections, p) for p in pages[:len(results)]}:
                             _reindex(col, sha, meta, s, records, embedder.count_tokens)
                         i += len(results)
@@ -434,5 +527,6 @@ def upload_status(sha: str) -> dict | None:
         "failed": sum(r.status == "failed" for r in scanned),
         "low_confidence": sum(r.low_confidence for r in scanned),
         "state": "ocr" if pending else "upgrading" if running else "ready",
+        "figures": _fig_state(sha),
         "notes": digest.progress(upload_dir(sha), info["pages"]),
     }

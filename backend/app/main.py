@@ -31,11 +31,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("chanakya")
 
 
+def _warm_embeddings() -> None:
+    """The Ollama embedding model (teach-back, search) and, when memory allows, the PDF embedder, so the first answer and the first upload do not wait."""
+    try:
+        knowledge.embed(["warm up"], "")
+    except Exception as e:  # noqa: BLE001
+        log.info("embedding model not warmed: %s", e)
+    if resources.has_headroom(min_ram=4.0, min_vram=0.0):
+        try:
+            from .rag.embed import shared_embedder
+            shared_embedder()
+        except Exception as e:  # noqa: BLE001
+            log.info("PDF embedder not warmed: %s", e)
+
+
 def _warm_up() -> None:
     """Load the translation model, every voice, speech recognition and the language model now, so nobody waits for them later."""
     t0 = time.perf_counter()
     log.info("Warming up the models...")
-    steps = [("translation", translate.preload), ("voices", tts.preload)]
+    steps = [("translation", translate.preload), ("voices", tts.preload), ("embeddings", _warm_embeddings)]
     if config.PRELOAD_STT:                                       # off by default: it loads on the first spoken question (see stt.py)
         steps.append(("speech recognition", stt.preload))
     for name, fn in steps:
@@ -50,6 +64,7 @@ def _warm_up() -> None:
     except requests.RequestException as e:
         log.warning("Warm-up of the language model failed: %s", e)
     log.info("Models ready in %.1fs", time.perf_counter() - t0)
+    stt.warm_when_idle()                                          # speech recognition last, and only when the computer is idle
 
 
 @asynccontextmanager

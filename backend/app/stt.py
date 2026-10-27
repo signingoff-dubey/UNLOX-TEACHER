@@ -12,10 +12,15 @@ import subprocess
 import threading
 from pathlib import Path
 
+import hashlib
+import json
+
 from . import config, resources
 
 log = logging.getLogger(__name__)
 
+CACHE_DIR = config.MEDIA_DIR / "stt_cache"
+CACHE_MAX = 300                                                       # recordings kept; the oldest go first
 MAX_CLIP_BYTES = 8 * 1024 * 1024          # ~30 s of browser-recorded audio is far smaller
 _model = None
 _lock = threading.Lock()
@@ -114,12 +119,55 @@ def _detect(model, samples) -> str:
     return None
 
 
+def _cache_key(audio: bytes, lang_hint: str | None, vocabulary: str) -> str:
+    h = hashlib.sha1(audio)
+    h.update(f"|{config.STT_MODEL}|{lang_hint or 'auto'}|{vocabulary}".encode())
+    return h.hexdigest()
+
+
+def _cache_get(key: str) -> dict | None:
+    try:
+        return json.loads((CACHE_DIR / f"{key}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _cache_put(key: str, result: dict) -> None:
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (CACHE_DIR / f"{key}.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+        files = sorted(CACHE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+        for old in files[:max(0, len(files) - CACHE_MAX)]:
+            old.unlink(missing_ok=True)
+    except OSError:
+        pass                                                         # a cache that cannot be written is just a cache that is not there
+
+
+def warm_when_idle(delay_s: float = 45.0) -> None:
+    """Load the speech model in the background once the computer has nothing else to do, so the first spoken question is not the slow one."""
+    def run() -> None:
+        import time as _t
+        _t.sleep(delay_s)
+        from . import jobs
+        if jobs.active("lesson", "playlist", "langs") or not resources.has_headroom(min_ram=3.0, min_vram=0.8):
+            return                                                   # busy or short of memory: it loads on the first question instead
+        try:
+            _load()
+        except SttUnavailable as e:
+            log.info("speech model not warmed: %s", e)
+    threading.Thread(target=run, name="stt-warm", daemon=True).start()
+
+
 def transcribe(audio: bytes, lang_hint: str | None = None, vocabulary: str = "") -> dict:
     """Returns {text, lang, duration_s}. Empty text means silence/noise (the UI says "I did not catch that")."""
     if not audio:
         raise ValueError("No audio received")
     if len(audio) > MAX_CLIP_BYTES:
         raise ValueError("That recording is too long. Keep questions under 30 seconds.")
+    key = _cache_key(audio, lang_hint, vocabulary)
+    hit = _cache_get(key)
+    if hit is not None:
+        return {**hit, "cached": True}                          # the same recording again (a replayed demo, a retry): instant
     samples = _decode(audio)
     if samples.size < 1600:                                  # under 0.1 s: nothing was said
         return {"text": "", "lang": lang_hint or "en", "duration_s": 0.0}
@@ -134,7 +182,10 @@ def transcribe(audio: bytes, lang_hint: str | None = None, vocabulary: str = "")
             initial_prompt=(vocabulary or None) if lang == "en" else None,      # an English hint pulls other languages into English condition_on_previous_text=False,
         )
         text = " ".join(s.text.strip() for s in segments).strip()
-    return {"text": text, "lang": lang, "duration_s": round(samples.size / 16000, 2)}
+    result = {"text": text, "lang": lang, "duration_s": round(samples.size / 16000, 2)}
+    if text:
+        _cache_put(key, result)
+    return result
 
 
 def _decode_wav(audio: bytes):

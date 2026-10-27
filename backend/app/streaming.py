@@ -81,8 +81,28 @@ class ScenePreview:
         self._pp: list = []                    # ScenePlan objects made so far (after cleaning)
         self._track: dict | None = None
         self._announced = False
+        self._pre_q: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="scene-preview", daemon=True)
         self._thread.start()
+        self._pre = threading.Thread(target=self._pre_run, name="scene-precache", daemon=True)
+        self._pre.start()
+
+    # ---- the other languages: translate each finished scene into the cache (the final pass then finds most of it ready)
+    def _pre_run(self) -> None:
+        from .pipeline import _scene_texts
+        from .translate import precache
+        while True:
+            item = self._pre_q.get()
+            if item is None:
+                return
+            if self._closed or not self.rest:
+                continue
+            texts = [t for sc in item for t in _scene_texts(sc)]
+            for code in self.rest:
+                try:
+                    precache(texts, code)
+                except Exception as e:  # noqa: BLE001  pre-caching is a bonus, never a reason to fail
+                    log.info("pre-translation to %s skipped: %s", code, e)
 
     # ---- fed by the planner's token stream
     def feed(self, text: str) -> None:
@@ -117,6 +137,7 @@ class ScenePreview:
         with self._lock:
             self._closed = True
         self._q.put(None)
+        self._pre_q.put(None)
         self._thread.join(timeout=wait)
 
     # ---- the worker
@@ -163,6 +184,7 @@ class ScenePreview:
             self._track["tts_engines"] = sorted(set(self._track["tts_engines"]) | set(part["tts_engines"]))
             self._pp.extend(fresh)
             self._publish()
+        self._pre_q.put(fresh)
         if not self._announced:
             self._announced = True
             self.on_first()

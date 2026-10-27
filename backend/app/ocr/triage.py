@@ -3,18 +3,21 @@ from __future__ import annotations
 
 import fitz
 
+from .markdown import looks_garbled
 from .types import PageKind, TocEntry
 
-MIN_CHARS = 200          # fewer extractable characters than this -> treat as scanned
+MIN_CHARS = 40           # fewer extractable characters than this -> treat as scanned (a title page, a table or a figure page with a short caption is digital)
 MIN_LETTER_RATIO = 0.6   # junk text layers from bad embedded OCR are mostly symbols
 IMAGE_COVER = 0.8        # a page-sized picture with little text is a scan
 IMAGE_PAGE_MAX_CHARS = 600
 
 
-def classify_page(page: fitz.Page) -> PageKind:
+def classify_page(page: fitz.Page, lang: str | None = None) -> PageKind:
     text = page.get_text("text").strip()
     chars = [c for c in text if not c.isspace()]
     if len(text) < MIN_CHARS or not chars:
+        return "scanned"
+    if looks_garbled(text, lang):              # a font without a Unicode mapping: the text layer says gibberish, the picture is right
         return "scanned"
     if sum(c.isalpha() for c in chars) / len(chars) < MIN_LETTER_RATIO:
         return "scanned"

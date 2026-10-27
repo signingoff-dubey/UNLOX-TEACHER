@@ -38,6 +38,7 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 VISION_MODEL = os.getenv("VISION_MODEL", "llava:7b")        # reads photos (see vision.py)
+PDF_FIGURES = os.getenv("PDF_FIGURES", "1") == "1"            # describe the pictures inside an uploaded PDF with the vision model (see ocr/figures.py)
 # "0" unloads the LLM from the GPU right after planning, freeing VRAM for TTS.
 # How long the LLM stays loaded after planning. Keeping it loaded makes repeat lessons fast; "0" frees VRAM at once.
 # The model stays loaded between lessons (a cold load is ~24 s). One context size for EVERY call: Ollama reloads the model
@@ -84,7 +85,7 @@ PIPER_DIR = Path(os.getenv("PIPER_DIR", MODELS_DIR / "piper"))
 STT_MODEL = os.getenv("STT_MODEL", "medium")
 STT_THREADS = int(os.getenv("STT_THREADS", "4"))
 STT_DEVICE = os.getenv("STT_DEVICE", "auto")      # "cpu" to keep speech recognition off the GPU
-STT_MIN_FREE_GB = float(os.getenv("STT_MIN_FREE_GB", "3.0"))   # the speech model goes to the GPU only when this much VRAM is free, else the CPU
+STT_MIN_FREE_GB = float(os.getenv("STT_MIN_FREE_GB", "2.2"))   # the speech model goes to the GPU only when this much VRAM is free, else the CPU
 PRELOAD_STT = os.getenv("PRELOAD_STT", "0") == "1"           # off: it loads on the first spoken question and is released after MODEL_IDLE_S
 MODEL_IDLE_S = float(os.getenv("MODEL_IDLE_S", "600"))       # seconds of quiet after which speech recognition and the translator are released
 PIPER_CUDA = os.getenv("PIPER_CUDA", "0") == "1"             # Piper voices run on the CPU (fast enough); the GPU is for the language model

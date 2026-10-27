@@ -248,6 +248,12 @@ def finish_languages(lesson_id: str, codes: list[str], make_track, progress: Pro
     return {"id": lesson_id}
 
 
+def _scene_texts(scene) -> list[str]:
+    """Every string of one scene that is translated (what _translated_scenes collects), for pre-caching."""
+    s = scene.model_dump() if hasattr(scene, "model_dump") else scene
+    return [s[f] for f in TEXT_FIELDS if s.get(f)] + [item for f in LIST_FIELDS for item in s.get(f, []) if item]
+
+
 def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dict]], str]:
     """Translate every visible/spoken string in one batch, keeping the plan's structure."""
     scenes = [s.model_dump() for s in plan.scenes]

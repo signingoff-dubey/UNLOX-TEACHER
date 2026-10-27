@@ -1,7 +1,7 @@
 """Records shared by the OCR engines, the arbiter and ingestion."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 PageKind = Literal["digital", "scanned"]
@@ -34,6 +34,15 @@ class PageRecord:
     status: PageStatus = "pending"
     tess_text: str = ""            # each engine's own read, kept for re-arbitration and benchmarks
     uni_text: str = ""
+    fmt: int = 0                   # 2 = digital text stored as Markdown (older records hold the plain text layer and are redone)
+    figures: list = field(default_factory=list)      # [{"xref", "caption"}]: what llava says the page's pictures show
+
+    def indexed_text(self) -> str:
+        """The text that is searched and given to the planner: the page, plus what its figures show."""
+        caps = [f"[Figure on page {self.page}: {f['caption']}]" for f in self.figures if f.get("caption")]
+        if not caps:
+            return self.text
+        return "\n\n".join([self.text, *caps]).strip()
 
     def to_json(self) -> dict:
         return asdict(self)

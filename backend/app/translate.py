@@ -41,6 +41,25 @@ def _pick_device() -> str:
     return dev
 
 
+def _save_cache() -> None:
+    """Written to a temporary file and moved into place (lock held): a crash or a second backend never leaves half a cache."""
+    tmp = _CACHE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(_cache, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_CACHE_FILE)
+
+
+def precache(texts: list[str], lang: str) -> int:
+    """Translate `texts` now so a later lesson finds them in the cache (called while the planner is still writing). Only when it costs
+    nothing visible: the translator is already on the GPU or there is room for it, and there is memory to spare. Returns how many were new."""
+    if lang == "en" or config.TRANSLATE_BACKEND == "none" or not texts:
+        return 0
+    if _pick_device() != "cuda" or not resources.has_headroom(min_ram=2.5, min_vram=0.8):
+        return 0
+    before = sum(1 for t in texts if t.strip() and _key(lang, t) in _cache)
+    translate_batch(texts, lang, beams=2)                              # the lesson itself uses 4 beams; a pre-cached sentence is a little less polished, never wrong
+    return sum(1 for t in texts if t.strip() and _key(lang, t) in _cache) - before
+
+
 def _key(lang: str, text: str) -> str:
     return hashlib.sha1(f"{config.TRANSLATE_BACKEND}|{lang}|{text}".encode()).hexdigest()
 
@@ -51,7 +70,7 @@ def translate_batch(texts: list[str], lang: str, beams: int = 4) -> tuple[list[s
     (engine "untranslated" is reported back to the UI)."""
     if lang == "en" or config.TRANSLATE_BACKEND == "none":
         return list(texts), "none"
-    todo = sorted({t for t in texts if t.strip() and _key(lang, t) not in _cache})
+    todo = sorted({t for t in texts if t.strip() and _key(lang, t) not in _cache}, key=lambda t: (len(t), t))     # similar lengths share a batch: less padding, faster
     if todo:
         out, engine = _translate_with_fallbacks(todo, lang, beams)
         if out is None:
@@ -60,7 +79,7 @@ def translate_batch(texts: list[str], lang: str, beams: int = 4) -> tuple[list[s
         with _lock:
             for src, dst in zip(todo, out):
                 _cache[_key(lang, src)] = dst
-            _CACHE_FILE.write_text(json.dumps(_cache, ensure_ascii=False), encoding="utf-8")
+            _save_cache()
     return [_cache.get(_key(lang, t), t) if t.strip() else t for t in texts], config.TRANSLATE_BACKEND
 
 

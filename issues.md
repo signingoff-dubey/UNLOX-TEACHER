@@ -287,3 +287,23 @@
 **Fix:** `PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_mb:128`, a cap on torch's share of the card (`TORCH_VRAM_FRACTION`, 0.35), the allocator cache handed back after every translation batch (reserved memory 10.3 GB to 0.41 GB, process memory 14 GB to 4.4 GB in the same test), plus `resources.py` (below-normal priority, headroom gate, idle release), Piper on the CPU, Whisper lazy and VRAM-aware, no automatic study tools for course episodes 2+, 2 study builders, thread caps. See docs/presentation-mode.md
 **Files Changed:** backend/app/resources.py, config.py, stt.py, tts.py, translate.py, studio.py, playlist.py, pipeline.py, main.py
 **Status:** Resolved (see the measured numbers in progress.md v0.14.2)
+
+---
+
+## [ISSUE-034] — 2026-10-28
+**Title:** Digital PDF pages with little text were OCRed, and fonts that map to gibberish were trusted
+**Symptom:** a table page, a figure page with a short caption and a Hindi page, all with a perfect text layer, were treated as scanned and read by OCR (88 to 90 % accurate, columns mixed up); a PDF in an old Indian-language font was indexed as Latin gibberish
+**Root Cause:** `triage.classify_page` needed 200 characters to call a page digital and only checked the share of letters, which gibberish like `ekWuhVj dksf'kdk` passes
+**Fix:** 40 character limit and `markdown.looks_garbled` (cid marks, private-use characters, mixed-case or symbols inside words, Latin text in a document marked as an Indian language)
+**Files Changed:** backend/app/ocr/triage.py, markdown.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-035] — 2026-10-28
+**Title:** Pictures inside an uploaded PDF were ignored
+**Symptom:** a lesson from a PDF could not use its diagrams; llava was only called for photos uploaded on their own
+**Root Cause:** ingestion read text (text layer or OCR) only
+**Fix:** `ocr/figures.py` finds embedded pictures, `ingest._describe_figures` describes them with llava in the background and indexes the description with the page; page records are updated through `update_page` (one lock, fresh copy) so the OCR upgrade and the figure pass cannot overwrite each other
+**Files Changed:** backend/app/ocr/figures.py, ingest.py, types.py, vision.py
+**Status:** Resolved (vector drawings are not covered)

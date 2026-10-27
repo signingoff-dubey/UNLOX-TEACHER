@@ -18,3 +18,4 @@ datasets
 pyarrow
 python-multipart
 pytest
+pymupdf4llm==1.27.2.2        # PDF pages to Markdown (the release matching pymupdf; a later 2.0 on the index is an empty package)

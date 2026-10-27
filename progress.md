@@ -1,7 +1,23 @@
 # Progress Log
 
-## Current Version: v0.14.3
+## Current Version: v0.14.4
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.14.4] — 2026-10-28
+### What's New
+- **PDF to Markdown, not OCR, for every page that has a text layer** (`ocr/markdown.py`, `pymupdf4llm`). Measured on a test PDF with known text (title and bullets, two columns, a ruled table, a figure page, Hindi in Noto Sans Devanagari): the text layer is 98.8 to 100 % identical to the original, Markdown 100 %, OCR 68 to 100 % (two columns read across each other 68 %, table 90 %, figure page 88 %, Hindi 88 %); text layer 1 to 15 ms a page, Markdown 54 to 530 ms, OCR 750 to 1330 ms. Markdown also keeps headings (`#`), lists and real table rows, which OCR and plain text lose, so the planner and the search get structured text. OCR remains for scanned pages and for broken text layers
+- **Short digital pages are no longer sent to OCR**: a page needed 200 characters of text to count as digital, so a table page, a figure page with a short caption and a Hindi page (all with a perfect text layer) were OCRed and came out worse. The limit is now 40 characters
+- **Fonts**: a text layer that cannot be trusted is detected and the page goes to OCR instead: `(cid:12)` marks, private-use boxes, and the old Indian-language fonts (Kruti Dev and the like) whose text layer is Latin gibberish like `ekWuhVj dksf'kdk` where Devanagari should be (mixed-case and symbol-in-word test, and "Latin text in a document marked as an Indian language"). Ligatures (ﬁ), soft hyphens, zero-width characters and words split at a line end are cleaned
+- **Pictures inside a PDF are described by llava** (`ocr/figures.py`, `vision.describe_figure`): diagrams, graphs and photos are cut out (page-sized scans, icons and logos repeated on several pages are skipped, at most 40 per PDF, the pages you asked about first), described in the background (the PDF is searchable at once; the pass holds the GPU slot and steps aside for lessons), saved on the page and searched with it as `[Figure on page N: ...]`, so the planner sees them. Verified live with llava:7b on the test PDF (it read the three labels of the diagram; it also invented a fourth, so the prompt now says to mention only what is visible). Upload status reports `figures: found / described / state`
+- **Caching and pre-warming**: translations are batched by length (35 % faster on mixed sentences, 4.5 s to 2.9 s for 32) and the cache is written atomically; while the planner is still writing, each finished scene is translated into the cache for the other languages (only when the translator is already on the GPU and memory is free), so the final pass finds it ready; a recording heard before is not transcribed again (cache of 300 clips; cold first question 10.2 s, warm 0.29 s, repeated 0 s); at start-up the embedding models are warmed, and the speech model is loaded once the computer is idle (it is released again after 10 quiet minutes); Whisper goes to the GPU when 2.2 GB is free (was 3)
+
+### Known Issues
+- Drawn (vector) charts are not pictures inside the PDF, so llava does not see them; only embedded bitmaps are described
+- llava can add details that are not in the picture; descriptions are tagged as figures and kept short
+- IndicTrans2 still runs without its KV cache (a workaround for the remote model code), which makes long sentences slow
+- Pages cached by an older version as "scanned" keep their OCR text (only new uploads use the better triage)
 
 ---
 
