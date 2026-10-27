@@ -241,6 +241,8 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| cddcb2a | 2026-10-27 | Android app (native Kotlin + Compose, fully on-device): Figma screens, Gemma tutor and lesson planner, Piper voices, Whisper and Vosk speech, ML Kit translation and OCR, study tools, homework, rewards, profile with name and age |
+| 5f07b0c | 2026-10-27 | v0.13.0 web: Progress and Settings pages, rewards history endpoint, voice ripple and waveform in the tutor chat, opening animation switch |
 | 2f926c5 | 2026-10-27 | Chanakya v0.9.0: grey-glass frontend, rewards, scroll-shrinking prompt home, videos up to 4 min, floating Creating pill |
 | 1cb5b0d | 2026-10-27 | Project setup: docs, lesson schema, Revideo frontend scaffold, fonts |
 | 3d9d818 .. 123513d | 2026-10-27 | Orchestration doc, graph/code scenes, merge of teammate frontend, screen-by-screen UI |
