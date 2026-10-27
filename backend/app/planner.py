@@ -153,28 +153,52 @@ def _condensed_block(passages: list[Passage], budget: int = 9000) -> str:
 
 
 def _sources(passages: list[Passage]) -> list[dict]:
-    out: dict[str, dict] = {}
+    """One entry per article or PDF, most relevant first. PDF entries get the page span of
+    all their retrieved passages, not just the first one's."""
+    groups: dict[str, list[Passage]] = {}
     for p in passages:
-        out.setdefault(p.title, {"title": p.title, "section": p.section, "url": p.url,
-                                 "source": p.source, "score": p.score})
-    return list(out.values())
+        groups.setdefault(p.title, []).append(p)
+    out = []
+    for title, ps in groups.items():
+        first = ps[0]
+        pages = _page_numbers(ps)
+        if pages:
+            chapters = {_chapter(p.section) for p in ps}
+            chapter = chapters.pop() if len(chapters) == 1 else ""   # don't label a span with one chapter
+            section = ", ".join(x for x in (chapter, _span(pages)) if x)
+        else:
+            section = first.section
+        out.append({"title": title, "section": section, "url": first.url, "source": first.source,
+                    "score": max(p.score for p in ps)})
+    return out
 
 
 def _page_sources(passages: list[Passage]) -> list[dict]:
     """One source for a page-range lesson: the book, its chapter and the full page span."""
+    first = passages[0]
+    section = ", ".join(x for x in (_chapter(first.section), _span(_page_numbers(passages))) if x)
+    return [{"title": first.title, "section": section, "url": first.url, "source": first.source, "score": 1.0}]
+
+
+def _page_numbers(passages: list[Passage]) -> list[int]:
     pages: set[int] = set()
     for p in passages:
         if m := re.search(r"#page=(\d+)", p.url):
             pages.add(int(m.group(1)))
         if m := re.search(r"pp?\.\s*(\d+)(?:\s*[–-]\s*(\d+))?", p.section):   # "pp. 214–219" carries the end page
             pages.update(int(x) for x in m.groups() if x)
-    pages = sorted(pages)
-    first = passages[0]
-    chapter = re.sub(r",?\s*pp?\.\s*[\d–-]+$", "", first.section).strip(", ")
-    span = (f"p. {pages[0]}" if len(pages) == 1 or pages[0] == pages[-1] else f"pp. {pages[0]}–{pages[-1]}") \
-        if pages else ""
-    section = ", ".join(x for x in (chapter, span) if x)
-    return [{"title": first.title, "section": section, "url": first.url, "source": first.source, "score": 1.0}]
+    return sorted(pages)
+
+
+def _chapter(section: str) -> str:
+    """The section label without its page part: "Ch 3, pp. 214–219" -> "Ch 3"."""
+    return re.sub(r",?\s*pp?\.\s*[\d–-]+$", "", section).strip(", ")
+
+
+def _span(pages: list[int]) -> str:
+    if not pages:
+        return ""
+    return f"p. {pages[0]}" if pages[0] == pages[-1] else f"pp. {pages[0]}–{pages[-1]}"
 
 
 def _ollama_chat(concept: str, previous_error: str, reference: str = "") -> str:
