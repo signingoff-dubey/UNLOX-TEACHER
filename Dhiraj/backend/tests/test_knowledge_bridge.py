@@ -83,3 +83,18 @@ def test_unsupported_flags_unrelated_sentence():
     assert unsupported(sentences, passages, R) == [1]
     assert unsupported([], passages, R) == []
     assert unsupported(sentences, [], R) == [0, 1]
+
+
+def test_rag_library_env_disables_library_path(dirs, monkeypatch):
+    col = Collection(dirs / "library" / "index", E)
+    col.add([lib_chunk(1, "Photosynthesis makes glucose from sunlight")])
+    col.close()
+
+    class KB:
+        def search(self, q):
+            return [knowledge.Passage("Old KB", "", "text", "u", "wikipedia", 0.8)]
+    monkeypatch.setattr(knowledge.KnowledgeBase, "get", classmethod(lambda cls: KB()))
+    monkeypatch.setenv("RAG_LIBRARY", "0")
+    assert [p.title for p in knowledge.retrieve("photosynthesis")] == ["Old KB"]
+    monkeypatch.setenv("RAG_LIBRARY", "1")
+    assert knowledge.retrieve("photosynthesis")[0].title == "Article 1"

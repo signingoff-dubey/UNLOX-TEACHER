@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import threading
 
 import requests
 from contextlib import asynccontextmanager
@@ -29,6 +30,8 @@ async def lifespan(_: FastAPI):
         knowledge.KnowledgeBase.get()          # load the index once, not on the first lesson
     except Exception as e:
         log.error("Knowledge base failed to load: %s", e)
+    # The library path (hybrid search + reranker) costs ~7.5 s on first use; pay it in the background.
+    threading.Thread(target=_warm_library, name="warm-library", daemon=True).start()
     if config.PRELOAD:
         log.info("Preloading translation and voice models…")
         try:
@@ -38,6 +41,20 @@ async def lifespan(_: FastAPI):
         tts.preload()
         log.info("Models ready")
     yield
+
+
+def _warm_library() -> None:
+    """Load the e5 embedder and bge reranker before the first lesson, if the library index exists."""
+    try:
+        if not config.RAG_ENABLED or not knowledge._new_search_available(None):
+            return
+        from .rag.embed import shared_embedder
+        from .rag.rerank import shared_reranker
+        shared_embedder().query("warm up")
+        shared_reranker().score("warm up", ["x"])
+        log.info("Library search warmed up")
+    except Exception as e:  # warm-up is an optimisation only
+        log.warning("Library warm-up skipped: %s", e)
 
 
 app = FastAPI(title="Visual Teacher", lifespan=lifespan)

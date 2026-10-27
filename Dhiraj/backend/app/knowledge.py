@@ -11,6 +11,7 @@ chunks) + a small boost when the query names the article title + per-article ded
 from __future__ import annotations
 
 import json
+import os
 import logging
 import re
 import threading
@@ -120,7 +121,11 @@ def retrieve(concept: str, upload: str | None = None) -> list[Passage]:
     try:
         if _new_search_available(upload):
             from .rag import search as rag_search
-            hits = rag_search.search(concept, f"both:{upload}" if upload else "library", k=config.RAG_TOP_K)
+            if not upload:
+                scope = "library"
+            else:
+                scope = f"both:{upload}" if os.getenv("RAG_LIBRARY", "1") != "0" else f"upload:{upload}"
+            hits = rag_search.search(concept, scope, k=config.RAG_TOP_K)
             if hits:
                 return [_to_passage(h.chunk, h.score) for h in hits]
         kb = KnowledgeBase.get()
@@ -164,8 +169,11 @@ def pages_passages(upload: str, focus: str) -> list[Passage]:
 
 
 def _new_search_available(upload: str | None) -> bool:
+    """RAG_LIBRARY=0 (read on every call, no restart needed) switches the library off and falls back
+    to data/kb for concept-only lessons; uploaded PDFs keep working."""
     from .rag.search import collection_path
-    if (collection_path("library") / "chunks.sqlite").exists():
+    library_on = os.getenv("RAG_LIBRARY", "1") != "0"
+    if library_on and (collection_path("library") / "chunks.sqlite").exists():
         return True
     return bool(upload) and upload.isalnum() and (collection_path(f"upload:{upload}") / "chunks.sqlite").exists()
 
