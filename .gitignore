@@ -1,0 +1,22 @@
+.env
+.env.local
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+dist/
+build/
+*.log
+# models / generated media: large, fetched via scripts/fetch-models
+models/
+output/
+frontend/output/
+*.onnx
+*.gguf
+*.wav
+*.mp4
+!samples/*.mp4
+
+# third-party reference material
+inspiration/

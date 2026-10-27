@@ -1,0 +1,49 @@
+The development roadmap for the Unlox24 Hackathon consists of five specific stages (0:44-0:58):
+
+1.  Concept Input: The system begins by receiving a concept typed by the student.
+2.  Lesson Planning: A local language model generates a plan for the lesson in JSON format.
+3.  Visual Engine: The engine handles the animation for each scene.
+4.  Narration & Captions: The system creates voice narration and text captions for the lesson in multiple languages.
+5.  Export: Finally, the project produces an MP4 file of the completed lesson.
+
+
+The Unlox24 Hackathon challenges participants to build an AI-powered "teacher" system capable of explaining any concept in English and at least two Indian languages (0:00-0:36).
+
+The Challenge Requirements:
+
+Input: The system must accept a concept typed by a student (0:22).
+Output: It must generate a narrated, animated lesson (30–90 seconds long) that plays in the browser and can be exported as an MP4 file (0:25-0:30).
+Constraint: The entire solution must be built to run offline on a laptop. No external AI APIs, cloud voices, or cloud translation services are permitted (1:11-1:20).
+Performance: The model must return data, not raw code, and generate narration first to ensure perfect synchronization between audio, captions, and visuals (1:00-1:20).
+[10:44 am, 27/10/2026] Kabir: The judges for the Unlox24 Hackathon will evaluate projects based on the following specific criteria (1:24 - 1:34):
+
+Working End-to-End: 25%
+Teaching Quality: 20%
+Visuals: 15%
+Languages: 15%
+Engineering: 15%
+Speed: 10%
+
+
+This video outlines the Unlox24 Hackathon, a 24-hour challenge for developers to build an AI-powered "teacher" capable of explaining concepts in English and at least two Indian languages (0:00-0:36).
+
+The Challenge Requirements:
+
+Input: A student types a concept (0:22).
+Output: A narrated, animated lesson (30–90 seconds) that runs in a browser and exports as an MP4 (0:25-0:30).
+Core Constraint: The system must run entirely offline on a laptop with no external AI APIs for voice or translation (1:11-1:20).
+
+Development Roadmap:
+
+1.  Concept input (0:44).
+2.  Local language model planning the lesson via JSON (0:48).
+3.  Visual engine for animation (0:52).
+4.  Narration and captions in multiple languages (0:54).
+5.  MP4 export (0:58).
+
+Key Rules & Advice:
+
+Generate the narration first to ensure audio, captions, and visuals remain in sync (1:00-1:08).
+The model should return data, not code (1:20).
+Participants are advised to have a working end-to-end sample by hour five (1:36).
+Judging criteria include working end-to-end (25%), teaching quality (20%), and visuals, language, and engineering (15% each) (1:24-1:34).

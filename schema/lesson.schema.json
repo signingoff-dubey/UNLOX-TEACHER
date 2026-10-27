@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "unlox-teacher/lesson.schema.json",
+  "title": "Lesson plan (data only, never code)",
+  "type": "object",
+  "required": ["title", "level", "languages", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "title": { "type": "string", "maxLength": 80 },
+    "level": { "enum": ["beginner", "intermediate"] },
+    "target_duration_s": { "type": "integer", "minimum": 30, "maximum": 90 },
+    "languages": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-z]{2,3}$" } },
+    "scenes": { "type": "array", "minItems": 3, "maxItems": 12, "items": { "$ref": "#/$defs/scene" } }
+  },
+  "$defs": {
+    "text_by_lang": {
+      "type": "object",
+      "required": ["en"],
+      "additionalProperties": { "type": "string", "maxLength": 400 }
+    },
+    "scene": {
+      "type": "object",
+      "required": ["id", "type", "narration", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "enum": ["title", "diagram", "code"] },
+        "narration": { "$ref": "#/$defs/text_by_lang" },
+        "content": { "type": "object" },
+        "audio": {
+          "description": "Filled by the pipeline AFTER TTS. Scene length = duration_s + pause_s (audio sets length).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["file", "duration_s"],
+            "properties": { "file": { "type": "string" }, "duration_s": { "type": "number" }, "pause_s": { "type": "number", "default": 0.4 } }
+          }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "title" } } },
+          "then": { "properties": { "content": { "type": "object", "required": ["heading"], "properties": { "heading": { "$ref": "#/$defs/text_by_lang" }, "subheading": { "$ref": "#/$defs/text_by_lang" } } } } } },
+        { "if": { "properties": { "type": { "const": "diagram" } } },
+          "then": { "properties": { "content": { "type": "object", "required": ["nodes", "edges"], "properties": {
+            "nodes": { "type": "array", "minItems": 2, "maxItems": 8, "items": { "type": "object", "required": ["id", "label"], "properties": { "id": { "type": "string" }, "label": { "$ref": "#/$defs/text_by_lang" } } } },
+            "edges": { "type": "array", "items": { "type": "object", "required": ["from", "to"], "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "label": { "$ref": "#/$defs/text_by_lang" } } } } } } } } },
+        { "if": { "properties": { "type": { "const": "code" } } },
+          "then": { "properties": { "content": { "type": "object", "required": ["language", "lines"], "properties": {
+            "language": { "type": "string" },
+            "lines": { "type": "array", "minItems": 1, "maxItems": 14, "items": { "type": "string", "maxLength": 80 } },
+            "highlights": { "type": "array", "items": { "type": "object", "required": ["line", "at"], "properties": { "line": { "type": "integer", "minimum": 0 }, "at": { "type": "number", "minimum": 0, "maximum": 1, "description": "fraction of scene audio at which the line lights up" } } } } } } } } }
+      ]
+    }
+  }
+}

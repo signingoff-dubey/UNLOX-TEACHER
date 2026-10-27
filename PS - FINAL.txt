@@ -1,0 +1,73 @@
+Hi Teams,
+
+
+Welcome to Codestorm: Unlox 24-Hour Hackathon! The clock is officially ticking, and it’s time to build.
+
+
+
+🎯 The Challenge: Blu Visual Teacher
+Your challenge is to build a local-first, offline engine that turns a typed concept (e.g., "How does a Python loop work?") into a 30–90 second visual, narrated lesson in English plus at least 2 Indian languages (e.g., Hindi, Tamil, Telugu, Bengali, Marathi).
+
+The lesson must play interactively in the browser and export as a downloadable 720p MP4 video.
+
+
+
+⚙️ The 5 Core Pipeline Stages
+To get a full score, your system must complete all 5 stages:
+
+Concept Input: Learner inputs topic, level (beginner/intermediate), language, and target duration.
+
+Lesson Planner (Local LLM): A local model (via Ollama) outputs structured JSON matching your schema. (Must include a schema check & automatic fallback to a built-in sample lesson if it fails).
+
+Visual Engine: Reusable components (e.g., React + SVG + CSS) supporting at least 3 scene types: Title Card, Diagram with Labels/Arrows, and Code Walkthrough.
+
+Multilingual Narration: Local TTS & captions in English (Indian accent) + 2 Indian languages in sync with visuals.
+
+MP4 Export: Combine scenes, voiceover, and burned-in/SRT captions into a downloadable 720p H.264 MP4 using tools like FFmpeg.
+
+
+🔑 Key Design Rule: Audio sets scene length! Generate narration audio first, then set scene duration to match the audio length plus a short pause.
+
+
+🚨 Ground Rules (Hard Rules)
+No External AI APIs: No OpenAI, Gemini, Claude, ElevenLabs, Google Translate, or cloud voices. All models must run locally.
+
+Works Fully Offline: The entire pipeline must run with the Wi-Fi/internet switched off.
+
+CPU/Laptop Specs: Designed to run on CPU-only laptops (8–16 GB RAM).
+
+Data, Not Code: The LLM returns JSON data only—it must not generate executable code.
+
+Proper Licensing: All models, voices, and assets used must be listed in your README with valid licenses.
+
+⏱️ Suggested 24-Hour Timeline & Milestones
+Hours 0–5 (Skeleton & Gate 1): Get a fixed sample lesson playing end-to-end as an MP4.
+
+Hours 5–10 (Planner): Integrate Ollama, JSON schema validation, and fallback logic.
+
+Hours 10–15 (Visual Engine): Build player controls and 3+ scene types.
+
+Hours 15–20 (Voice & Export): Integrate local TTS, translations, script fonts, and FFmpeg export.
+
+Hours 20–24 (Feature Freeze & Demo Prep): Offline testing and rehearsing your 5-minute live demo.
+
+
+📦 What to Submit (End of Hour 24)
+GitHub Code Repository with setup README, tested specs, and licenses listed.
+
+Two Rendered MP4 Lessons: One on a topic assigned by judges on the day, and one on a topic of your choice.
+
+5-Minute Live Demo (Offline): Live generation on a prompt provided by judges, followed by 3 mins of Q&A.
+
+
+💡 Pro-Tip from the Organizers:
+
+Focus on getting the end-to-end flow working on a hard-coded sample lesson first. A simple lesson that plays end-to-end as an MP4 will beat a clever model that produces no video!
+
+Good luck, work together, and happy hacking! 💻🔥
+
+
+
+Best regards,
+
+Team Unlox Academy
