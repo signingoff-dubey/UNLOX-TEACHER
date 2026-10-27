@@ -164,3 +164,8 @@
 | Commit | Date | Message |
 |--------|------|---------|
 | 1cb5b0d | 2026-10-27 | Project setup: docs, lesson schema, Revideo frontend scaffold, fonts |
+| 3d9d818 .. 123513d | 2026-10-27 | Orchestration doc, graph/code scenes, merge of teammate frontend, screen-by-screen UI |
+| d7527c7 | 2026-10-27 | Notes panel, tutor chat, progress |
+| 4b0466c | 2026-10-27 | IndicTrans2, voices, writer/reviewer agents, pacing |
+| 86a5fed | 2026-10-27 | Director agent, point-plotting graphs, playlists backend + UI, vision QA script |
+| 9ae15b7 | 2026-10-27 | Merge origin/main (PDF/OCR/RAG, metaverse); voice, study tools, Meta quiz, fast OCR, tunnel entrance |
