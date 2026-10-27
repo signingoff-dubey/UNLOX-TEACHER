@@ -53,6 +53,9 @@ export type Lesson = {
   languages: Record<string, Track>;
   timings: Record<string, number>;
   videos: Record<string, string>;
+  /** English source plan (tutor context) and notes from the lesson reviewer. */
+  plan?: unknown;
+  review?: string[];
 };
 
 export type LessonProps = {

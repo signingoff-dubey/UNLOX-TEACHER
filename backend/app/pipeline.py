@@ -12,6 +12,7 @@ from .captions import time_captions, to_srt
 from .languages import get as get_lang
 from .planner import plan_lesson
 from .rag import retrieve_context
+from .review import review as review_plan
 from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
 from .translate import translate_batch
 from .tts import synthesize
@@ -25,13 +26,19 @@ Progress = Callable[[str, float], None]
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
                  documents: list[str] | None = None, progress: Progress = lambda s, p: None) -> dict:
     t0 = time.perf_counter()
-    langs = list(dict.fromkeys(["en", *languages]))          # English is always included
+    langs = list(dict.fromkeys(languages))                    # English is just another option now
+    if not langs:
+        raise ValueError("Pick at least one language")
     for code in langs:
         get_lang(code)                                        # validate early
 
-    progress("Planning the lesson", 0.05)
+    # Progress bands: plan 2-55%, review 55-60%, then 60-98% shared by the languages.
+    progress("Planning the lesson", 0.02)
     context = retrieve_context(concept, documents or [])   # empty until the RAG service is connected
-    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context)
+    plan = plan_lesson(concept, level=level, duration_s=duration_s, context=context,
+                       on_progress=lambda f: progress("Planning the lesson", 0.02 + 0.53 * f))
+    progress("Checking the lesson", 0.56)
+    plan, review_notes = review_plan(plan)
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     lesson_id = uuid.uuid4().hex[:10]
@@ -40,13 +47,14 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
 
     tracks = {}
     for i, code in enumerate(langs):
-        base = 0.15 + 0.8 * i / len(langs)
-        step = 0.8 / len(langs)
-        progress(f"Translating to {get_lang(code).name}", base)
+        base = 0.60 + 0.38 * i / len(langs)
+        step = 0.38 / len(langs)
+        name = get_lang(code).name
+        progress(f"Translating to {name}" if code != "en" else "Preparing English", base)
         t1 = time.perf_counter()
         scenes, translator = _translated_scenes(plan, code)
-        progress(f"Recording {get_lang(code).name} narration", base + step * 0.4)
-        tracks[code] = _narrate(scenes, code)
+        progress(f"Recording {name} narration", base + step * 0.25)
+        tracks[code] = _narrate(scenes, code, lambda f, b=base, s=step, n=name: progress(f"Recording {n} narration", b + s * (0.25 + 0.75 * f)))
         tracks[code]["translator"] = translator
         timings[f"{code}_s"] = round(time.perf_counter() - t1, 2)
         (out_dir / f"captions_{code}.srt").write_text(_track_srt(tracks[code]), encoding="utf-8")
@@ -55,6 +63,9 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
         "id": lesson_id,
         "concept": concept,
         "created": int(time.time()),
+        "plan": plan.model_dump(),                    # English source plan: context for the tutor chat
+        "documents": documents or [],
+        "review": review_notes,
         "languages": tracks,
         "timings": timings,
         "videos": {},
@@ -88,12 +99,13 @@ def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dic
     return (title, scenes), engine
 
 
-def _narrate(translated: tuple[str, list[dict]], lang: str) -> dict:
+def _narrate(translated: tuple[str, list[dict]], lang: str, on_progress=lambda f: None) -> dict:
     """Narration first: each scene lasts exactly as long as its voice plus a short pause."""
     title, scenes = translated
     start = 0.0
     engines = set()
-    for s in scenes:
+    for k, s in enumerate(scenes):
+        on_progress(k / max(len(scenes), 1))
         speech = synthesize(s["narration"], lang)
         engines.add(speech.engine)
         s["audio_url"] = f"/media/audio/{speech.path.name}"

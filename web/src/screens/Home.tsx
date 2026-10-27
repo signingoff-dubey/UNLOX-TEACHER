@@ -30,6 +30,7 @@ export const Home: React.FC<Props> = (p) => {
   const docs = p.uploads.filter((u) => u.state === "done").length;
   const toggleLang = (code: string) =>
     p.onSettings({ ...s, languages: s.languages.includes(code) ? s.languages.filter((c) => c !== code) : [...s.languages, code] });
+  const noLang = s.languages.length === 0;
 
   return (
     <div className="screen home">
@@ -43,7 +44,7 @@ export const Home: React.FC<Props> = (p) => {
         <div className="ask-row">
           <input id="concept" value={p.concept} onChange={(e) => p.onConcept(e.target.value)} autoFocus autoComplete="off"
             maxLength={200} placeholder="e.g. Teach me Python loops" aria-label="Topic to learn" />
-          <button type="submit" className="go" disabled={p.concept.trim().length < 2 || uploading}>
+          <button type="submit" className="go" disabled={p.concept.trim().length < 2 || uploading || noLang}>
             <Ui name="sparkle" size={20} />Create lesson
           </button>
         </div>
@@ -87,9 +88,9 @@ export const Home: React.FC<Props> = (p) => {
           </div>
 
           <div className="field">
-            <div className="label">Languages <span className="muted">English is always included</span></div>
+            <div className="label">Languages <span className={noLang ? "need" : "muted"}>{noLang ? "pick at least one" : `${s.languages.length} selected`}</span></div>
             <div className="langs">
-              {p.languages.filter((l) => l.code !== "en").map((l) => {
+              {p.languages.map((l) => {
                 const on = s.languages.includes(l.code);
                 return (
                   <button type="button" key={l.code} className={`lang ${on ? "on" : ""}`} aria-pressed={on} onClick={() => toggleLang(l.code)}>

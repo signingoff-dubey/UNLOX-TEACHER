@@ -4,12 +4,16 @@ import type { Job, Lesson } from "../types";
 import { api, runJob, url } from "../api";
 import { LessonVideo, lessonFrames } from "../remotion/Lesson";
 import { FPS, H, W } from "../remotion/theme";
+import { ChatPanel } from "../components/ChatPanel";
+import { Generating } from "../components/Generating";
+import { NotesPanel } from "../components/NotesPanel";
 import { PlayerControls } from "../components/PlayerControls";
-import { SceneList } from "../components/SceneList";
 import { Ui } from "../components/ui-icons";
 
 type Props = {
-  lesson: Lesson;
+  /** null while the lesson is still being made; `generating` then describes the job. */
+  lesson: Lesson | null;
+  generating?: { concept: string; job: Job | null; languages: string[] };
   lang: string;
   onLang: (code: string) => void;
   assetBase: string;
@@ -17,9 +21,9 @@ type Props = {
   onVideo: (key: string, url: string) => void;
 };
 
-/** Screen 3: the lesson. Video with tap zones, full control bar, scene list, downloads. */
-export const LessonScreen: React.FC<Props> = ({ lesson, lang, onLang, assetBase, onBack, onVideo }) => {
-  const track = lesson.languages[lang];
+/** The lesson screen: notes on the left, video in the middle, tutor chat on the right. */
+export const LessonScreen: React.FC<Props> = ({ lesson, generating, lang, onLang, assetBase, onBack, onVideo }) => {
+  const track = lesson?.languages[lang];
   const player = useRef<PlayerRef>(null);
   const frame = useRef<HTMLDivElement>(null);
   const resume = useRef<{ frac: number; playing: boolean } | null>(null);
@@ -34,13 +38,14 @@ export const LessonScreen: React.FC<Props> = ({ lesson, lang, onLang, assetBase,
   const [exportJobs, setExportJobs] = useState<Record<string, Job>>({});
   const [error, setError] = useState("");
 
-  const inputProps = useMemo(() => ({ track, assetBase, captions }), [track, assetBase, captions]);
-  const frames = lessonFrames(track);
+  const inputProps = useMemo(() => (track ? { track, assetBase, captions } : null), [track, assetBase, captions]);
+  const frames = track ? lessonFrames(track) : 1;
 
-  // Highlight the scene being played in the list.
+  // Keep the notes and the tutor in step with the scene being played.
   useEffect(() => {
     const p = player.current;
-    if (!p) return;
+    if (!p || !track) return;
+    setSceneIndex(0);
     const onFrame = (e: { detail: { frame: number } }) => {
       const t = e.detail.frame / FPS;
       const i = track.scenes.findIndex((s) => t >= s.start_s && t < s.start_s + s.duration_s);
@@ -93,7 +98,7 @@ export const LessonScreen: React.FC<Props> = ({ lesson, lang, onLang, assetBase,
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 650); return () => clearTimeout(t); }, [flash]);
 
   const onKey = (e: React.KeyboardEvent) => {
-    if ((e.target as HTMLElement).closest("button,input,[role=slider]")) return;
+    if ((e.target as HTMLElement).closest("button,input,textarea,[role=slider]")) return;
     const p = player.current;
     if (e.key === " " || e.key === "k") { e.preventDefault(); p?.toggle(); }
     else if (e.key === "ArrowRight") { e.preventDefault(); seekBy(5); }
@@ -107,13 +112,15 @@ export const LessonScreen: React.FC<Props> = ({ lesson, lang, onLang, assetBase,
     player.current?.seekTo(Math.round(seconds * FPS));
     player.current?.play();
   };
+  const getTime = () => (player.current ? player.current.getCurrentFrame() / FPS : 0);
 
   // ---- downloads
   const key = quality === 1080 ? `${lang}_1080p` : lang;
-  const video = lesson.videos[key];
+  const video = lesson?.videos[key];
   const job = exportJobs[key];
   const exporting = job && (job.status === "queued" || job.status === "running");
   async function exportMp4() {
+    if (!lesson) return;
     setError("");
     try {
       const done = await runJob(api<Job>(`/api/lessons/${lesson.id}/export`, { lang, height: quality }),
@@ -123,94 +130,106 @@ export const LessonScreen: React.FC<Props> = ({ lesson, lang, onLang, assetBase,
       setError((e as Error).message);
     }
   }
-  const totalTime = Object.values(lesson.timings).reduce((a, b) => a + b, 0);
+  const totalTime = lesson ? Object.values(lesson.timings).reduce((a, b) => a + b, 0) : 0;
+  const untranslated = track && (track.translator === "untranslated" || (track.translator === "none" && track.lang !== "en"));
 
   return (
     <div className="screen lesson">
       <header className="lesson-top">
         <button type="button" className="ghost back" onClick={onBack}><Ui name="arrowLeft" size={18} />New lesson</button>
-        <h1>{track.title}</h1>
-        <div className="tabs" role="tablist" aria-label="Lesson language">
-          {Object.values(lesson.languages).map((t) => (
-            <button key={t.lang} type="button" role="tab" aria-selected={t.lang === lang} className={t.lang === lang ? "tab on" : "tab"}
-              onClick={() => switchLang(t.lang)}>{t.native}</button>
-          ))}
-        </div>
+        <h1>{track?.title ?? generating?.concept ?? "Lesson"}</h1>
+        {lesson && (
+          <div className="tabs" role="tablist" aria-label="Lesson language">
+            {Object.values(lesson.languages).map((t) => (
+              <button key={t.lang} type="button" role="tab" aria-selected={t.lang === lang} className={t.lang === lang ? "tab on" : "tab"}
+                onClick={() => switchLang(t.lang)}>{t.native}</button>
+            ))}
+          </div>
+        )}
       </header>
 
-      <div className="lesson-main">
-        <div ref={frame} className="vp" tabIndex={0} onKeyDown={onKey} aria-label="Lesson video. Space plays or pauses, arrow keys seek.">
-          <div className="vp-screen">
-            <Player
-              ref={player}
-              key={`${lesson.id}-${lang}-${assetBase}`}
-              component={LessonVideo}
-              inputProps={inputProps}
-              durationInFrames={frames}
-              compositionWidth={W}
-              compositionHeight={H}
-              fps={FPS}
-              initialFrame={initialFrame}
-              autoPlay={autoPlay}
-              playbackRate={speed}
-              controls={false}
-              clickToPlay={false}
-              doubleClickToFullscreen={false}
-              style={{ width: "100%", height: "100%" }}
-              acknowledgeRemotionLicense
-            />
-            <div className="tap-layer" onClick={onScreenClick} />
-            {flash && (
-              <div key={flash.n} className={`flash ${flash.side}`} aria-hidden>
-                <Ui name={flash.side === "l" ? "back5" : "fwd5"} size={44} />
-                <span>5 s</span>
-              </div>
-            )}
-          </div>
-          <PlayerControls
-            player={player} track={track} captions={captions} onCaptions={setCaptions} speed={speed} onSpeed={setSpeed}
-            languages={Object.values(lesson.languages).map((t) => ({ code: t.lang, native: t.native }))}
-            lang={lang} onLang={switchLang} quality={quality} onQuality={setQuality}
-            fullscreen={fullscreen} onFullscreen={toggleFullscreen}
-          />
+      <div className="lesson-main three">
+        <div className="col-notes">
+          <NotesPanel lesson={lesson} track={track} current={sceneIndex} onSeek={seekPlay} />
         </div>
 
-        <aside className="lesson-side">
-          <section className="card flat">
-            <div className="label">Scenes <span className="muted">tap to jump</span></div>
-            <SceneList track={track} current={sceneIndex} onSeek={seekPlay} />
-          </section>
-
-          <section className="card flat">
-            <div className="label">Save this lesson</div>
-            <div className="dl">
-              {video ? (
-                <a className="primary" href={url(video)} download={`${lesson.concept}-${lang}-${quality}p.mp4`}>
-                  <Ui name="download" size={18} />Download MP4 · {quality}p
-                </a>
-              ) : (
-                <button type="button" className="primary" disabled={exporting} onClick={exportMp4}>
-                  <Ui name="download" size={18} />
-                  {exporting ? `${job.stage} ${Math.round(job.progress * 100)}%` : `Make MP4 · ${quality}p`}
-                </button>
-              )}
-              <a className="ghost" href={url(`/media/lessons/${lesson.id}/captions_${lang}.srt`)} download>Captions (.srt)</a>
+        <div className="col-stage">
+          {lesson && track && inputProps ? (
+            <div ref={frame} className="vp" tabIndex={0} onKeyDown={onKey} aria-label="Lesson video. Space plays or pauses, arrow keys seek.">
+              <div className="vp-screen">
+                <Player
+                  ref={player}
+                  key={`${lesson.id}-${lang}-${assetBase}`}
+                  component={LessonVideo}
+                  inputProps={inputProps}
+                  durationInFrames={frames}
+                  compositionWidth={W}
+                  compositionHeight={H}
+                  fps={FPS}
+                  initialFrame={initialFrame}
+                  autoPlay={autoPlay}
+                  playbackRate={speed}
+                  controls={false}
+                  clickToPlay={false}
+                  doubleClickToFullscreen={false}
+                  style={{ width: "100%", height: "100%" }}
+                  acknowledgeRemotionLicense
+                />
+                <div className="tap-layer" onClick={onScreenClick} />
+                {flash && (
+                  <div key={flash.n} className={`flash ${flash.side}`} aria-hidden>
+                    <Ui name={flash.side === "l" ? "back5" : "fwd5"} size={44} />
+                    <span>5 s</span>
+                  </div>
+                )}
+              </div>
+              <PlayerControls
+                player={player} track={track} captions={captions} onCaptions={setCaptions} speed={speed} onSpeed={setSpeed}
+                languages={Object.values(lesson.languages).map((t) => ({ code: t.lang, native: t.native }))}
+                lang={lang} onLang={switchLang} quality={quality} onQuality={setQuality}
+                fullscreen={fullscreen} onFullscreen={toggleFullscreen}
+              />
             </div>
-            <div className="muted note">{quality === 720 ? "720p renders about 2× faster. Switch to 1080p in ⚙ Settings." : "1080p takes longer to render."}</div>
-          </section>
-        </aside>
-      </div>
+          ) : (
+            <div className="vp">
+              <div className="vp-screen gen-screen">
+                {generating && <Generating concept={generating.concept} job={generating.job} languages={generating.languages} />}
+              </div>
+              <div className="controls ghosted" aria-hidden>
+                <div className="seek-wrap"><div className="seek-track" /></div>
+                <div className="ctrl-row"><span className="time">0:00 / 0:00</span></div>
+              </div>
+            </div>
+          )}
 
-      {track.translator === "untranslated" && <div className="warn">Translation model unavailable; {track.name} shows the English text.</div>}
-      {track.tts_engines.includes("silent") && <div className="warn">No voice model installed for {track.name}; narration is a silent placeholder.</div>}
-      {error && <div className="error" role="alert">{error}</div>}
+          {lesson && track && (
+            <>
+              {untranslated && <div className="warn">{track.name} is showing English text because the translation model is switched off or unavailable.</div>}
+              {track.tts_engines.includes("silent") && <div className="warn">No voice model installed for {track.name}; narration is a silent placeholder.</div>}
+              {lesson.review?.length ? <div className="warn">Checked the lesson: {lesson.review.join("; ")}</div> : null}
+              {error && <div className="error" role="alert">{error}</div>}
 
-      <div className="lesson-foot muted">
-        {track.scenes.length} scenes · {track.duration_s.toFixed(0)} s · made in {totalTime.toFixed(1)} s
-        <details className="json">
-          <summary>Lesson data (JSON)</summary>
-          <pre>{JSON.stringify(track.scenes.map(({ captions: _c, audio_url: _a, ...s }) => s), null, 2)}</pre>
-        </details>
+              <div className="dl-row">
+                {video ? (
+                  <a className="primary" href={url(video)} download={`${lesson.concept}-${lang}-${quality}p.mp4`}>
+                    <Ui name="download" size={18} />Download MP4 · {quality}p
+                  </a>
+                ) : (
+                  <button type="button" className="primary" disabled={exporting} onClick={exportMp4}>
+                    <Ui name="download" size={18} />
+                    {exporting ? `${job.stage} ${Math.round(job.progress * 100)}%` : `Make MP4 · ${quality}p`}
+                  </button>
+                )}
+                <a className="ghost" href={url(`/media/lessons/${lesson.id}/captions_${lang}.srt`)} download>Captions (.srt)</a>
+                <span className="muted dl-note">{track.scenes.length} scenes · {track.duration_s.toFixed(0)} s · made in {totalTime.toFixed(1)} s</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="col-chat">
+          <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} />
+        </div>
       </div>
     </div>
   );

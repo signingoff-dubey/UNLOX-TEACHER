@@ -67,3 +67,19 @@
 **Fix:** Cap raised to 72; prompt asks for lines under 45 characters and to split long statements
 **Files Changed:** backend/app/schema.py, backend/app/planner.py
 **Status:** Resolved (monitor)
+
+## [ISSUE-009] — 2026-10-27
+**Title:** Hindi/Telugu tracks spoke English
+**Symptom:** Hindi voice reading English text
+**Root Cause:** `TRANSLATE_BACKEND=none` in backend/.env (set for English-only testing); IndicTrans2 not downloaded
+**Fix:** Translation switched on; UI warns when a non-English track is untranslated; IndicTrans2 download completed with `HF_HUB_DISABLE_XET=1`
+**Files Changed:** backend/.env (local), web/src/screens/LessonScreen.tsx
+**Status:** Resolved once IndicTrans2 is installed
+
+## [ISSUE-010] — 2026-10-27
+**Title:** `hf download` stalls at 0 bytes for gated models
+**Symptom:** `.incomplete` blobs stay 0 bytes forever
+**Root Cause:** Xet download path stalls on this network
+**Fix:** `HF_HUB_DISABLE_XET=1` and a retrying `snapshot_download` script
+**Files Changed:** none
+**Status:** Resolved

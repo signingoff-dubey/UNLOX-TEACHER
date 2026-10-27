@@ -1,7 +1,22 @@
 # Progress Log
 
-## Current Version: v0.4.0
+## Current Version: v0.5.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.5.0] — 2026-10-27
+### What's New
+- **Lesson screen = notes | video | tutor chat.** Left: scene-by-scene notes from the lesson (follow playback, click to jump, code/equations included, "My notes" box, copy/download .md). Right: tutor chat that knows the whole lesson and the scene being watched (`POST /api/lessons/{id}/chat`; English plan -> answer -> translated to the active language)
+- **Progress is inside the video area** (no separate screen) and continuous: planner now streams tokens for real progress, per-scene voice progress, plus a smoothing hook so the bar never sits still or jumps backwards
+- **English is an ordinary option** (no longer forced); at least one language required; lesson stores the English plan for chat
+- **Reviewer agent** (`backend/app/review.py`): `ast.parse` check of Python snippets + one small LLM repair call; notes returned in `lesson.review` and shown in the UI
+- Removed the separate Creating screen
+
+### Known Issues / findings
+- Root cause of "Hindi speaks English with a Hindi accent": `TRANSLATE_BACKEND=none` in a local `.env` -> English text read by a Hindi voice. UI now warns when a non-English track was not translated
+- Ollama (Qwen) translation is poor (Telugu leaked Chinese characters); IndicTrans2 needed. Hugging Face downloads stall on the Xet path: use `HF_HUB_DISABLE_XET=1`. Network ~0.5-1.3 MB/s
+- Indic Parler-TTS (3.7 GB) not downloaded: not needed now that ta/kn/gu have CPU Indic-TTS voices and bn has a Piper voice
 
 ---
 

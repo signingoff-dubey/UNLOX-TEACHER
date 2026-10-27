@@ -58,14 +58,15 @@ Rules:
 - Write everything in English (it is translated later)."""
 
 
-def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, context: str = "") -> LessonPlan:
+def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, context: str = "",
+                on_progress=lambda f: None) -> LessonPlan:
     if config.LLM_BACKEND == "mock":
         return normalize(sample_for(concept))
     last_error = ""
     for attempt in range(2):
         try:
             try:
-                raw = _ollama_chat(concept, last_error, level, duration_s, context)
+                raw = _ollama_chat(concept, last_error, level, duration_s, context, on_progress)
             except requests.RequestException as e:
                 raise RuntimeError(
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
@@ -80,7 +81,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, con
 
 
 def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", duration_s: int = 60,
-                 context: str = "") -> str:
+                 context: str = "", on_progress=lambda f: None) -> str:
     words = round(duration_s * 2.3 / 10) * 10                 # ~2.3 spoken words per second
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
@@ -101,14 +102,30 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
                 {"role": "user", "content": user},
             ],
             "format": LessonPlan.model_json_schema(),
-            "stream": False,
+            "stream": True,
             "keep_alive": config.OLLAMA_KEEP_ALIVE,
             "options": config.ollama_options({"temperature": 0.4, "num_ctx": 4096}),
         },
         timeout=300,
+        stream=True,
     )
     resp.raise_for_status()
-    return resp.json()["message"]["content"]
+    # Streamed: each chunk is about one token, so progress = tokens so far / tokens a lesson of this length needs.
+    expected = max(350, duration_s * 12)
+    parts: list[str] = []
+    n = 0
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        chunk = json.loads(line)
+        parts.append(chunk.get("message", {}).get("content", ""))
+        n += 1
+        if n % 6 == 0:
+            on_progress(min(n / expected, 0.97))
+        if chunk.get("done"):
+            break
+    on_progress(1.0)
+    return "".join(parts)
 
 
 def ollama_generate(prompt: str) -> str:

@@ -42,11 +42,18 @@ app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_meth
 
 class LessonRequest(BaseModel):
     concept: str = Field(min_length=2, max_length=200)
-    languages: list[str] = ["hi", "te"]
+    languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=90)      # target video length
     # Reserved for the document (RAG/OCR) service: ids of uploaded PDFs to teach from.
     documents: list[str] = []
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    lang: str = "en"
+    time_s: float = 0                 # where the learner is in the video, so the tutor knows the current scene
+    history: list[dict] = []          # [{"role": "user"|"assistant", "content": "..."}]
 
 
 class ExportRequest(BaseModel):
@@ -130,6 +137,19 @@ def get_lesson(lesson_id: str) -> dict:
         return load_lesson(lesson_id)
     except (FileNotFoundError, ValueError):
         raise HTTPException(404, "No such lesson")
+
+
+@app.post("/api/lessons/{lesson_id}/chat")
+def chat_about_lesson(lesson_id: str, req: ChatRequest) -> dict:
+    from . import chat
+    try:
+        return chat.ask(lesson_id, req.message.strip(), req.lang, req.time_s, req.history)
+    except FileNotFoundError:
+        raise HTTPException(404, "No such lesson")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
 
 
 @app.post("/api/lessons/{lesson_id}/export")
