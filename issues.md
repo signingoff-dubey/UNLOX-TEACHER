@@ -131,3 +131,19 @@
 **Fix:** `inherits: true`; border is now a constant flowing gradient; the displayed percentage comes from `useSteadyProgress` (a clock that always moves; real progress can only pull it ahead, and it glides)
 **Files Changed:** web/src/studio/{studio.css,useSteadyProgress.ts,StudioButton.tsx}
 **Status:** Resolved (measured 6% to 60% in 12 s, biggest step 1%)
+
+## [ISSUE-017] — 2026-10-27
+**Title:** Lesson lost when the user left the progress screen; blank pages after rewriting a file
+**Symptom:** navigating to another page while a video was being made dropped the result and there was no way back; separately every page went blank with "does not provide an export named 'Stat'"
+**Root Cause:** navigation bumped a run counter that made the finished job's result be ignored; Vite had cached `Stat.tsx` as empty because it read the file while a shell heredoc was rewriting it
+**Fix:** a `creation` record in `App.tsx` outlives navigation, shows the floating `CreatingPill` anywhere except on its own progress screen, and only opens the lesson itself if the user is still watching; touching the file made Vite re-read it (check with `curl http://127.0.0.1:5173/src/<file>`)
+**Files Changed:** web/src/App.tsx, web/src/shell/CreatingPill.tsx, web/src/styles/home.css, web/src/ds/Stat.tsx
+**Status:** Resolved
+
+## [ISSUE-018] — 2026-10-27
+**Title:** Schema repair dropped real scenes; long plans ran 40% over length
+**Symptom:** "Lesson plan has no usable scenes" from the director; a 150 s request produced 211 s
+**Root Cause:** the lenient scene validator also dropped valid `ScenePlan` objects built in code; the writer agent floored every scene at 22 words and parts allowed 5 scenes each
+**Fix:** the validator keeps `ScenePlan` instances (`tests/test_schema_lenient.py`); the floor is 14 words and a part has at most 4 scenes
+**Files Changed:** backend/app/schema.py, review.py, planner.py
+**Status:** Resolved (length to be re-measured)

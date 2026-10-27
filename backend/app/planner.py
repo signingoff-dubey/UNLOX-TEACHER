@@ -233,7 +233,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
     if series and series.get("segment"):
         # One part of ONE continuous video: it must flow on from the part before and into the part after.
-        scenes = max(2, min(5, round(duration_s / 8)))
+        scenes = max(2, min(4, round(duration_s / 9)))               # at most 4 per part: 6 parts stay near 4 minutes
         user = (f"Create part {series['index']} of {series['total']} of ONE continuous video titled \"{series['title']}\" about {series['topic']}.\n"
                 f"Audience: {audience}.\n"
                 f"This part teaches only: {series['this']}\n"

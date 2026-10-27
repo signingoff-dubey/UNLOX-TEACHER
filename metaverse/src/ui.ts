@@ -181,7 +181,7 @@ export const MARKUP = `<div id="app">
         <button class="btn" type="submit">Enter the world</button>
       </form>
       <div class="chips" id="chips"><small>Worlds ready</small></div>
-      <button class="btn ghost sm" id="tExit" type="button" hidden>Back to Visual Teacher</button>
+      <button class="btn ghost sm" id="tExit" type="button" hidden>Back to Chanakya</button>
       <div class="shoprow"><span><span class="coin"></span> <b id="tWallet">0</b> points to spend</span><button class="btn ghost sm" id="tShop" type="button">Wardrobe and shop</button></div>
       <div class="legend">
         <span><span class="key">&uarr;</span><span class="key">&larr;</span><span class="key">&darr;</span><span class="key">&rarr;</span> walk and turn</span>

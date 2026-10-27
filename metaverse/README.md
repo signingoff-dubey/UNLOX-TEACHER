@@ -1,10 +1,10 @@
 # Metaverse
 
-A walkable 3D learning world for Visual Teacher. A student walks a path, reads topic stations, passes a quiz gate after each one, and earns points. Points buy rides (skateboard, bicycle, hoverboard), hats, suit colours, visors, pets and perks in an in-world shop.
+A walkable 3D learning world for Chanakya. A student walks a path, reads topic stations, passes a quiz gate after each one, and earns points. Points buy rides (skateboard, bicycle, hoverboard), hats, suit colours, visors, pets and perks in an in-world shop.
 
 Everything runs in the browser with three.js. No network is needed once the app is built: fonts are bundled through `@fontsource`, and sound is synthesized with the Web Audio API.
 
-## How it connects to Visual Teacher
+## How it connects to Chanakya
 
 `web/src/App.tsx` has a **Metaverse** button in the header. It lazy-loads this folder as a separate chunk and opens it full screen. When a lesson has been generated, the world is built from that lesson:
 
@@ -39,7 +39,7 @@ npm run dev        # http://localhost:5174
 npm run build      # typecheck + production build
 ```
 
-## Run inside Visual Teacher
+## Run inside Chanakya
 
 ```bash
 cd web

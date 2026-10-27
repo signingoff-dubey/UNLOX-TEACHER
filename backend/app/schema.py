@@ -156,7 +156,9 @@ class LessonPlan(BaseModel):
     @classmethod
     def _real_scenes(cls, v):
         """Drop what is not a scene (an empty {} or a stray string): the rest of the plan is still good."""
-        return [x for x in v if isinstance(x, dict) and (x.get("narration") or x.get("heading"))] if isinstance(v, list) else []
+        if not isinstance(v, list):
+            return []
+        return [x for x in v if isinstance(x, ScenePlan) or (isinstance(x, dict) and (x.get("narration") or x.get("heading")))]
 
 
 # Which fields hold text a viewer sees or hears (and so must be translated).
@@ -227,7 +229,7 @@ def points_from_narration(narration: str, limit: int = 4) -> list[str]:
 def normalize(plan: LessonPlan) -> LessonPlan:
     """Repair the small mistakes local models make so the renderer never sees bad data."""
     scenes: list[ScenePlan] = []
-    for s in plan.scenes[:8]:
+    for s in plan.scenes[:24]:                                  # a 4-minute video has up to ~20 scenes
         s.items = [i.strip() for i in s.items if i and i.strip()][:6]
         s.left = [i.strip() for i in s.left if i and i.strip()][:4]
         s.right = [i.strip() for i in s.right if i and i.strip()][:4]

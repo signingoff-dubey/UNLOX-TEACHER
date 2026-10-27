@@ -14,9 +14,10 @@ export const LessonVideo: React.FC<LessonProps> = ({ track, assetBase, captions 
   useFonts(assetBase);
   return (
     <AbsoluteFill style={{
-      fontFamily: FONT_STACK, color: C.ink, background: C.paper,
-      backgroundImage: `linear-gradient(${C.grid} 2px, transparent 2px), linear-gradient(90deg, ${C.grid} 2px, transparent 2px)`,
-      backgroundSize: "60px 60px",
+      fontFamily: FONT_STACK, color: C.ink, background: C.bg,
+      // Two faint aura fields so the grey stage is not flat.
+      backgroundImage: "radial-gradient(40% 50% at 92% 8%, rgba(241,95,138,0.16), transparent 70%), " +
+        "radial-gradient(45% 55% at 4% 100%, rgba(65,166,66,0.14), transparent 70%)",
     }}>
       {track.scenes.map((scene, i) => {
         // Frame boundaries come from cumulative times, so rounding never leaves gaps.
@@ -58,13 +59,13 @@ const Header: React.FC<{ title: string; index: number; count: number }> = ({ tit
   <div style={{ position: "absolute", top: 40, left: STAGE.left, right: STAGE.left, height: 60,
     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 30, fontWeight: 700, color: C.muted }}>
-      <div style={{ width: 18, height: 18, borderRadius: 5, background: C.saffron }} />
+      <div style={{ width: 18, height: 18, borderRadius: "50%", background: C.lime }} />
       {title}
     </div>
     <div style={{ display: "flex", gap: 10 }}>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} style={{ width: i === index ? 44 : 14, height: 14, borderRadius: 7,
-          background: i <= index ? C.teal : C.line }} />
+          background: i === index ? C.lime : i < index ? C.ink : "#CFCFCF" }} />
       ))}
     </div>
   </div>
@@ -80,7 +81,7 @@ const Captions: React.FC<{ scene: Scene }> = ({ scene }) => {
   const o = interpolate(local, [0, 5], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   return (
     <div style={{ position: "absolute", left: 0, width: W, top: STAGE.bottom + 40, display: "flex", justifyContent: "center" }}>
-      <div style={{ maxWidth: 1640, background: "rgba(31,42,68,0.92)", color: "#fff", borderRadius: 22,
+      <div style={{ maxWidth: 1640, background: "rgba(28,28,28,0.9)", color: "#fff", borderRadius: 40,
         padding: "16px 40px", fontSize: fit(cue.text, 44, 60, 0.8), fontWeight: 600, lineHeight: 1.4,
         textAlign: "center", opacity: o }}>
         {cue.text}

@@ -8,7 +8,7 @@ export const MetaverseStart: React.FC<{ onStart: () => void; onBack: () => void 
       <h1 id="mv-start-h">Step into your lesson</h1>
       <p>Every topic becomes a place you can walk through. Pass the quiz gates, earn points, and spend them in the shop.</p>
       <button type="button" className="mv-start-btn" onClick={onStart} autoFocus>Start</button>
-      <button type="button" className="mv-start-back" onClick={onBack}>Back to Visual Teacher</button>
+      <button type="button" className="mv-start-back" onClick={onBack}>Back to Chanakya</button>
     </div>
   </div>
 );

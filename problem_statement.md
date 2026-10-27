@@ -12,7 +12,7 @@ Students (beginner/intermediate) on ordinary CPU-only laptops (8–16 GB RAM), o
 - Generic video generators do not teach (no structure, diagrams, or code walkthroughs)
 
 ## Our Solution
-Blu Visual Teacher (UNLOX-TEACHER): a local-first, offline engine. Typed concept -> local LLM lesson plan (validated JSON) -> local multilingual narration (audio sets scene length) -> React/Revideo visual scenes -> 720p MP4 with captions.
+Chanakya (UNLOX-TEACHER): a local-first, offline engine. Typed concept -> local LLM lesson plan (validated JSON) -> local multilingual narration (audio sets scene length) -> React/Revideo visual scenes -> 720p MP4 with captions.
 
 ## Definition of Success
 - Judge-given prompt becomes a 30–90 s lesson, offline, live, in English + 2+ Indian languages

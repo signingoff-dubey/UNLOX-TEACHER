@@ -2,7 +2,7 @@ import React from "react";
 import { useCurrentFrame, useVideoConfig } from "remotion";
 import type { Scene, TemplateName } from "../types";
 import { Icon } from "./icons";
-import { C, PALETTE, STAGE, W, ease, fit, fitAll, pop, revealFrame } from "./theme";
+import { AURA, C, PALETTE, STAGE, W, ease, fit, fitAll, pop, revealFrame } from "./theme";
 import { CodeScene } from "./code";
 import { GraphScene } from "./graph";
 
@@ -11,15 +11,15 @@ export type TemplateProps = { scene: Scene; speechFrames: number; lessonTitle: s
 const card: React.CSSProperties = {
   background: C.card,
   border: `3px solid ${C.line}`,
-  borderRadius: 26,
-  boxShadow: `0 8px 0 ${C.line}`,
+  borderRadius: 36,
+  boxShadow: "0 18px 40px rgba(0,0,0,0.07), inset 0 2px 0 #fff",
 };
 
 const centerText: React.CSSProperties = { textAlign: "center", lineHeight: 1.3 };
 
 // -------------------------------------------------------------- shared pieces
 
-const Heading: React.FC<{ text: string; color?: string }> = ({ text, color = C.saffron }) => {
+const Heading: React.FC<{ text: string; color?: string }> = ({ text, color = C.lime }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const p = pop(frame, fps);
@@ -65,7 +65,7 @@ const TitleCard: React.FC<TemplateProps> = ({ scene, lessonTitle }) => {
   return (
     <div style={{ position: "absolute", inset: `${STAGE.top}px ${STAGE.left}px ${1080 - STAGE.bottom}px`,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 36 }}>
-      <div style={{ width: 280, height: 280, borderRadius: "50%", background: "#FDE7CF",
+      <div style={{ width: 280, height: 280, borderRadius: "50%", background: AURA.pink,
         border: `6px solid ${C.saffron}`, display: "grid", placeItems: "center",
         transform: `scale(${iconP}) translateY(${bob}px)` }}>
         <Icon name={scene.icon} size={190} />
@@ -76,7 +76,7 @@ const TitleCard: React.FC<TemplateProps> = ({ scene, lessonTitle }) => {
             {lessonTitle}
           </div>
         )}
-        <div style={{ fontSize: fit(scene.heading, 92, 24), fontWeight: 800, color: C.ink, maxWidth: 1500 }}>
+        <div style={{ fontSize: fit(scene.heading, 92, 24), fontWeight: 600, letterSpacing: -2, color: C.ink, maxWidth: 1500 }}>
           {scene.heading}
         </div>
       </div>

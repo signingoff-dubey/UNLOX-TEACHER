@@ -1,4 +1,4 @@
-# Offline RAG + Dual-Engine OCR for Visual Teacher — Design
+# Offline RAG + Dual-Engine OCR for Chanakya — Design
 
 Date: 2026-10-27
 Status: approved in conversation, pending written-spec review

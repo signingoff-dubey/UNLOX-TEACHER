@@ -22,7 +22,7 @@ from .languages import LANGUAGES
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("visual-teacher")
+log = logging.getLogger("chanakya")
 
 
 @asynccontextmanager
@@ -42,7 +42,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Visual Teacher", lifespan=lifespan)
+app = FastAPI(title="Chanakya", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 app.include_router(routes_rag.router)        # PDF uploads + OCR status + hybrid search
 
@@ -53,7 +53,7 @@ class LessonRequest(BaseModel):
     concept: str = Field("", max_length=200)
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
-    duration_s: int = Field(60, ge=30, le=90)      # target video length
+    duration_s: int = Field(60, ge=30, le=240)     # target video length (over 90 s is planned in parts)
     upload: str | None = Field(None, pattern=r"^[0-9a-f]{16}$")
     focus: str = Field("", max_length=100)
     documents: list[str] = []
@@ -63,8 +63,8 @@ class PlaylistRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=200)
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
-    duration_s: int = Field(60, ge=30, le=90)         # per episode
-    episodes: int = Field(5, ge=5, le=8)
+    duration_s: int = Field(60, ge=30, le=240)        # per episode
+    episodes: int = Field(5, ge=2, le=8)
     documents: list[str] = []
 
 
@@ -277,6 +277,48 @@ def study_result(lesson_id: str, kind: str, lang: str = "en", size: str = "stand
     if res is None:
         raise HTTPException(404, "Not made yet")
     return res
+
+
+class RewardEvent(BaseModel):
+    type: Literal["lesson_complete", "course_complete", "quiz_correct", "quiz_wrong", "card_known", "tutor_question",
+                  "study_tool_open", "metaverse_points"]
+    day: str = ""                          # the browser's local date, yyyy-mm-dd
+    lesson_id: str = ""
+    course_id: str = ""
+    lang: str = "en"
+    card_id: str = ""
+    tool: str = ""
+    first_try: bool = True
+    points: int = Field(0, ge=0, le=100000)
+
+
+@app.get("/api/rewards")
+def rewards_state(day: str = "") -> dict:
+    """Score, streak, level, daily goal, week and badges for the dashboard."""
+    from . import rewards
+    return rewards.summary(None, day)
+
+
+@app.post("/api/rewards/event")
+def rewards_event(ev: RewardEvent) -> dict:
+    """One learning event (lesson finished, quiz answer, flashcard known...). Returns the XP gained and any new badges."""
+    from . import rewards
+    return rewards.award(ev.model_dump(), ev.day)
+
+
+class GoalRequest(BaseModel):
+    goal: int = 50
+    name: str | None = Field(None, max_length=30)
+
+
+@app.post("/api/rewards/goal")
+def rewards_goal(req: GoalRequest) -> dict:
+    from . import rewards
+    try:
+        state = rewards.set_goal(req.goal)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return rewards.set_name(req.name) if req.name else state
 
 
 class MetaQuizRequest(BaseModel):

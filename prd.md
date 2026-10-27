@@ -1,7 +1,7 @@
 # Product Requirements Document
 
 ## Product Name
-Blu Visual Teacher (repo: UNLOX-TEACHER) — Codestorm: Unlox 24-Hour Hackathon
+Chanakya (repo: UNLOX-TEACHER) — Codestorm: Unlox 24-Hour Hackathon
 
 ## Problem Statement (one line)
 Turn a typed concept into a 30–90 s narrated visual lesson in English + Indian languages, fully offline.

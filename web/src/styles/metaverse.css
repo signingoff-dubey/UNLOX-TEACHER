@@ -1,0 +1,31 @@
+/* Metaverse entrance (tunnel, Start page). Animates only opacity and transform: no blur, no backdrop-filter. */
+.mv-overlay { position: fixed; inset: 0; z-index: 1000; background: #0e0a24; }
+.mv-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #fff2e3; font-weight: 600; }
+/* Metaverse entrance. Everything here animates only opacity and transform (compositor work): no blur, no backdrop-filter. */
+.mv-tunnel { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 1100; pointer-events: none; transition: opacity .8s cubic-bezier(.4, 0, .2, 1); will-change: opacity; }
+.mv-tunnel.leaving { opacity: 0; }
+
+.mv-start { position: fixed; inset: 0; z-index: 1050; display: grid; place-items: center; padding: 24px; animation: mv-fade .9s ease both;
+  background: radial-gradient(ellipse 75% 70% at 50% 46%, #0b0724 0, #0b0724 52%, rgba(7, 4, 22, .86) 100%); font-family: "Chakra Petch", "Figtree", system-ui, sans-serif; }
+.mv-start-card { max-width: 580px; text-align: center; color: #f6efe2; }
+.mv-start-card > * { animation: mv-rise .85s cubic-bezier(.2, .8, .2, 1) both; }
+.mv-start-card > :nth-child(1) { animation-delay: .15s; }
+.mv-start-card > :nth-child(2) { animation-delay: .27s; }
+.mv-start-card > :nth-child(3) { animation-delay: .4s; }
+.mv-start-card > :nth-child(4) { animation-delay: .55s; }
+.mv-start-card > :nth-child(5) { animation-delay: .7s; }
+.mv-start-eyebrow { font-size: 13px; letter-spacing: .34em; text-transform: uppercase; color: #ffb347; margin-bottom: 16px; }
+.mv-start-card h1 { margin: 0 0 16px; font-size: clamp(36px, 6vw, 64px); line-height: 1.04; letter-spacing: -.01em; text-shadow: 0 2px 30px rgba(255, 190, 90, .25); }
+.mv-start-card p { margin: 0 auto 34px; max-width: 44ch; color: #cfc6ff; font-size: 17px; line-height: 1.55; }
+.mv-start-btn { position: relative; overflow: hidden; font: inherit; font-weight: 700; font-size: 22px; letter-spacing: .1em; padding: 15px 64px; border: 0; border-radius: 16px; cursor: pointer;
+  background: #ffb347; color: #2a1a00; box-shadow: 0 5px 0 #c77f12, 0 12px 36px -6px rgba(255, 179, 71, .55); transition: transform .14s ease, box-shadow .14s ease; }
+.mv-start-btn::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .55) 50%, transparent 65%);
+  transform: translateX(-130%); animation: mv-sheen 3.4s ease-in-out 1.6s infinite; }
+.mv-start-btn:hover { transform: translateY(-2px); box-shadow: 0 7px 0 #c77f12, 0 16px 40px -6px rgba(255, 179, 71, .7); }
+.mv-start-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #c77f12, 0 6px 20px -6px rgba(255, 179, 71, .5); }
+.mv-start-btn:focus-visible, .mv-start-back:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+.mv-start-back { display: block; margin: 24px auto 0; font: inherit; font-size: 14px; background: none; border: 0; color: #a99bff; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+@keyframes mv-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mv-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes mv-sheen { 0%, 60% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+@media (prefers-reduced-motion: reduce) { .mv-start, .mv-start-card > *, .mv-start-btn::after { animation: none; } .mv-tunnel { transition: none; } }

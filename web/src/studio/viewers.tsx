@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useRewards } from "../rewards/RewardsContext";
 import type { MapBranch, MapChild, Question, StudioData, StudioKind } from "./types";
 
 /** Every viewer gets `ask`: close the studio and ask the tutor about something on screen. */
 type Ask = (question: string) => void;
 
 // ------------------------------------------------------------------ quiz
-export const Quiz: React.FC<{ data: StudioData["quiz"] }> = ({ data }) => {
+export const Quiz: React.FC<{ data: StudioData["quiz"]; lessonId: string }> = ({ data, lessonId }) => {
+  const { award } = useRewards();
+  const [retrying, setRetrying] = useState(false);
   const [qs, setQs] = useState<Question[]>(data.questions);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<number | null>(null);
@@ -19,8 +22,8 @@ export const Quiz: React.FC<{ data: StudioData["quiz"] }> = ({ data }) => {
         <h3>{score} of {qs.length} correct</h3>
         <p className="muted">{wrong.length === 0 ? "Perfect round." : "Retry the ones you missed to lock them in."}</p>
         <div className="studio-actions">
-          {wrong.length > 0 && <button type="button" className="go small" onClick={() => { setQs(wrong); setWrong([]); setScore(0); setI(0); setPick(null); }}>Retry {wrong.length} missed</button>}
-          <button type="button" className="ghost" onClick={() => { setQs(data.questions); setWrong([]); setScore(0); setI(0); setPick(null); }}>Start over</button>
+          {wrong.length > 0 && <button type="button" className="go small" onClick={() => { setRetrying(true); setQs(wrong); setWrong([]); setScore(0); setI(0); setPick(null); }}>Retry {wrong.length} missed</button>}
+          <button type="button" className="ghost" onClick={() => { setRetrying(false); setQs(data.questions); setWrong([]); setScore(0); setI(0); setPick(null); }}>Start over</button>
         </div>
       </div>
     );
@@ -28,7 +31,13 @@ export const Quiz: React.FC<{ data: StudioData["quiz"] }> = ({ data }) => {
   const choose = (k: number) => {
     if (pick !== null) return;
     setPick(k);
-    if (k === q.answer_index) setScore((s) => s + 1); else setWrong((w) => [...w, q]);
+    if (k === q.answer_index) {
+      setScore((s) => s + 1);
+      award({ type: "quiz_correct", first_try: !retrying, lesson_id: lessonId, card_id: `q${data.questions.indexOf(q)}` });
+    } else {
+      setWrong((w) => [...w, q]);
+      award({ type: "quiz_wrong" });
+    }
   };
   return (
     <div className="quiz">

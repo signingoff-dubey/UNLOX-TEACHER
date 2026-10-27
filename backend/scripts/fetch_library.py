@@ -30,7 +30,7 @@ from app.rag.paths import LIBRARY_DIR  # noqa: E402
 RAW = LIBRARY_DIR / "raw"
 WIKI = LIBRARY_DIR / "wikipedia"
 INDIC = ["hi", "te", "ta", "ml", "mr", "kn", "bn", "gu"]
-UA = {"User-Agent": "visual-teacher-library/1.0 (offline education hackathon project)"}
+UA = {"User-Agent": "chanakya-library/1.0 (offline education hackathon project)"}
 WIKI_LICENSE = "CC BY-SA 4.0"
 ARCHIVE_CAP_BYTES = 5 * 1024 ** 3
 PAGES_PER_RECORD = 10

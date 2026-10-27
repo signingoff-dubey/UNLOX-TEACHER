@@ -52,7 +52,7 @@ def _lengthen(plan: LessonPlan, target_words: int) -> bool:
     So each scene's narration is rewritten with a short free-text call, in order, each seeing the one before it.
     The scenes, points and code stay exactly as planned. Returns True if anything was lengthened."""
     nl = chr(10)
-    per_scene = max(22, round(target_words / len(plan.scenes)))
+    per_scene = max(14, round(target_words / len(plan.scenes)))      # a floor of 22 made a 4-minute plan of 23 scenes run to 3.5 minutes
     changed, previous = False, ""
     for i, s in enumerate(plan.scenes):
         facts = []

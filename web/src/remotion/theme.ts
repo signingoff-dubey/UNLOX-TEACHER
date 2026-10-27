@@ -4,22 +4,35 @@ export const W = 1920;
 export const H = 1080;
 export const FPS = 30;
 
+// Chanakya's soft grey glass look (the design language of the app): neutral surfaces, one lime accent, aura gradients.
 export const C = {
-  paper: "#FBF7EF",
-  grid: "#EEE6D6",
-  ink: "#1F2A44",
-  muted: "#5B6478",
-  card: "#FFFFFF",
-  line: "#E3DACA",
-  saffron: "#E98A2E",
-  teal: "#178F7E",
-  blue: "#3366CC",
-  rose: "#CF4A68",
-  violet: "#7457C2",
-  green: "#2E9E57",
+  bg: "#E2E2E2",
+  ink: "#1C1C1C",
+  muted: "#6B6B6B",
+  card: "#F6F6F6",
+  line: "#E9E9E9",
+  lime: "#C7D43D",
+  green: "#2F8335",
+  orange: "#E06A1B",
+  blue: "#4A86C5",
+  pink: "#E0457A",
+  violet: "#7A62C9",
+  teal: "#2E9AA0",
+  // names the scene templates (including graph and code scenes) already use
+  paper: "#E2E2E2",
+  grid: "#D2D2D2",
+  saffron: "#E06A1B",
+  rose: "#E0457A",
 };
 
-export const PALETTE = [C.saffron, C.teal, C.blue, C.rose, C.violet, C.green];
+/** Blurred colour fields behind cards. */
+export const AURA = {
+  green: "radial-gradient(120% 90% at 50% 100%, #2F8335 0%, #41A642 35%, #A3C26A 60%, #E3C498 85%, #F1E6D8 100%)",
+  orange: "radial-gradient(90% 90% at 55% 60%, #F37811 0%, #ED8441 25%, #E29F68 50%, #DAB093 70%, #BBC5C6 100%)",
+  pink: "radial-gradient(80% 80% at 50% 50%, #E18951 0%, #F15F8A 18%, #F589A3 45%, #F2ABB8 70%, #F0C2C7 100%)",
+};
+
+export const PALETTE = [C.orange, C.green, C.blue, C.pink, C.violet, C.teal];
 
 // Browser shapes each script with the first family that has its glyphs.
 // Nirmala UI ships with Windows and covers every Indic script, as a last resort.

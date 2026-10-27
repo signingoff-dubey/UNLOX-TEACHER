@@ -11,6 +11,7 @@ from typing import Callable
 from . import config
 from .captions import time_captions, to_srt
 from .languages import get as get_lang, words_per_sec
+from .longplan import LONG_MIN, plan_long
 from .planner import plan_lesson
 from .director import direct
 from .review import review as review_plan
@@ -58,8 +59,12 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     stage = "Reading the PDF and planning the lesson" if upload else "Finding facts and planning the lesson"
     progress(stage, 0.02)
     wps = words_per_sec(langs)
-    plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
-                                series=series, on_progress=lambda f: progress(stage, 0.02 + 0.40 * f))
+    on_plan = lambda f: progress(stage, 0.02 + 0.40 * f)  # noqa: E731
+    if duration_s > LONG_MIN and config.LLM_BACKEND != "mock":
+        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan)      # 1.5-4 min: planned in parts
+    else:
+        plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
+                                    series=series, on_progress=on_plan)
     note = source_note(sources)
     progress("Designing the visuals", 0.43)
     plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))

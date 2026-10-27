@@ -1,7 +1,32 @@
 # Progress Log
 
-## Current Version: v0.8.0
+## Current Version: v0.9.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.9.0] — 2026-10-27
+### What's New
+- **Project renamed Chanakya** (README, PRD, API title, web title and package, Learnverse stays the name of the metaverse mode)
+- **Frontend rebuilt in Priya's grey glass language**: tokens and primitives in `web/src/styles/`, design-system parts in `web/src/ds/` (Glyph, DotNumber, Ring, Stat), shell, pages (Home, Library, Rewards, Lesson), Remotion video theme ported to the same palette. Old `app.css`, `screens.css` and screens removed
+- **Home**: a big prompt box is the hero; settings (videos 1-8, length 0:30-4:00, level, languages, PDF) sit in a card below. Scrolling shrinks the box into a pinned header, its topic chips slide away behind it (`--p` driven by scroll, `pages/Home.tsx`, `styles/home.css`); the dock height is measured so the chips never overlap the settings card
+- **Sidebar = navigation + awards**: streak with week, score and level, daily goal, latest badges, recent lessons, system status
+- **Custom scrollbars** that fade out when nothing scrolls (`shell/useScrollbars.ts`, `styles/scroll.css`)
+- **Rewards**: streaks (shields, 20 XP to count a day), XP, levels, 13 badges, daily goals; backend `rewards.py` (13 tests), frontend context with XP/level toasts and a badge modal; wired to lessons, quiz, flashcards, tutor questions, study tools
+- **Videos up to 4 minutes**: over 1:30 a lesson is planned in parts (`backend/app/longplan.py`: outline, then each ~40 s part knows what came before and what comes next, parts joined into one lesson); API accepts 30-240 s
+- **Floating "Creating…" pill** (`shell/CreatingPill.tsx`): leaving the progress screen no longer loses the lesson; a dot globe pill sits bottom right on every page, turns "Created" and pops to 120% when done, and opens it on click. The result is no longer thrown away when you navigate
+- **Faster local model**: no constrained decoding (planner 34 s -> 9.8 s), lenient schema repair, one context size, Ollama flash attention + q8 KV cache + 2 parallel slots
+- Progress of a lesson being made shows only in the side card, never inside the player; stat pills show number and label together in one pill; Library cards share one size
+- Unlimited-OCR (6.7 GB) downloaded and verified on a scanned page (~10-12 s/page)
+
+### Known Issues
+- A 2:30 test video came out at 3:31 before the scene cap and word floor were tightened; needs one more measurement on the next long build
+- Long videos can still pick odd scene types (code scenes in a non-code topic); the director does not catch them yet
+- Gemma 4 needs a newer Ollama than 0.23.1; Qwen2.5-7B stays the model (Llama 3.2 3B was slower and weaker)
+
+### Future Scope
+- Progressive videos: start playing segment 1 while later parts are still being written (`docs/plan-long-videos.md`)
+- Metaverse points as a `metaverse_points` reward event
 
 ---
 

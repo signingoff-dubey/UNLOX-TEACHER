@@ -1,4 +1,4 @@
-# Visual Teacher
+# Chanakya
 
 Type a concept and get a 30–90 s narrated, animated lesson in English plus Indian languages.
 It plays in the browser and exports to MP4. Everything runs offline on one laptop.
@@ -81,7 +81,7 @@ You also need **Ollama** (https://ollama.com); `setup.ps1` pulls the model if it
 
 ## Setup on the machine that runs the backend (the one with the models)
 
-The backend renders MP4s with Node, so copy the **whole `visual-teacher` folder** (backend + web) to that machine.
+The backend renders MP4s with Node, so copy the **whole project folder** (backend + web) to that machine.
 
 1. **Python 3.12** (3.14 is too new for these packages):
    ```powershell
@@ -242,3 +242,9 @@ Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on so
 - **Voice assistant (Niharika's plan in `Niharika/`):** see `docs/voice-assistant.md` for what is built.
 - `Dhiraj/` is a full snapshot of Dhiraj's own build, kept as pushed; the running app is the root `backend/` and `web/`.
 - Backend tests: `cd backend && pytest` (needs `requirements-rag.txt`).
+
+## Home screen, rewards and long videos (v0.9.0)
+- The prompt box on Home shrinks into a header as you scroll; settings (1-8 videos, 0:30-4:00 each, level, languages, PDF) are in the card below it
+- The left column holds your awards: streak, score, level, daily goal, badges
+- Videos over 1:30 are planned in parts and joined (`backend/app/longplan.py`); the API takes `duration_s` 30-240
+- While a video is being made you can leave its page: a floating "Creating…" pill (bottom right) leads back and says "Created" when it is done

@@ -5,6 +5,7 @@ import { StudioModal } from "../studio/StudioModal";
 import { TOOLS, type StudioKind } from "../studio/types";
 import { requestTool, useStudioStatus } from "../studio/useStudio";
 import { MetaButton, StudioButton } from "../studio/StudioButton";
+import { useRewards } from "../rewards/RewardsContext";
 import type { Lesson, Track } from "../types";
 import { Ui } from "./ui-icons";
 
@@ -39,7 +40,13 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
   const [voice, setVoice] = useState<"off" | "listening" | "hearing">("off");   // mic state
   const [speaker, setSpeaker] = useState(() => { try { return localStorage.getItem("vt.speaker") !== "0"; } catch { return true; } });
   const [note, setNote] = useState("");
-  const [studio, setStudio] = useState<StudioKind | null>(null);
+  const { award } = useRewards();
+  const [studioKind, setStudioKind] = useState<StudioKind | null>(null);
+  const studio = studioKind;
+  const setStudio = (k: StudioKind | null) => {
+    setStudioKind(k);
+    if (k && lesson) award({ type: "study_tool_open", lesson_id: lesson.id, tool: k });
+  };
   const [wanted, setWanted] = useState<StudioKind | null>(null);          // clicked while still being built: opens when ready
   const { tools, refresh } = useStudioStatus(lesson?.id, lang);
 
@@ -136,6 +143,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
       const history = msgs.filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
       const res = await api<{ reply: string; scene: number | null; audio_url?: string }>(`/api/lessons/${lesson.id}/chat`,
         { message, lang, time_s: getTime(), history, speak: speaker && (spoken || voice === "off") });
+      award({ type: "tutor_question" });
       const done: Msg[] = [...next, { role: "assistant", content: res.reply, scene: res.scene }];
       setMsgs(done);
       save(lesson.id, done);

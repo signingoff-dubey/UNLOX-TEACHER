@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Walkable 3D learning world for Visual Teacher: stations, quiz gates, points, shop.",
+  "description": "Walkable 3D learning world for Chanakya: stations, quiz gates, points, shop.",
   "main": "src/index.ts",
   "scripts": {
     "dev": "vite",

@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 PLAYLISTS_DIR = config.MEDIA_DIR / "playlists"
 PLAYLISTS_DIR.mkdir(parents=True, exist_ok=True)
-MIN_EPISODES, MAX_EPISODES = 5, 8
+MIN_EPISODES, MAX_EPISODES = 2, 8
 WORKERS = int(__import__("os").getenv("PLAYLIST_WORKERS", "2"))     # episodes in flight: voices of one overlap planning of the next
 
 

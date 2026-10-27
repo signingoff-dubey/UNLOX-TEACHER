@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]          # visual-teacher/
+ROOT = Path(__file__).resolve().parents[2]          # chanakya/
 BACKEND = ROOT / "backend"
 WEB_DIR = ROOT / "web"
 MODELS_DIR = Path(os.getenv("MODELS_DIR", ROOT / "models"))

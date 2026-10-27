@@ -30,7 +30,7 @@ from app.knowledge import DOC_PREFIX, KnowledgeBase, embed  # noqa: E402
 TOPICS = config.ROOT / "data" / "topics.txt"
 EXTRA = config.ROOT / "data" / "kb_extra"
 RAW = config.KB_DIR / "raw"
-HEADERS = {"User-Agent": "VisualTeacher/1.0 (offline school-lesson generator; "
+HEADERS = {"User-Agent": "Chanakya/1.0 (offline school-lesson generator; "
                          "https://github.com/signingoff-dubey/UNLOX-TEACHER)"}
 SKIP_SECTIONS = {"references", "related pages", "other websites", "see also", "external links", "notes",
                  "further reading", "gallery", "sources", "bibliography", "footnotes", "citations"}

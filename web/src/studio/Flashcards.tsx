@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useRewards } from "../rewards/RewardsContext";
 import type { StudioData } from "./types";
 
 const LEAVE_MS = 300;
@@ -7,7 +8,8 @@ const LEAVE_MS = 300;
  * One card at a time. The front is the question; "View answer" turns the card over (the back is the answer), then you say
  * whether you knew it. Cards you were unsure about come back in a second round.
  */
-export const Flashcards: React.FC<{ data: StudioData["flashcards"] }> = ({ data }) => {
+export const Flashcards: React.FC<{ data: StudioData["flashcards"]; lessonId: string }> = ({ data, lessonId }) => {
+  const { award } = useRewards();
   const all = data.cards;
   const [order, setOrder] = useState(() => all.map((_, i) => i));
   const [pos, setPos] = useState(0);
@@ -25,6 +27,7 @@ export const Flashcards: React.FC<{ data: StudioData["flashcards"] }> = ({ data 
   const rate = (know: boolean) => {
     if (leaving || !flipped) return;
     setVerdict((v) => ({ ...v, [order[pos]]: know ? "known" : "learning" }));
+    if (know) award({ type: "card_known", lesson_id: lessonId, card_id: String(order[pos]) });
     setLeaving(know ? "right" : "left");
     timer.current = window.setTimeout(() => { setLeaving(null); setFlipped(false); setPos((p) => p + 1); }, LEAVE_MS);
   };

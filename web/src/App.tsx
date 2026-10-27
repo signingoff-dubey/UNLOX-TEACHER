@@ -1,25 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { World } from "metaverse";
 import type { Job, Lesson } from "./types";
 import {
   api, getApiBase, runJob, type Lang, type LessonSettings, type LessonSummary, type Playlist, type PlaylistSummary,
 } from "./api";
-import { Home } from "./screens/Home";
-import { LessonScreen } from "./screens/LessonScreen";
 import { MetaverseLayer, preloadMetaverse } from "./components/MetaverseLayer";
-import type { World } from "metaverse";
+import { Home } from "./pages/Home";
+import { Library } from "./pages/Library";
+import { LessonPage } from "./pages/LessonPage";
+import { RewardsPage } from "./pages/RewardsPage";
+import { CreatingPill, type Creation } from "./shell/CreatingPill";
+import { Sidebar } from "./shell/Sidebar";
+import { useScrollbars } from "./shell/useScrollbars";
 
-type Screen = "home" | "lesson";
+type Screen = "home" | "lesson" | "library" | "rewards";
 const COURSE_HASH = /^c-([a-z0-9]+)(?:-(\d+))?$/;
 
-/** Two screens: Home (ask) -> Lesson (notes | video | tutor). Progress shows inside the video area.
- *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, so links and Back work for both. */
+/** Chanakya. A sidebar (create, library, your streak and score) and a main page: dashboard, lesson, library or rewards.
+ *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, the others are `#/library` and `#/rewards`. */
 export default function App() {
+  useScrollbars();
   const [screen, setScreen] = useState<Screen>("home");
   const [languages, setLanguages] = useState<Lang[]>([]);
   const [settings, setSettings] = useState<LessonSettings>({ level: "beginner", duration_s: 60, languages: ["en", "hi"] });
   const [concept, setConcept] = useState("");
-  const [course, setCourse] = useState(false);
-  const [episodes, setEpisodes] = useState(5);
+  const [videos, setVideos] = useState(1);                      // 1 = one video, more = a course of that many
   const [upload, setUpload] = useState<string | null>(null);   // sha of an uploaded, read PDF
   const [focus, setFocus] = useState("");                       // e.g. "chapter 4" inside that PDF
   // The entrance animation and the world live in MetaverseLayer (its own state), so nothing here re-renders while it plays.
@@ -35,7 +40,12 @@ export default function App() {
   const [courses, setCourses] = useState<PlaylistSummary[]>([]);
   const [error, setError] = useState("");
   const [assetBase, setAssetBase] = useState(getApiBase());
-  const run = useRef(0);                            // ignore results of something the user already left
+  const run = useRef(0);                            // a newer creation replaces the one still running
+  // What is being made, so it can be reached from any page (the floating pill), and whether the user is looking at its progress screen.
+  const [creation, setCreation] = useState<Creation | null>(null);
+  const [watching, setWatching] = useState(false);
+  const watchingRef = useRef(false);
+  const watch = (v: boolean) => { watchingRef.current = v; setWatching(v); };
 
   const loadLists = useCallback(() => {
     setAssetBase(getApiBase());
@@ -84,10 +94,14 @@ export default function App() {
 
   const openHash = useCallback(() => {
     const h = location.hash.slice(1);
+    watchingRef.current = false;                    // any navigation leaves the progress screen
+    setWatching(false);
     const m = COURSE_HASH.exec(h);
     if (m) openCourse(m[1], m[2] !== undefined ? Number(m[2]) : undefined);
-    else if (h) openLesson(h);
-    else { run.current++; setScreen("home"); }
+    else if (h === "/library") setScreen("library");
+    else if (h === "/rewards") setScreen("rewards");
+    else if (h && h !== "/") openLesson(h);
+    else setScreen("home");
   }, [openCourse, openLesson]);
 
   useEffect(() => {
@@ -109,32 +123,42 @@ export default function App() {
     return () => clearInterval(t);
   }, [playlist?.id, making]);
   useEffect(() => {
-    if (!playlist || lesson) return;
+    if (!playlist || lesson || screen !== "lesson") return;
     const first = playlist.episodes.findIndex((e) => e.status === "ready");
     if (first >= 0) openEpisode(playlist, first);
-  }, [playlist, lesson, openEpisode]);
+  }, [playlist, lesson, screen, openEpisode]);
+
+  const busy = job?.status === "queued" || job?.status === "running";
 
   async function create(topic = concept) {
     const text = topic.trim();
-    if (text.length < 2 && !upload) return;
+    if (busy || (text.length < 2 && !upload)) return;
     setConcept(text);
     setError("");
     setJob(null);
     setLesson(null);
     setPlaylist(null);
     setEpisode(0);
-    setScreen("lesson");                      // straight to the lesson screen; the video area shows progress
+    setScreen("lesson");                      // straight to the lesson page; the progress card shows beside the player
     const mine = ++run.current;
+    watch(true);
+    setCreation({ status: "running", kind: videos > 1 ? "course" : "lesson", concept: text });
     const pdf = { upload, focus: upload ? focus.trim() : "" };
     try {
-      if (course) {
-        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes, documents: upload ? [upload] : [] });
+      if (videos > 1) {
+        const started = await api<{ playlist: Playlist; job: Job }>("/api/playlists", { topic: text, ...settings, episodes: videos, documents: upload ? [upload] : [] });
         if (mine !== run.current) return;
-        setPlaylist(started.playlist);
-        window.history.replaceState(null, "", `#c-${started.playlist.id}`);
+        const id = started.playlist.id;
+        setCreation((c) => c && { ...c, playlistId: id, hash: `c-${id}` });
+        if (watchingRef.current) {
+          setPlaylist(started.playlist);
+          window.history.replaceState(null, "", `#c-${id}`);
+        }
         await runJob(Promise.resolve(started.job), (j) => { if (mine === run.current) setJob(j); });
         if (mine !== run.current) return;
-        setPlaylist(await api<Playlist>(`/api/playlists/${started.playlist.id}`));
+        const fresh = await api<Playlist>(`/api/playlists/${id}`);
+        setPlaylist((cur) => (cur && cur.id === id ? fresh : cur));
+        setCreation((c) => c && { ...c, status: "done" });
         loadLists();
         return;
       }
@@ -143,13 +167,18 @@ export default function App() {
         (j) => { if (mine === run.current) setJob(j); },
       );
       if (mine !== run.current) return;
-      show(done.result as Lesson, settings.languages);
-      window.history.replaceState(null, "", `#${(done.result as Lesson).id}`);
+      const made = done.result as Lesson;
+      setCreation({ status: "done", kind: "lesson", concept: text, hash: made.id });
+      if (watchingRef.current) {                  // still on the progress screen: open it; otherwise the pill says "Created"
+        show(made, settings.languages);
+        window.history.replaceState(null, "", `#${made.id}`);
+      }
       loadLists();
     } catch (e) {
       if (mine !== run.current) return;
       setError((e as Error).message);
-      setScreen("home");
+      if (watchingRef.current) { setCreation(null); setScreen("home"); }
+      else setCreation((c) => c && { ...c, status: "error" });
     }
   }
 
@@ -179,34 +208,47 @@ export default function App() {
     return () => (idle ? (window as unknown as { cancelIdleCallback: (n: number) => void }).cancelIdleCallback(id) : window.clearTimeout(id));
   }, []);
 
-  const goHome = () => {
-    run.current++;
-    setScreen("home");
-    setPlaylist(null);
+  const go = (hash: string) => { setPlaylist(null); window.location.hash = hash; };
+  const onVideo = (key: string, path: string) => { setLesson((l) => l && { ...l, videos: { ...l.videos, [key]: path } }); };
+  // The floating pill is for a creation the user is not looking at. Looking at it (its progress screen, its lesson or its course) hides it.
+  const viewing = screen === "lesson" && !!creation && (creation.kind === "course"
+    ? (!!playlist && playlist.id === creation.playlistId) || (watching && !creation.playlistId)
+    : watching || (!!lesson && lesson.id === creation.hash));
+  useEffect(() => { if (creation && creation.status !== "running" && viewing) setCreation(null); }, [creation, viewing]);
+  const openCreation = () => {
+    if (!creation) return;
+    if (creation.status === "error") { setCreation(null); go("/"); return; }
+    if (creation.hash && (creation.status === "done" || creation.kind === "course")) { go(creation.hash); if (creation.status === "done") setCreation(null); return; }
+    setLesson(null); setPlaylist(null); setError("");           // a lesson still being made: back to its progress screen
+    watch(true);
+    setScreen("lesson");
     window.history.replaceState(null, "", location.pathname);
-    loadLists();
   };
-
-  const onVideo = (key: string, path: string) => {
-    setLesson((l) => l && { ...l, videos: { ...l.videos, [key]: path } });
-  };
+  const activeId = screen === "lesson" ? (playlist ? `c-${playlist.id}` : lesson?.id) : undefined;
 
   return (
-    <div className={screen === "lesson" ? "app wide" : "app"}>
+    <div className={screen === "lesson" ? "shell has-lesson" : "shell"}>
+      <Sidebar
+        screen={screen} recent={recent} courses={courses} activeId={activeId}
+        onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)}
+        onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
+      />
+
       {screen === "home" && (
         <Home concept={concept} onConcept={setConcept} settings={settings} onSettings={setSettings} languages={languages}
-          upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus} onMetaverse={enterMetaverse}
-          recent={recent} error={error}
-          onCreate={create} onOpen={openLesson} onBaseChange={loadLists}
-          course={course} onCourse={setCourse} episodes={episodes} onEpisodes={setEpisodes}
-          courses={courses} onOpenCourse={(id) => openCourse(id)} />
+          videos={videos} onVideos={setVideos} upload={upload} onUpload={setUpload} focus={focus} onFocus={setFocus}
+          busy={busy} error={error} onCreate={create} recent={recent} courses={courses}
+          onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} onRewards={() => go("/rewards")} onLibrary={() => go("/library")} />
       )}
+      {screen === "library" && <Library recent={recent} courses={courses} onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} />}
+      {screen === "rewards" && <RewardsPage />}
       {screen === "lesson" && (
-        <LessonScreen lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}
-          lang={active} onLang={setActive} assetBase={assetBase} onBack={goHome} onVideo={onVideo}
+        <LessonPage lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}
+          lang={active} onLang={setActive} assetBase={assetBase} onVideo={onVideo}
           playlist={playlist} episode={episode} onEpisode={(i) => playlist && openEpisode(playlist, i)}
           onMetaverse={enterMetaverse} onMetaQuiz={startMetaQuiz} metaBusy={meta} />
       )}
+      {creation && !viewing && <CreatingPill creation={creation} onOpen={openCreation} />}
       <MetaverseLayer trigger={mvTrigger} lesson={lesson} lang={active} world={mvWorld} />
     </div>
   );
