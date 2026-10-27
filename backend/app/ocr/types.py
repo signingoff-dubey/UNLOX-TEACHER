@@ -32,10 +32,13 @@ class PageRecord:
     agreement: float | None = None
     low_confidence: bool = False
     status: PageStatus = "pending"
+    tess_text: str = ""            # each engine's own read, kept for re-arbitration and benchmarks
+    uni_text: str = ""
 
     def to_json(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_json(cls, data: dict) -> "PageRecord":
-        return cls(**data)
+        known = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in data.items() if k in known})

@@ -64,6 +64,17 @@ def open_collection(scope: str, embedder) -> Collection | None:
         return col
 
 
+def writable_collection(scope: str, embedder) -> Collection:
+    """Open or create a collection, shared with readers so they see new chunks immediately
+    (each Collection holds its FAISS index in memory)."""
+    path = collection_path(scope)
+    with _cache_lock:
+        col = _cache.get(scope)
+        if col is None:
+            col = _cache[scope] = Collection(path, embedder)
+        return col
+
+
 def forget(scope: str) -> None:
     """Drop a cached collection (after an upload's index is rebuilt or deleted)."""
     with _cache_lock:
