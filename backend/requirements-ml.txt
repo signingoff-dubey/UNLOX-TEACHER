@@ -1,0 +1,8 @@
+# GPU extras: IndicTrans2 translation + AI4Bharat Indic Parler-TTS.
+# Install PyTorch FIRST with CUDA 12.8 wheels (needed for RTX 50-series / Blackwell):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# then:  pip install -r requirements-ml.txt
+git+https://github.com/huggingface/parler-tts.git
+IndicTransToolkit
+sentencepiece
+soundfile

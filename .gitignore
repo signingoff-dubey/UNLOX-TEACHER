@@ -1,0 +1,11 @@
+backend/venv/
+backend/.venv/
+backend/.env
+__pycache__/
+models/
+media/
+web/node_modules/
+web/dist/
+web/.remotion-bundle/
+web/public/fonts/
+.impeccable/
