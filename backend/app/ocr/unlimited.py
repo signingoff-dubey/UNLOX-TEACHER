@@ -62,8 +62,10 @@ def split_pages(raw: str, n: int) -> list[str] | None:
 
 
 class UnlimitedOCR:
-    def __init__(self, model_dir: Path = UNLIMITED_DIR) -> None:
+    def __init__(self, model_dir: Path = UNLIMITED_DIR, mode: str = "base") -> None:
+        # "base": one 1024px view (fewer image tokens, fits 8 GB); "gundam": 640px crops + global view.
         self.model_dir = model_dir
+        self.mode = mode
         self.model = None
         self.tokenizer = None
 
@@ -114,7 +116,8 @@ class UnlimitedOCR:
     def _single(self, path: str, out_dir: str) -> str:
         return self.model.infer(
             self.tokenizer, prompt="<image>document parsing.", image_file=path, output_path=out_dir,
-            base_size=1024, image_size=640, crop_mode=True, max_length=8192,
+            base_size=1024, image_size=640 if self.mode == "gundam" else 1024,
+            crop_mode=self.mode == "gundam", max_length=8192,
             no_repeat_ngram_size=35, ngram_window=128, eval_mode=True,
         )
 

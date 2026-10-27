@@ -3,6 +3,8 @@
 # (verified: torch 2.11.0+cu128 on the RTX 5060)
 # Unlimited-OCR pins come from its model card (tested on Python 3.12 + CUDA 12.9).
 transformers==4.57.1
+# torchvision must match torch: install it from the cu128 index with --no-deps.
+matplotlib                       # imported by Unlimited-OCR's model code
 einops==0.8.2
 addict==2.4.0
 easydict==1.13
