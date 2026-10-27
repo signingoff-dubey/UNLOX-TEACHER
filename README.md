@@ -253,3 +253,17 @@ Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on so
 - Plus button in the prompt box: attach photos (read locally by llava)
 - Explanation / Study / Homework pills; Homework also writes an answers file (`#/homework/<id>`, download as .md)
 - Videos: Auto lets the AI pick one video per concept
+
+## Android app (v0.13.0)
+`Unlox_Hackethon/` is the same product as a native Kotlin + Jetpack Compose app that runs fully on the phone (tested on a OnePlus 13R, 16 GB). No server, no internet at run time.
+
+| Part | Engine |
+|------|--------|
+| Tutor, lesson planner, study tools, homework solver | Gemma 4 E2B through LiteRT-LM |
+| Narration | Piper voices through sherpa-onnx 1.13.8 (en, hi, te, mr, bn, gu, ml); the phone's own voice for Tamil and Kannada |
+| Speech to text | Whisper names the language, then Vosk (en, hi, te, gu) or Whisper base (ta, kn, ml, mr, bn). The approach is borrowed from the NDialRecorder |
+| Translation | ML Kit language packs (download once), Gemma as the fallback |
+| Homework photos | ML Kit text recognition (Latin and Devanagari) |
+
+Screens follow the Figma file "NOTES - Kabir Edition" (onboarding, home, create, generating, player, tutor chat, progress, library) plus study tools, homework, rewards, settings and a profile with name and age. The opening animation and the ripple and wave of the voice screen are the website's.
+Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_hackethon/files/models/` (`llm/`, `stt/`, `tts/`, `embeddings/`); Settings > On this phone shows what is found. Build: `cd Unlox_Hackethon && gradlew :app:assembleDebug`. A debug APK is attached to the GitHub release.

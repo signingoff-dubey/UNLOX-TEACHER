@@ -244,6 +244,19 @@ def set_name(name: str) -> dict:
 
 
 # ------------------------------------------------------------------ what the dashboard shows
+def history(day: str | None = None, days: int = 126) -> list[dict]:
+    """XP and activity for each of the last `days` days up to `day` (oldest first): the progress page's heatmap and bars."""
+    p = load()
+    end = date.fromisoformat(_valid_day(day or ""))
+    out = []
+    for back in range(max(1, min(days, 400)) - 1, -1, -1):
+        d = (end - timedelta(days=back)).isoformat()
+        v = p["days"].get(d, {})
+        out.append({"day": d, "xp": v.get("xp", 0), "lessons": v.get("lessons", 0), "quiz": v.get("quiz", 0),
+                    "cards": v.get("cards", 0), "ask": v.get("ask", 0)})
+    return out
+
+
 def summary(p: dict | None = None, day: str | None = None) -> dict:
     p = p or load()
     day = _valid_day(day or "")

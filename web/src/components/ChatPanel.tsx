@@ -8,6 +8,7 @@ import { MetaButton, StudioButton } from "../studio/StudioButton";
 import { useRewards } from "../rewards/RewardsContext";
 import type { Lesson, Track } from "../types";
 import { Ui } from "./ui-icons";
+import { VoiceRipple } from "./VoiceRipple";
 
 type Msg = { role: "user" | "assistant"; content: string; scene?: number | null; error?: boolean };
 
@@ -70,6 +71,11 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     try { await onMetaQuiz(); } catch (e) { setNote((e as Error).message || "The Meta quiz could not be built."); }
   };
   const box = useRef<HTMLDivElement>(null);
+  const sec = useRef<HTMLElement>(null);
+  const micBtn = useRef<HTMLButtonElement>(null);
+  const cancelled = useRef(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);                  // live mic, for the waveform
+  const [ripple, setRipple] = useState({ origin: { x: 0, y: 0 }, size: { w: 0, h: 0 } });   // where the voice panel spreads from
   const rec = useRef<{ mr: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null>(null);
   const player = useRef<HTMLAudioElement | null>(null);
   const id = lesson?.id;
@@ -109,10 +115,15 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     }
     const mr = new MediaRecorder(stream);
     const chunks: Blob[] = [];
+    cancelled.current = false;
+    const s = sec.current?.getBoundingClientRect(), m = micBtn.current?.getBoundingClientRect();
+    if (s && m) setRipple({ origin: { x: m.left - s.left + m.width / 2, y: m.top - s.top + m.height / 2 }, size: { w: s.width, h: s.height } });
     mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     mr.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
       rec.current = null;
+      setStream(null);
+      if (cancelled.current) { cancelled.current = false; setVoice("off"); return; }
       setVoice("hearing");
       try {
         const r = await fetch(url(`/api/stt?lang=auto&lesson_id=${lesson.id}`),
@@ -129,6 +140,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     };
     rec.current = { mr, stream, chunks };
     mr.start();
+    setStream(stream);
     setVoice("listening");
   }
 
@@ -159,7 +171,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
   const here = track?.scenes[current];
 
   return (
-    <section className="panel-col chat" aria-label="Tutor chat">
+    <section className="panel-col chat" aria-label="Tutor chat" ref={sec}>
       <div className="panel-head">
         <h2>Ask the tutor</h2>
         {msgs.length > 0 && lesson && (
@@ -211,7 +223,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
           <Ui name={speaker ? "volume" : "mute"} size={18} />
         </button>
         {micOk && (
-          <button type="button" className={`icon-btn mic${voice === "listening" ? " live" : ""}`} onClick={() => void toggleMic()}
+          <button type="button" ref={micBtn} className={`icon-btn mic${voice === "listening" ? " live" : ""}`} onClick={() => void toggleMic()}
             disabled={!lesson || busy || voice === "hearing"} aria-pressed={voice === "listening"}
             aria-label={voice === "listening" ? "Stop and send" : "Ask by voice"}
             title={voice === "listening" ? "Listening… tap to send" : voice === "hearing" ? "Working out what you said…" : "Ask by voice"}>
@@ -225,6 +237,9 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
           <Ui name="arrowLeft" size={20} />
         </button>
       </form>
+
+      <VoiceRipple open={voice === "listening"} origin={ripple.origin} size={ripple.size} stream={stream}
+        onCancel={() => { cancelled.current = true; rec.current?.mr.stop(); }} onDone={() => rec.current?.mr.stop()} />
 
       {studio && lesson && createPortal(
         <StudioModal lesson={lesson} lang={lang} kind={studio} title={track?.title ?? lesson.concept} onClose={() => setStudio(null)}

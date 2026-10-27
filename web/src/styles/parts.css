@@ -117,6 +117,30 @@ button.chip:hover { background: var(--white); color: var(--ink); }
 .chat-note { margin: 0 16px 6px; font-size: 13px; color: var(--muted); }
 @keyframes mic-pulse { 50% { box-shadow: 0 0 0 6px rgba(217, 58, 58, 0.25); } }
 
+/* Voice mode: spreads out of the mic as a circle with a ring on its edge, then shrinks back (same as the Android app). Only clip-path and opacity animate. */
+.panel-col.chat { position: relative; }
+.voice-layer { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px;
+  background: var(--white); clip-path: circle(14px at var(--ox) var(--oy)); animation: ripple-in 0.46s cubic-bezier(0.4, 0, 0.2, 1) forwards; will-change: clip-path; }
+.voice-layer.out { animation: ripple-out 0.32s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.voice-layer > * { animation: voice-fade 0.46s ease-out both; }
+.voice-layer.out > * { animation: none; opacity: 0; }
+.voice-ring { position: absolute; left: var(--ox); top: var(--oy); z-index: 21; width: calc(var(--far) * 2); height: calc(var(--far) * 2); margin: calc(var(--far) * -1) 0 0 calc(var(--far) * -1);
+  border-radius: 50%; border: 2px solid rgba(28, 28, 28, 0.28); pointer-events: none; transform: scale(0.02); opacity: 1; animation: ring-out 0.46s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.voice-ring.out { animation: ring-in 0.32s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+.voice-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+.voice-sub { margin: 0; font-size: 14px; color: var(--muted); text-align: center; }
+.voice-wave { width: 100%; max-width: 420px; height: 96px; color: var(--ink); }
+.voice-actions { display: flex; justify-content: space-between; width: 100%; max-width: 420px; margin-top: 10px; }
+.voice-btn { display: grid; place-items: center; width: 56px; height: 56px; border: 0; border-radius: 50%; background: var(--surface); color: var(--ink); transition: transform 0.15s; }
+.voice-btn.done { background: var(--ink); color: #fff; }
+.voice-btn:active { transform: scale(0.92); }
+@keyframes ripple-in { to { clip-path: circle(var(--far) at var(--ox) var(--oy)); } }
+@keyframes ripple-out { from { clip-path: circle(var(--far) at var(--ox) var(--oy)); } to { clip-path: circle(14px at var(--ox) var(--oy)); } }
+@keyframes ring-out { to { transform: scale(1); opacity: 0; } }
+@keyframes ring-in { from { transform: scale(1); opacity: 0; } to { transform: scale(0.02); opacity: 0.6; } }
+@keyframes voice-fade { from { opacity: 0; } 55% { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .voice-layer, .voice-ring, .voice-layer > * { animation-duration: 1ms; animation-delay: 0s; } }
+
 /* ---------- course rail ---------- */
 .ep-chip { display: inline-flex; align-items: center; margin-right: 10px; padding: 3px 12px; border-radius: var(--r-pill); background: var(--lime); color: var(--ink); font-size: 13px; font-weight: 600; vertical-align: middle; }
 .rail { background: var(--white); border-radius: var(--r-card); box-shadow: var(--shadow); padding: 16px 18px 18px; }
@@ -137,3 +161,34 @@ button.chip:hover { background: var(--white); color: var(--ink); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) { .skel, .typing i, .ep-spin, .flash { animation: none; } }
+
+/* ---------- progress page: heatmap and bars ---------- */
+.heat { position: relative; display: grid; grid-template-rows: repeat(7, 15px); grid-auto-flow: column; grid-auto-columns: 15px; gap: 4px; margin: 6px 0 18px; overflow-x: auto; padding-bottom: 4px; }
+.heat i { border-radius: 4px; background: rgba(255, 255, 255, 0.16); }
+.heat i.pad { background: none; }
+.heat i.l1 { background: rgba(255, 255, 255, 0.42); }
+.heat i.l2 { background: rgba(255, 255, 255, 0.72); }
+.heat i.l3 { background: #fff; }
+.heat i.today { outline: 2px solid #fff; outline-offset: 1px; }
+.bars { position: relative; display: flex; align-items: stretch; justify-content: space-between; gap: 6px; height: 190px; margin-top: 10px; }
+.bars .bar { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 8px; }
+.bars .bar i { display: block; width: min(100%, 34px); border-radius: 999px; background: rgba(255, 255, 255, 0.5); transform-origin: bottom; animation: bar-grow 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.bars .bar i.best { background: #fff; }
+.bars .bar span { height: 14px; font-size: 12px; line-height: 14px; }
+.bars.month { gap: 2px; }
+.bars.month .bar i { width: 100%; border-radius: 4px; }
+@keyframes bar-grow { from { transform: scaleY(0.05); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .bars .bar i { animation: none; } }
+
+/* ---------- settings page ---------- */
+.set-card { padding: 18px 20px; border-radius: var(--r-card); background: var(--white); box-shadow: var(--shadow); max-width: 640px; }
+.set-input { width: 100%; max-width: 360px; margin: 6px 0 4px; padding: 11px 14px; border: 0; border-radius: var(--r-pill); background: var(--surface); font-size: 15px; }
+.set-input:focus { outline: 2px solid var(--ink); }
+.set-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-width: 640px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-radius: 22px; background: var(--white); box-shadow: var(--shadow); }
+.set-row b { display: block; font-size: 15px; font-weight: 600; }
+.set-row span:not(.chip) { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.switch { position: relative; flex: none; width: 50px; height: 30px; border: 0; border-radius: 999px; background: var(--line); transition: background 0.2s; }
+.switch i { position: absolute; left: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s cubic-bezier(0.3, 0.8, 0.3, 1); }
+.switch.on { background: var(--ink); }
+.switch.on i { transform: translateX(20px); }

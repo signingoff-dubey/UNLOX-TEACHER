@@ -147,3 +147,35 @@
 **Fix:** the validator keeps `ScenePlan` instances (`tests/test_schema_lenient.py`); the floor is 14 words and a part has at most 4 scenes
 **Files Changed:** backend/app/schema.py, review.py, planner.py
 **Status:** Resolved (length to be re-measured)
+
+## [ISSUE-019] — 2026-10-27
+**Title:** Android: every Piper voice produced silence
+**Symptom:** lessons made on the phone had empty narration files (44-byte .wav), no sound in the player; the voice test said "no sound"
+**Root Cause:** sherpa-onnx 2.0.x removed its built-in espeak phonemizer ("--vits-data-dir is deprecated and ignored"), so text never became phonemes. The first dependency setup had picked 2.0.1
+**Fix:** use sherpa-onnx 1.13.8 (the build the NDialRecorder uses) and drop the separate onnxruntime-android (1.13.8 ships its own libonnxruntime.so); added a Settings > Test the voice row and a trace file (`files/trace.log`) so native failures leave a trail
+**Files Changed:** Unlox_Hackethon/app/build.gradle.kts, app/libs, data/Engines.kt, data/Trace.kt, ui/screens/More.kt
+**Status:** Resolved
+
+## [ISSUE-020] — 2026-10-27
+**Title:** Android: app exits at the Telugu voice (and would at Marathi and Bengali)
+**Symptom:** the app vanished mid-lesson with no Java crash; `dumpsys activity exit-info` said EXIT_SELF status 255
+**Root Cause:** the tokens.txt files made for the three raw Piper voices had Windows (CRLF) line endings; the native token reader calls exit(-1) on a malformed line. Marathi and Bengali also have multi-character tokens it rejects
+**Fix:** write tokens.txt with LF endings and drop the 5 multi-character tokens; a guard (`Trace.guard/dead`) skips a native step that killed the app on an earlier run, reset on every new install
+**Files Changed:** models/tts (not in git), data/Trace.kt, data/Engines.kt
+**Status:** Resolved
+
+## [ISSUE-021] — 2026-10-27
+**Title:** adb push to /sdcard silently copied nothing from Git Bash
+**Symptom:** `adb push dir /sdcard/...` ran for minutes, no files appeared, then std::bad_alloc
+**Root Cause:** MSYS path conversion rewrote `/sdcard/...` to `C:/Program Files/Git/sdcard/...`
+**Fix:** `export MSYS_NO_PATHCONV=1` before any adb call with a device path; push one folder at a time
+**Files Changed:** none (workflow)
+**Status:** Resolved
+
+## [ISSUE-022] — 2026-10-27
+**Title:** Android progress dial stuck and jumped
+**Symptom:** the Generating dial sat at 10% while Gemma planned, jumped to 45%, and showed 99% after a failure
+**Root Cause:** the pipeline only reported at stage boundaries; the dial showed that directly
+**Fix:** every stage has its own real percentage (the plan stage streams Gemma's output); translating and narrating run in parallel; the dial uses the website's steady-progress idea (a clock that may run only 4% ahead of real work)
+**Files Changed:** data/Creator.kt, data/Engines.kt, ui/screens/CreateAndGenerating.kt, ui/UnloxApp.kt
+**Status:** Resolved

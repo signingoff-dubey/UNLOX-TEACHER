@@ -11,16 +11,18 @@ import { uploadPhoto, type Mode, type PhotoItem } from "./photos";
 import { Library } from "./pages/Library";
 import { LessonPage } from "./pages/LessonPage";
 import { RewardsPage } from "./pages/RewardsPage";
+import { ProgressPage } from "./pages/ProgressPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { CreatingPill, type Creation } from "./shell/CreatingPill";
 import { Sidebar } from "./shell/Sidebar";
 import { useScrollbars } from "./shell/useScrollbars";
 
-type Screen = "home" | "lesson" | "library" | "rewards" | "homework";
+type Screen = "home" | "lesson" | "library" | "rewards" | "homework" | "progress" | "settings";
 const HOMEWORK_HASH = /^\/homework\/([a-z0-9]+)$/;
 const COURSE_HASH = /^c-([a-z0-9]+)(?:-(\d+))?$/;
 
 /** Chanakya. A sidebar (create, library, your streak and score) and a main page: dashboard, lesson, library or rewards.
- *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, the others are `#/library` and `#/rewards`. */
+ *  A lesson is `#<id>`, a course is `#c-<id>` or `#c-<id>-<episode>`, the others are `#/library`, `#/rewards`, `#/progress` and `#/settings`. */
 export default function App() {
   useScrollbars();
   const [screen, setScreen] = useState<Screen>("home");
@@ -110,6 +112,8 @@ export default function App() {
     else if (m) openCourse(m[1], m[2] !== undefined ? Number(m[2]) : undefined);
     else if (h === "/library") setScreen("library");
     else if (h === "/rewards") setScreen("rewards");
+    else if (h === "/progress") setScreen("progress");
+    else if (h === "/settings") setScreen("settings");
     else if (h && h !== "/") openLesson(h);
     else setScreen("home");
   }, [openCourse, openLesson]);
@@ -283,7 +287,7 @@ export default function App() {
         screen={screen} recent={recent} courses={courses} activeId={activeId}
         onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)}
         homework={homework} onOpenHomework={(id) => go(`/homework/${id}`)}
-        onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
+        onHome={() => go("/")} onLibrary={() => go("/library")} onRewards={() => go("/rewards")} onProgress={() => go("/progress")} onSettings={() => go("/settings")} onMetaverse={enterMetaverse} onBaseChange={loadLists}
       />
 
       {screen === "home" && (
@@ -294,6 +298,8 @@ export default function App() {
       )}
       {screen === "library" && <Library recent={recent} courses={courses} onOpenLesson={(id) => go(id)} onOpenCourse={(id) => go(`c-${id}`)} />}
       {screen === "rewards" && <RewardsPage />}
+      {screen === "progress" && <ProgressPage />}
+      {screen === "settings" && <SettingsPage />}
       {screen === "homework" && <HomeworkPage id={homeworkId} />}
       {screen === "lesson" && (
         <LessonPage lesson={lesson} generating={lesson ? undefined : { concept, job, languages: settings.languages }}

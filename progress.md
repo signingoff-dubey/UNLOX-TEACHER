@@ -1,7 +1,20 @@
 # Progress Log
 
-## Current Version: v0.12.0
+## Current Version: v0.13.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.13.0] — 2026-10-27
+### What's New
+- **Progress page** (`#/progress`): streak heatmap (last 18 weeks), lessons / right answers / tutor questions / days counted for the week, month or year, and XP per day (or per month). New `GET /api/rewards/history` (`rewards.history`, test added)
+- **Settings page** (`#/settings`): name and daily goal, spoken answers, opening animation (the intro now respects it), and what is installed on this computer (from `/api/health`). Both pages are in the sidebar
+- **Voice ripple and wave** in the tutor chat: the mic spreads a circle with a ring across the panel and shows the live waveform (`VoiceRipple.tsx`), same as the Android app
+- **Android app** (`Unlox_Hackethon/`, native Kotlin + Compose, all on the phone): the 8 Figma screens plus study tools, homework, rewards, settings and a profile with name and age; back stack with transitions; the web intro on every launch; book-only launcher icon. Real engines: Gemma (LiteRT-LM) plans lessons and tutors, Piper voices (sherpa-onnx 1.13.8) narrate, Whisper + Vosk (language-ID approach from NDialRecorder) hear, ML Kit translates and reads photos. Per-stage progress with translating and narrating in parallel
+
+### Known Issues
+- Android: PDF as a lesson source, MP4 export and the MiniLM search are not built yet; Tamil and Kannada narration needs the phone's own voice installed
+- The running backend must be restarted to serve `/api/rewards/history`
 
 ---
 

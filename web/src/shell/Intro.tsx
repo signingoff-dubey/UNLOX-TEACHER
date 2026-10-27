@@ -38,7 +38,9 @@ export const Intro: React.FC = () => {
       set("word", "opacity", seg(t, 2.5, 2.9));
       el.style.transform = `translateY(${-io(seg(t, DUR, DUR + LIFT)) * 100}%)`;
     };
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let off = false;                       // Settings > Opening animation
+    try { off = localStorage.getItem("vt.intro") === "0"; } catch { /* storage blocked */ }
+    const reduce = off || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let t0: number | null = null, frame = 0, alive = true;
     const finish = () => { if (alive) { setGone(true); document.dispatchEvent(new Event("intro:done")); } };
     const tick = (ts: number) => {

@@ -121,3 +121,11 @@ def test_goal_must_be_one_of_the_choices_and_bad_days_fall_back_to_today():
 def test_unknown_events_are_rejected():
     with pytest.raises(ValueError):
         R.award({"type": "free_xp"}, day())
+
+
+def test_history_lists_every_day_oldest_first_with_what_was_done():
+    ev("lesson_complete", lesson_id="L1", lang="en")
+    h = R.history(day(), 10)
+    assert len(h) == 10 and h[-1]["day"] == day() and h[0]["day"] == day(-9)
+    assert h[-1]["lessons"] == 1 and h[-1]["xp"] == 30 and all(d["xp"] == 0 for d in h[:-1])
+    assert len(R.history(day(), 9999)) == 400                                       # capped

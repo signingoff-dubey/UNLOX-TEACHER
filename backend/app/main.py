@@ -391,6 +391,13 @@ def rewards_event(ev: RewardEvent) -> dict:
     return rewards.award(ev.model_dump(), ev.day)
 
 
+@app.get("/api/rewards/history")
+def rewards_history(day: str = "", days: int = 126) -> list[dict]:
+    """Per-day XP and activity, oldest first, for the progress page."""
+    from . import rewards
+    return rewards.history(day, days)
+
+
 class GoalRequest(BaseModel):
     goal: int = 50
     name: str | None = Field(None, max_length=30)
