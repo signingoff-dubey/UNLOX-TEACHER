@@ -460,6 +460,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 52b37f4 | 2026-10-28 | fix: readable request errors instead of [object Object], longer topics accepted |
 | 671c52c | 2026-10-28 | v0.16.4: languages drafted while the video is made, exports and papers reused instead of remade, MP4 save popup and real export progress, Learnverse world behind Start, study-tool borders, notes panel fix, architecture and flow docs |
 | 7227da8 | 2026-10-28 | docs: git history in progress.md |
 | f4a3de6 | 2026-10-28 | v0.16.3: Flash streams every part without pauses, course videos overlap, languages in parallel, full worksheets/papers with download popup, real progress bars, animated take-away buttons |
