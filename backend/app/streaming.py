@@ -147,7 +147,8 @@ class ScenePreview:
             if self._closed:
                 return
             if title and state is self._main:
-                self.title = title
+                from .content import real_title
+                self.title = real_title(title, self.concept)                 # a schema word ("string") is not a title
             if len(scenes) < state["seen"]:                   # the planner started over (a retry): what is on screen stays, the new answer carries on after it
                 state["skip"] = max(state["skip"], state["seen"])
                 state["seen"] = 0

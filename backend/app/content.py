@@ -125,6 +125,12 @@ def repeated_code(plan: LessonPlan) -> str | None:
     return None
 
 
+def real_title(title: str, fallback: str) -> str:
+    """The lesson title, unless the model copied a schema word ("string", "title") into it: then the topic it was asked about."""
+    t = " ".join(str(title).split())
+    return t if t and t.lower().strip(".:") not in SCHEMA_WORDS else (" ".join(str(fallback).split()) or "Your lesson")
+
+
 def schema_echo(plan: LessonPlan) -> str | None:
     """The model copied a word of the JSON schema into the lesson: a heading or a sentence about "string"."""
     for s in plan.scenes:

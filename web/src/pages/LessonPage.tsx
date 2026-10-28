@@ -225,7 +225,9 @@ export const LessonPage: React.FC<Props> = (
   }
   const courseDone = playlist && playlist.status !== "planning" && playlist.status !== "building";
   const untranslated = track && (track.translator === "untranslated" || (track.translator === "none" && track.lang !== "en"));
-  const title = track?.title ?? generating?.concept ?? "Your lesson";
+  // A schema word the model copied ("string", or its translation) is not a title: show the topic instead.
+  const placeholder = (t?: string) => !t || /^(string|title|heading|text|null|none|स्ट्रिंग|शीर्षक|ಸ್ಟ್ರಿಂಗ್|స్ట్రింగ్)$/i.test(t.trim());
+  const title = (!placeholder(track?.title) ? track?.title : lesson?.concept) ?? generating?.concept ?? "Your lesson";
 
   return (
     <main className="main">

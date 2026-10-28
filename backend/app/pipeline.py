@@ -113,6 +113,7 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
             plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
                                         series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text, fast=on_text is not None)
         note = source_note(sources)
+        plan.title = content.real_title(plan.title, concept or (plan.scenes[0].heading if plan.scenes else ""))   # never "string" as the title
         for n in content.dedupe_plan(plan):                       # no repeated scene, code block or summary reaches the screen
             log.info("plan cleaned: %s", n)
         from .planner import subject_of

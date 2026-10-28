@@ -527,3 +527,11 @@
 **Fix:** the pass is skipped when less than 7 GB is free (`UNLIMITED_MIN_FREE_GB`), stopped and unloaded on the first out-of-memory error, and can be switched off (`UNLIMITED_OCR=0`); Tesseract's text is kept
 **Files Changed:** backend/app/ocr/ingest.py
 **Status:** Resolved
+
+## [ISSUE-060] — 2026-10-28
+**Title:** A video title showed "string" ("Episode 1 of 2 string")
+**Symptom:** the lesson page heading read "string" after the Episode chip; in Hindi "स्ट्रिंग", in Telugu/Kannada the same word translated
+**Root Cause:** the model copied the schema placeholder into the lesson title; the scene checks caught schema words in headings but nothing checked the title, and the placeholder was then translated
+**Fix:** `content.real_title` replaces a schema word with the topic, in the final plan (before translation) and in the live preview; the lesson page shows the topic for any placeholder title; 6 saved lessons repaired
+**Files Changed:** backend/app/content.py, pipeline.py, streaming.py; web/src/pages/LessonPage.tsx
+**Status:** Resolved
