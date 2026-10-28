@@ -3,13 +3,14 @@ from app.schema import LessonPlan, ScenePlan
 
 
 def _part(n: int) -> LessonPlan:
-    return LessonPlan(title="x", scenes=[ScenePlan(template="bullets", heading=f"H{n}.{k}", narration="Some words here.", items=["a", "b"]) for k in range(3)])
+    return LessonPlan(title="x", scenes=[ScenePlan(template="bullets", heading=f"H{n}.{k}", narration=" ".join(f"word{n}{k}{j}" for j in range(20)), items=["a", "b"]) for k in range(3)])
 
 
 def test_parts_for_scales_with_length():
-    assert longplan.parts_for(120) == 4          # a 2 minute video is 4 parts of 30 s
-    assert longplan.parts_for(240) == 8
-    assert longplan.parts_for(999) == 8          # capped at 4 minutes
+    assert longplan.parts_for(120) == 3          # a 2 minute video is 3 parts of 40 s
+    assert longplan.parts_for(100) == 2
+    assert longplan.parts_for(240) == 3          # never more than 3: more parts make a less coherent video
+    assert longplan.parts_for(999) == 3
 
 
 def test_long_video_joins_parts_in_order(monkeypatch):
@@ -24,9 +25,10 @@ def test_long_video_joins_parts_in_order(monkeypatch):
     monkeypatch.setattr(longplan.config, "LLM_BACKEND", "mock")        # generic outline, no model call
     seen = []
     plan, sources = longplan.plan_long("Photosynthesis", "beginner", 120, None, "", 2.3, seen.append)
-    assert len(calls) == 4 and len(plan.scenes) == 12
-    assert [c["index"] for c in calls] == [1, 2, 3, 4] and calls[-1]["next"] == "" and calls[0]["previous"] == []
-    assert len(calls[3]["previous"]) == 3                               # each part knows what was taught before
+    assert len(calls) == 3 and len(plan.scenes) == 9
+    assert [c["index"] for c in calls] == [1, 2, 3] and calls[-1]["next"] == "" and calls[0]["previous"] == []
+    assert len(calls[2]["previous"]) == 2                               # each part knows what was taught before
+    assert "H1.0" in calls[1]["taught"] and "H2.0" in calls[2]["taught"] and calls[0]["taught"] == ""     # ... and what its headings and points really were
     assert sources == [{"title": "Book", "section": "Ch 1"}]            # duplicate sources collapse
     assert seen[-1] == 1.0 and seen == sorted(seen)
 
@@ -50,5 +52,5 @@ def test_parts_reach_the_player_in_order_and_only_the_first_part_streams(monkeyp
     monkeypatch.setattr(longplan, "plan_lesson", fake_plan)
     monkeypatch.setattr(longplan.config, "LLM_BACKEND", "mock")
     longplan.plan_long("Tides", "beginner", 120, None, "", 2.3, preview=Preview())
-    assert sorted(streamed) == [(1, True), (2, False), (3, False), (4, False)]          # only part 1 is streamed token by token
-    assert [h[0] for h in handed] == ["H2.0", "H3.0", "H4.0"]                           # parts 2, 3, 4 whole, in order
+    assert sorted(streamed) == [(1, True), (2, False), (3, False)]                      # only part 1 is streamed token by token
+    assert [h[0] for h in handed] == ["H2.0", "H3.0"]                                   # parts 2 and 3 whole, in order

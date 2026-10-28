@@ -6,7 +6,7 @@ import type { Mode, PhotoItem } from "../photos";
 import { useRewards } from "../rewards/RewardsContext";
 import { Dashboard } from "./Dashboard";
 
-export const COUNTS = [0, 1, 2, 3, 5, 8];                  // 0 = Auto: the AI picks one video per concept
+export const COUNTS = [0, 1, 2, 3];                        // 0 = Auto: the AI picks 1 to 3 videos. A course is at most 3: more is less coherent, and the first is the one people watch
 export const MODES: [Mode, string, string][] = [["explain", "Explanation", "Understand it"], ["study", "Study", "Revise for a test"], ["homework", "Homework", "Learn it and get the answers"], ["revise", "Revise", "Practise what you got wrong before"]];
 /** Up to 4 minutes. Over 1:30 the backend writes the video in parts (see backend/app/longplan.py). */
 export const LENGTHS: [number, string][] = [[30, "0:30"], [60, "1:00"], [90, "1:30"], [120, "2:00"], [150, "2:30"], [180, "3:00"], [210, "3:30"], [240, "4:00"]];
@@ -55,8 +55,8 @@ export const Home: React.FC<Props> = (p) => {
   const { state } = useRewards();
   const dock = useRef<HTMLDivElement>(null);
   const { settings: s } = p;
-  const photosReady = p.photos.some((x) => x.status === "ready") && !p.photos.some((x) => x.status === "reading");
-  const canCreate = !p.busy && (p.concept.trim().length >= 2 || !!p.upload || photosReady) && !p.photos.some((x) => x.status === "reading") && s.languages.length > 0;
+  const photosUsable = p.photos.some((x) => x.status !== "error" && x.id);          // a photo that is still being read can be used: the lesson reads it first
+  const canCreate = !p.busy && (p.concept.trim().length >= 2 || !!p.upload || photosUsable) && s.languages.length > 0;
   const course = p.videos !== 1;
   const toggleLang = (code: string) =>
     p.onSettings({ ...s, languages: s.languages.includes(code) ? s.languages.filter((c) => c !== code) : [...s.languages, code] });
@@ -115,7 +115,7 @@ export const Home: React.FC<Props> = (p) => {
                 {p.photos.map((x) => (
                   <li key={x.key} className={`photo ${x.status}`} title={x.status === "error" ? x.error : x.topic || x.name}>
                     <img src={x.preview} alt={x.name} />
-                    <span className="photo-state">{x.status === "reading" ? "Reading…" : x.status === "error" ? "Failed" : x.topic || "Ready"}</span>
+                    <span className="photo-state">{x.status === "reading" ? "Reading, you can create now" : x.status === "error" ? "Failed" : x.topic || "Ready"}</span>
                     {!p.busy && <button type="button" className="photo-x" aria-label={`Remove ${x.name}`} onClick={() => p.onRemovePhoto(x.key)}><Glyph name="x" size={12} /></button>}
                   </li>
                 ))}

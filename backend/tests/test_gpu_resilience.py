@@ -116,6 +116,7 @@ def test_every_course_episode_streams_its_scenes(monkeypatch):
     monkeypatch.setattr(playlist, "save", lambda p: None)
     monkeypatch.setattr(playlist, "design_curriculum", lambda *a, **k: cur)
     monkeypatch.setattr(playlist, "build_lesson", fake_build)
+    monkeypatch.setattr(playlist.resources, "wait_for_headroom", lambda *a, **k: None)
     out = playlist.build("p2")
     assert [p for _, p in seen] == [True, True, True]                         # episodes 2 and 3 stream too, not only episode 1
     assert [e["status"] for e in out["episodes"]] == ["ready"] * 3

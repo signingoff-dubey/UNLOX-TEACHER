@@ -244,7 +244,7 @@ Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on so
 - Backend tests: `cd backend && pytest` (needs `requirements-rag.txt`).
 
 ## Home screen, rewards and long videos (v0.9.0)
-- The prompt box on Home shrinks into a header as you scroll; settings (1-8 videos, 0:30-4:00 each, level, languages, PDF) are in the card below it
+- The prompt box on Home shrinks into a header as you scroll; settings (1-3 videos, 0:30-4:00 each, level, languages, PDF) are in the card below it
 - The left column holds your awards: streak, score, level, daily goal, badges
 - Videos over 1:30 are planned in parts and joined (`backend/app/longplan.py`); the API takes `duration_s` 30-240
 - While a video is being made you can leave its page: a floating "Creating…" pill (bottom right) leads back and says "Created" when it is done
@@ -301,3 +301,9 @@ Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_h
 - **PDF upload**: one continuous progress bar, much faster Markdown reading.
 - **Android**: long videos in 30 s parts, every video of a set opens as soon as its first scene exists and plays on to the next, "make one more video on ..." in the tutor chat, and lag fixes.
 - **Learnverse**: new sky, wind, sparks, colour grade, livelier avatar.
+
+## What is new in v0.15.2
+- **Coherent long videos and courses**: at most 3 parts per video and 3 videos per course, planned one after the other, each told what was already taught; one title card, one summary, no repeated headings, code or narration, captions of 22 to 34 words.
+- **"Teach me" is gone from titles**: the subject is taken out of the request ("teach me about dsa in java" is "DSA in Java"), on the website and the phone.
+- **A photo no longer blocks Create** and its description is cleaned (no loops, only the lines that fit each episode).
+- **Expressive narration** (`TTS_EXPRESSIVE=1`, default on; `0` for the old flat voice): per-scene tone and per-sentence pacing, pauses and emphasis. New backend files: `content.py`, `expression.py`.

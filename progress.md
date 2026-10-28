@@ -1,7 +1,33 @@
 # Progress Log
 
-## Current Version: v0.15.0
+## Current Version: v0.15.2
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.15.2] — 2026-10-28
+### What's New
+- **Long videos and courses are coherent**: a "teach me about dsa in java" video with a photo came out as four 30 s mini-lessons glued together (a title card per part, "Let's learn about X." placeholders, narration of 4 to 22 words, the same code and heading repeated, a summary per part). Now a video has at most 3 parts of about 40 s, planned one after the other, and each part is told what the earlier ones taught (`content.taught_summary`). Only the first part has a title card, only the last has the quiz and the summary (`content.clean_part`, `schema.normalize(segment, last, title)`), repeated headings, narration and code are dropped from the joined plan (`content.dedupe_plan`), narration under 18 words is lengthened by the reviewer (floor 22, cap 34), and the director removes empty mid-video title cards instead of turning them into code. A course is at most 3 videos, each told what the earlier videos taught. Measured on the real models (3-video DSA course with the photo): 12, 10 and 11 scenes, narration 27 to 33 words on average, 14 different code scenes that build up (array, access, linked list node, stack class, pitfall, queue), concrete episode titles
+- **A photo no longer wrecks a lesson**: llava sometimes looped (a 104-line description); descriptions are deduplicated and cut to 15 lines (`vision.clean_description`, `repeat_penalty 1.2`), and in a course only the lines of the photo that fit an episode are given to it (`vision.relevant`)
+- **"Teach me" is not part of the title any more**: `content.clean_topic` (backend, Android `Topic.kt`) takes the subject out of a request: "teach me about dsa in java" is "DSA in Java", "can you make a video on the water cycle please" is "The water cycle", "explain photosynthesis" is "Photosynthesis". Questions and plain topics are left alone, a request with nothing after it is kept whole
+- **Expressive voice** (`expression.py`, `TTS_EXPRESSIVE=1`): every scene has a tone (title excited, quiz curious, summary calm, common mistakes serious, code calm, else warm) and every sentence its own delivery (a question slower with a longer pause, an exclamation or a hook quicker and brighter, a very short sentence slowed and stressed, a warning serious). Piper takes per-sentence speed, pitch/rhythm variation and volume, with pauses between sentences; Indic ONNX voices get the pauses and a small speed change; Parler-TTS gets the tone as a plain-language instruction. Clips are cached per text and tone. Measured: pacing and pauses change (a clip is about 10 % longer than flat), pitch range barely moves (Piper cannot do true emotion; Parler on the GPU can)
+- Web and Android: a course is 1 to 3 videos (Auto/1/2/3)
+- **Checked on real lessons** (aquatic life, solar system, rainbow, MERN, sky, steel, refrigerator): topics come out clean ("The solar system", "MERN stack basics", "Why the sky is blue", "How is steel made"); fixed what they showed: a title card headed "string" (word copied from the schema), the same heading twice, two scenes opening with the same sentence, scenes still under 18 words after the writer pass. The full suite passes (294), including a test that failed only in the full run (see ISSUE-044)
+
+### Known Issues
+- Voice expression is not on the phone yet (sherpa-onnx voices are flat), and nobody has listened to the clips: the numbers show pacing and pause changes, not how natural they sound
+- The Android changes (parts, topic cleaning, 3-video courses, chat video, lag) compile but are not tested on the phone
+- "Common mistakes" appears once per video; one snippet lost a closing brace in a comment
+- A question with two parts ("how does the rainbow have 7 colours, why does it come only with rain") is kept whole as the lesson title; a small model may list six of seven rainbow colours (facts are not checked)
+
+---
+
+## [v0.15.1] — 2026-10-28
+### What's New
+- **A photo on the home prompt no longer blocks "Create"**: the button was disabled while llava read the photo (13 s or more) and the page only learned the photo's id when the read finished. Now the upload answers at once with the photo's id (`image_id`), the button is enabled straight away ("Reading, you can create now"), and the lesson, course or homework job reads the photo first if it has not been read yet, showing "Reading your photo" (`vision.ensure`, one reader per photo so llava is never asked twice). Measured on the real models: upload answered in 0.05 s, lesson started 0.03 s later. The read itself is a little faster (image side 1024, shorter answer)
+
+### Known Issues
+- The first photo read after the model has been idle takes about 13 s (llava has to be loaded, and the language model steps aside on an 8 GB card)
 
 ---
 

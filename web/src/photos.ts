@@ -15,7 +15,10 @@ export async function uploadPhoto(file: File, onId: (id: string) => void): Promi
     if (!r.ok) throw new Error(body?.detail ?? `Upload failed (${r.status})`);
     return body as Job;
   });
-  const done = await runJob(start, () => undefined);
+  const first = await start;
+  const early = (first as Job & { image_id?: string }).image_id;
+  if (early) onId(early);                                       // the photo can be used right away: its text is read by whoever needs it first
+  const done = await runJob(Promise.resolve(first), () => undefined);
   const res = done.result as { id: string; topic: string };
   onId(res.id);
   return res;

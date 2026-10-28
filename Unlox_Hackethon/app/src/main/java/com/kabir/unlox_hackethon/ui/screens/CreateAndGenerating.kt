@@ -84,7 +84,7 @@ fun CreateLessonScreen(initialConcept: String, onBack: () -> Unit, onSettings: (
     var mode by rememberSaveable { mutableIntStateOf(0) }
     var videos by rememberSaveable { mutableIntStateOf(1) }
     val modes = listOf("Explanation", "Study", "Homework")
-    val counts = listOf("Auto", "1", "2", "3", "5", "8")
+    val counts = listOf("Auto", "1", "2", "3")          // a course is at most 3 videos: more is less coherent, and the first is the one people watch
     val lengths = listOf(30, 60, 90, 120, 180)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -130,7 +130,7 @@ fun CreateLessonScreen(initialConcept: String, onBack: () -> Unit, onSettings: (
             }
             SectionHeader("Length of each video")
             Segmented(lengths.map { if (it < 120) "$it s" else "${it / 60} min" }, length, { length = it })
-            Text(if (counts[videos] == "1") "One video of ${lengths[length]} seconds." else if (counts[videos] == "Auto") "As many videos as the topic needs, each ${lengths[length]} seconds long." else "${counts[videos]} videos, each ${lengths[length]} seconds long.", style = T.Sub, color = U.TextTertiary)
+            Text(if (counts[videos] == "1") "One video of ${lengths[length]} seconds." else if (counts[videos] == "Auto") "One to three videos, as many as the topic needs, each ${lengths[length]} seconds long." else "${counts[videos]} videos, each ${lengths[length]} seconds long.", style = T.Sub, color = U.TextTertiary)
             SectionHeader("How to teach")
             Segmented(modes, mode, { mode = it })
         }

@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 from pydantic import BaseModel, Field
 
-from . import config, llm, resources
+from . import config, content, llm, resources
 from .exporter import export_mp4
 from .pipeline import LESSONS_DIR, build_lesson, load_lesson
 
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 PLAYLISTS_DIR = config.MEDIA_DIR / "playlists"
 PLAYLISTS_DIR.mkdir(parents=True, exist_ok=True)
-MIN_EPISODES, MAX_EPISODES = 2, 8
+MIN_EPISODES, MAX_EPISODES = 2, 3                   # a course is 2-3 videos: more is less coherent, and people watch the first while the next is made
 WORKERS = int(__import__("os").getenv("PLAYLIST_WORKERS", "2"))     # episodes in flight: voices of one overlap planning of the next
 
 
@@ -84,12 +84,13 @@ def design_curriculum(topic: str, n: int, level: str, duration_s: int, source: s
         prompt = (
             f"Design a short video course of exactly {n} episodes (about {duration_s} seconds each) that teaches: {topic}.\n"
             f"Audience: {'a complete beginner' if level == 'beginner' else 'an intermediate learner who knows the basics'}.\n"
-            "Rules: each episode teaches ONE clear idea and builds on the one before. Episode 1 gives the big picture and why it matters. "
-            "The middle episodes each add one new idea with an example. The last episode is a recap with a small challenge. "
-            "No overlaps between episodes. Titles are at most 6 words and describe the idea (not 'Part 2'). "
+            "Rules: each episode teaches ONE clear idea and builds on the one before, and each contains at least one worked example with real values (or real code). "
+            "Episode 1 starts teaching the core idea at once: no generic overview or 'why it matters' video. The last episode puts the ideas together with a small challenge. "
+            "No overlaps between episodes: no two episodes may use the same example. Titles are at most 6 words and describe the idea (not 'Part 2'). "
             "Each focus is one concrete sentence naming what the learner will be able to do or understand afterwards.")
         if source:
-            prompt += "\n\nMaterial from the student (a document or a photo):\n" + source[:5000]
+            prompt += ("\n\nMaterial from the student (a document or a photo, read by a computer, so it may contain mistakes). Use it only to learn what the student wants "
+                       "to cover; do not copy it:\n" + source[:3000])
         try:
             cur = llm.ask_json(Curriculum, prompt, options={"temperature": 0.4, "num_predict": 700}, timeout=180, expected_tokens=350)
             eps = [e for e in cur.episodes if e.title.strip() and e.focus.strip()]
@@ -98,15 +99,15 @@ def design_curriculum(topic: str, n: int, level: str, duration_s: int, source: s
             log.warning("curriculum had %d usable episodes; using the fallback outline", len(eps))
         except (requests.RequestException, ValueError, KeyError) as e:
             log.warning("curriculum call failed (%s); using the fallback outline", e)
-    steps = ["The big picture", "The core idea", "A worked example", "Common mistakes", "Going one step further",
-             "Putting it together", "Practice time", "Recap and next steps"]
-    keep = [steps[0], *steps[1:n - 1][:n - 2], steps[-1]]
+    steps = ["The core idea with an example", "Going one step further", "Putting it together"]
+    keep = steps[:n - 1] + [steps[-1]]
     return Curriculum(title=topic, episodes=[Episode(title=t, focus=f"{t} of {topic}") for t in keep[:n]])
 
 
 def series_context(pl: dict, i: int) -> dict:
     eps = pl["episodes"]
-    return {"title": pl["title"], "topic": pl["topic"], "index": i + 1, "total": len(eps),
+    taught = "\n".join(f"Video {k + 1} ({e['title']}):\n{e['taught']}" for k, e in enumerate(eps[:i]) if e.get("taught"))
+    return {"title": pl["title"], "topic": pl["topic"], "index": i + 1, "total": len(eps), "taught": taught[:1600],
             "previous": [f"{e['title']}: {e['focus']}" for e in eps[:i]],
             "this": eps[i]["focus"], "next": eps[i + 1]["title"] if i + 1 < len(eps) else ""}
 
@@ -115,6 +116,7 @@ def series_context(pl: dict, i: int) -> dict:
 def start(topic: str, languages: list[str], level: str, duration_s: int, n_episodes: int, documents: list[str],
           images: list[str] | None = None, mode: str = "explain") -> dict:
     """Create the playlist record right away so the client has an id to poll before the long job starts."""
+    topic = content.clean_topic(topic) if topic.strip() else topic
     pl = {"id": uuid.uuid4().hex[:10], "topic": topic, "title": topic, "created": int(time.time()), "status": "planning",
           "languages": languages, "level": level, "duration_s": duration_s, "documents": documents,
           "images": images or [], "mode": mode,
@@ -173,6 +175,8 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
                 ep.update(lesson_id=extra["lesson_id"], preview=True)
                 with state_lock:
                     save(pl)
+            if extra.get("taught"):                                          # what this video teaches: the next one is written knowing it
+                ep["taught"] = extra["taught"]
             frac[i] = value
             if value >= 0.6:
                 planned[i].set()

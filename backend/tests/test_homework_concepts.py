@@ -8,8 +8,8 @@ def test_concepts_are_deduplicated_and_capped(monkeypatch):
     many = [concepts.Concept(title=f"Idea {i % 10}", focus="x") for i in range(14)] + [concepts.Concept(title="  ", focus="no title")]
     monkeypatch.setattr(concepts.llm, "ask_json", lambda *a, **k: concepts.ConceptList(title="Course", concepts=many))
     title, got = concepts.plan_concepts("big topic")
-    assert title == "Course" and len(got) == 8                       # ten distinct, capped at the maximum of eight
-    assert len({c.title for c in got}) == 8
+    assert title == "Course" and len(got) == 3                       # ten distinct, capped at the maximum of three
+    assert len({c.title for c in got}) == 3
 
 
 def test_a_narrow_topic_can_be_one_video(monkeypatch):

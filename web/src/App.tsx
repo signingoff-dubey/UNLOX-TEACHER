@@ -158,7 +158,7 @@ export default function App() {
     for (const file of Array.from(files).slice(0, Math.max(0, 4 - photos.length))) {
       const key = `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       setPhotos((cur) => [...cur, { key, name: file.name, preview: URL.createObjectURL(file), status: "reading" }]);
-      uploadPhoto(file, () => undefined)
+      uploadPhoto(file, (id) => setPhotos((cur) => cur.map((x) => (x.key === key ? { ...x, id } : x))))
         .then((r) => setPhotos((cur) => cur.map((x) => (x.key === key ? { ...x, id: r.id, topic: r.topic, status: "ready" } : x))))
         .catch((e: Error) => setPhotos((cur) => cur.map((x) => (x.key === key ? { ...x, status: "error", error: e.message } : x))));
     }
@@ -187,7 +187,7 @@ export default function App() {
 
   async function create(topic = concept) {
     const text = topic.trim();
-    const images = photos.filter((x) => x.status === "ready" && x.id).map((x) => x.id as string);
+    const images = photos.filter((x) => x.status !== "error" && x.id).map((x) => x.id as string);          // a photo still being read counts: the lesson reads it first
     if (busy || (text.length < 2 && !upload && !images.length)) return;
     setConcept(text);
     setError("");

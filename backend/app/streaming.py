@@ -68,9 +68,10 @@ class ScenePreview:
     """Builds the first language of a lesson scene by scene while the planner is still writing. One worker thread, in order."""
 
     def __init__(self, lesson_id: str, concept: str, lang: str, rest: list[str], langs: list[str], expected: int, path: Path,
-                 on_first: Callable[[], None] = lambda: None) -> None:
+                 on_first: Callable[[], None] = lambda: None, reject: Callable[[dict], bool] | None = None) -> None:
         self.id, self.concept, self.lang, self.rest, self.langs, self.expected, self.path = lesson_id, concept, lang, rest, langs, expected, path
         self.on_first = on_first
+        self.reject = reject                   # scenes the finished plan will not contain (a quiz or summary in the first part of a long video) are not shown
         self.created = int(time.time())
         self.title = concept
         self._q: queue.Queue = queue.Queue()
@@ -120,7 +121,8 @@ class ScenePreview:
             self._seen = len(scenes)
             gen = self._gen
         for obj in new:
-            self._q.put((gen, obj))
+            if self.reject is None or not self.reject(obj):
+                self._q.put((gen, obj))
 
     def add_scenes(self, objs: list[dict]) -> None:
         """Scenes that are already complete (a finished part of a long video), after everything fed so far, in order."""

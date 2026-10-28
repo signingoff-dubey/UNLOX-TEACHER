@@ -22,7 +22,7 @@ def dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "LIBRARY_DIR", tmp_path / "library")
     S.clear_cache()
     yield tmp_path
-    I.wait_for_upgrades(10)
+    assert I.wait_for_upgrades(30), "the background pass did not finish"
     S.clear_cache()
 
 
@@ -137,7 +137,7 @@ def test_figure_captions_are_stored_on_the_page_and_found_by_search(tmp_path):
 
     info = I.ingest_pdf(make(tmp_path, build), "en", None, lambda s, p: None, unlimited=False, embedder=E, notes=False, describer=fake)
     assert info["figures"] == 1
-    I.wait_for_upgrades(10)
+    assert I.wait_for_upgrades(30), "the background pass did not finish"
     assert len(seen) == 1
     rec = I.load_page(info["sha"], 1)
     assert rec.figures and "Chloroplast" in rec.figures[0]["caption"] and "[Figure on page 1:" in rec.indexed_text()
@@ -163,7 +163,7 @@ def test_a_missing_vision_model_stops_the_figure_pass_without_breaking_the_uploa
         raise vision.VisionUnavailable("llava:7b is not installed")
 
     info = I.ingest_pdf(make(tmp_path, build), "en", None, lambda s, p: None, unlimited=False, embedder=E, notes=False, describer=missing)
-    I.wait_for_upgrades(10)
+    assert I.wait_for_upgrades(30), "the background pass did not finish"
     assert len(calls) == 1                                                              # it stopped at the first failure, not 40 failures
     assert I.upload_status(info["sha"])["figures"]["state"] == "unavailable"
     assert S.search("sunlight water carbon dioxide", f"upload:{info['sha']}", embedder=E, reranker=R)     # the text is still searchable

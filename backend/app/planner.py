@@ -8,7 +8,7 @@ import re
 import requests
 from pydantic import ValidationError
 
-from . import config, llm
+from . import config, content, llm
 from .knowledge import Passage, pages_passages, retrieve
 from .schema import ICONS, LessonPlan, ScenePlan, normalize
 
@@ -191,7 +191,11 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
                     f"Cannot reach Ollama at {config.OLLAMA_URL} with model '{config.OLLAMA_MODEL}'. "
                     f"Start it with `ollama serve` and `ollama pull {config.OLLAMA_MODEL}`. ({e})"
                 ) from e
-            plan = normalize(LessonPlan.model_validate_json(llm.extract_json(raw)))
+            seg = bool(series and series.get("segment"))
+            plan = normalize(LessonPlan.model_validate_json(llm.extract_json(raw)), segment=seg, last=seg and not series.get("next"), title=(series["index"] == 1) if seg else None)
+            if seg:
+                for n in content.clean_part(plan, series["index"], series["total"]):
+                    log.info("planner: %s", n)
         except (ValidationError, ValueError, json.JSONDecodeError) as e:
             last_error = f"invalid JSON: {str(e)[:400]}"
             log.warning("Plan attempt %d invalid: %s", attempt + 1, last_error)
@@ -223,6 +227,12 @@ def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_
         for b in range(a + 1, len(lists)):
             if lists[a] and len(lists[a] & lists[b]) >= max(2, len(lists[a]) // 2):
                 return "two scenes repeat the same items; each scene must teach something different"
+    issue = content.schema_echo(plan) or content.repeated_headings(plan) or content.repeated_code(plan)
+    if issue:
+        return issue
+    short = content.narration_problems(plan)
+    if len(short) >= max(2, len(plan.scenes) // 3):
+        return "the narration is too short: write 2-3 full sentences (about 25 words) in every scene that explain the idea, never a placeholder like 'Let's learn about'"
     return None
 
 
@@ -319,7 +329,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
     if series and series.get("segment"):
         # One part of ONE continuous video: it must flow on from the part before and into the part after.
-        scenes = max(2, min(4, round(duration_s / 9)))               # at most 4 per part: 6 parts stay near 4 minutes
+        scenes = max(3, min(6, round(duration_s / 10)))              # a part of 40-80 s: 4-6 scenes of about 25 words (3 parts at most)
         user = (f"Create part {series['index']} of {series['total']} of ONE continuous video titled \"{series['title']}\" about {series['topic']}.\n"
                 f"Audience: {audience}.\n"
                 f"This part teaches only: {series['this']}\n"
@@ -348,11 +358,23 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
     if mode == "revise":
         from .srs import weak_focus
         user += "\n" + (weak_focus() or "No weak spots are recorded yet, so revise the main ideas of the concept.")
-    if duration_s >= 45:
+    # What makes the content good, in as few words as possible: a student should learn something new from every scene.
+    user += ("\nQuality bar: every scene adds NEW information, with specific facts, real numbers and one concrete example (never vague phrases such as "
+             "'it helps a lot'); the narration is 2-3 full sentences of about 25 words that explain, not just announce the heading; never repeat a heading, "
+             "an example, a point or a piece of code that was already shown.")
+    if subject_of(concept)[1]:
+        user += ("\nProgramming: build up in small steps: a minimal snippet, then the same idea with a variation or traced with real values, then the pitfall "
+                 "or the cost. Every code scene shows DIFFERENT code that builds on the one before. Show only the lines that matter: never repeat a class or "
+                 "main() skeleton. The code is correct, runnable and uses meaningful names.")
+    if series and series.get("taught"):
+        user += "\nAlready taught in earlier parts or videos (do NOT repeat these headings, points, examples or code; build on them and go further):\n" + series["taught"]
+    if duration_s >= 45 and not (series and series.get("segment") and series.get("next")):
         user += ("\nAlso fill common_mistakes with one or two beliefs students often get wrong about this concept, each with the correct fact "
                  "(wrong: at most 14 words, right: at most 14 words). Leave it empty if there are none.")
     if extra:
-        user += "\nThe student attached a photo or a document. This is what it shows (read by a computer, so there may be mistakes):\n" + extra
+        user += ("\nThe student attached a photo or a document. This is what a computer read from it (it may contain mistakes, and it may be only a list of "
+                 "topics): treat it as the student's own notes or question. Use what is relevant to THIS lesson to decide what to teach and which examples to use, "
+                 "but never copy it as a list and never mention it in the narration:\n" + extra)
     if context:
         user += ("\nReference material from the knowledge base or the uploaded PDF. Use it for correct facts, numbers and terms, "
                  "but explain in your own simple words. Ignore anything not about the concept:\n" + context)

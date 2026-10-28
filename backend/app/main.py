@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, homework, jobs, knowledge, resources, routes_rag, stt, translate, tts, vision
+from . import config, content, homework, jobs, knowledge, resources, routes_rag, stt, translate, tts, vision
 from .exporter import export_mp4
 from .ocr.ingest import upload_status
 from .languages import LANGUAGES
@@ -108,7 +108,7 @@ class PlaylistRequest(BaseModel):
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=240)        # per episode
-    episodes: int = Field(0, ge=0, le=8)                # 0 = the AI decides: one video per concept (concepts.py)
+    episodes: int = Field(0, ge=0, le=3)                # 0 = the AI decides (1 to 3 videos, concepts.py)
     documents: list[str] = []
     images: list[str] = Field(default_factory=list, max_length=4)
     mode: Literal["study", "homework", "explain"] = "explain"
@@ -184,7 +184,7 @@ def create_lesson(req: LessonRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    concept = req.concept.strip()
+    concept = content.clean_topic(req.concept.strip()) if req.concept.strip() else ""      # "teach me about X" is about X
     documents = ([req.upload] if req.upload else []) + [d for d in req.documents if d != req.upload]
     if len(concept) < 2 and not documents and not req.images:
         raise HTTPException(400, "Type a concept, or attach a PDF or a photo")
@@ -242,7 +242,7 @@ def create_playlist(req: PlaylistRequest) -> dict:
     unknown = [c for c in req.languages if c not in LANGUAGES]
     if unknown:
         raise HTTPException(400, f"Unsupported languages: {unknown}")
-    topic = req.topic.strip()
+    topic = content.clean_topic(req.topic.strip()) if req.topic.strip() else ""
     if len(topic) < 2 and not req.documents and not req.images:
         raise HTTPException(400, "Type a topic, or attach a PDF or a photo")
     topic = topic or ("Homework help" if req.mode == "homework" else "Your document" if req.documents else "Your photo")
@@ -265,7 +265,7 @@ async def upload_image(file: UploadFile = File(...)) -> dict:
         sha = vision.save(data)
     except vision.ImageError as e:
         raise HTTPException(400, str(e))
-    return jobs.submit("vision", vision.describe, sha)
+    return {**jobs.submit("vision", vision.describe, sha), "image_id": sha}          # the id is known now: a lesson can be started before the photo has been read
 
 
 @app.get("/api/images/{sha}")

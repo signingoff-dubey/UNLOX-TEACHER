@@ -337,3 +337,63 @@
 **Fix:** publish at most every 120 ms (or on a visible change), parse only after a closing brace, assign only on change, TTS debug off and 3 threads
 **Files Changed:** data/Creator.kt, StreamScenes.kt, Engines.kt, ui/UnloxApp.kt
 **Status:** Resolved in code; to be measured on the phone
+
+---
+
+## [ISSUE-039] — 2026-10-28
+**Title:** Attaching a photo on the home page made the user wait before they could create
+**Symptom:** the Create button stayed disabled while "Reading..." showed on the photo, for as long as llava took
+**Root Cause:** the page needed the finished vision job to know the photo's id, and Home disabled Create while any photo was reading
+**Fix:** `POST /api/images` returns `image_id` immediately; Create is enabled for a photo being read; `vision.context/topics` read an unread photo themselves (under a per-photo lock) inside the lesson, playlist or homework job
+**Files Changed:** backend/app/vision.py, main.py, pipeline.py, web/src/photos.ts, App.tsx, pages/Home.tsx, tests/test_photo_nonblocking.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-040] — 2026-10-28
+**Title:** A long video or a course read like several unrelated mini-lessons with repeats and one-line captions
+**Symptom:** "teach me about dsa in java" with a photo: four 30 s parts each with its own "Let's learn about X." title card, narration of 4 to 22 words, the same heading and code block repeated, "Summary" and "Common mistakes" per part, empty title cards turned into code scenes
+**Root Cause:** every part was planned as a whole lesson, in parallel, without seeing the others; `schema.normalize` added a title card per part; nothing checked the joined plan for repeats or short narration
+**Fix:** at most 3 parts (40 s) planned one after the other, each told what was taught (`content.taught_summary`); first part opens, last part closes (`clean_part`, `normalize(segment, last, title)`); `dedupe_plan`, `quality_issue` (repeated headings/code, narration under 18 words), reviewer lengthens short captions; director drops empty mid-video title cards; courses capped at 3 videos with `taught` handed on
+**Files Changed:** backend/app/content.py (new), schema.py, planner.py, longplan.py, director.py, review.py, playlist.py, concepts.py, pipeline.py, main.py, tests/test_content_quality.py, test_longplan.py, test_homework_concepts.py; Android Creator.kt, CreateAndGenerating.kt; web Home.tsx
+**Status:** Resolved (verified on the real models; not yet on the phone)
+
+---
+
+## [ISSUE-041] — 2026-10-28
+**Title:** llava described a photo in a 104-line loop and the planner used all of it
+**Symptom:** the lesson was full of the photo's repeated lines and went off topic
+**Root Cause:** no repeat penalty or length cap on the vision model, no cleanup of its text, the whole text given to every episode
+**Fix:** `vision.clean_description` (dedupe lines, at most 15 lines / 900 characters, keeps the Topic line), `num_predict 380`, `repeat_penalty 1.2`, prompt says never repeat, `vision.relevant` picks the lines that fit an episode, old cached descriptions are cleaned on read
+**Files Changed:** backend/app/vision.py, pipeline.py, playlist.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-042] — 2026-10-28
+**Title:** Titles and captions began with "Teach me ..."
+**Symptom:** typing "teach me about dsa in java" gave a lesson called "Teach me about dsa in java"
+**Root Cause:** the whole typed sentence was used as the topic
+**Fix:** `content.clean_topic` strips the request words (and fixes the case of DSA, Java, SQL and similar) in `create_lesson`, `create_playlist`, `pipeline.build_lesson`, `playlist.start`, and on Android in `Creator.make` (`Topic.kt`). Bare "Teach me" is kept whole; a result starting with a lower-case word is capitalised
+**Files Changed:** backend/app/content.py, main.py, pipeline.py, playlist.py, tests/test_content_quality.py; Android data/Topic.kt, Creator.kt
+**Status:** Resolved
+
+---
+
+## [ISSUE-043] — 2026-10-28
+**Title:** Found by generating real lessons: a heading "string", the same heading twice, scenes opening with the same sentence, short scenes left short
+**Symptom:** "teach me about the solar system": title card headed "string" and narrated "Let's explore string ..."; "how does the rainbow have 7 colors...": the heading "Sunlight & Raindrops" twice and two scenes starting "Just like when sunlight passes through a glass prism"; MERN: a scene of 11 words after the writer pass
+**Root Cause:** the model copied the word "string" from the JSON schema; the heading check only dropped a repeat if the template or the words matched; narration similarity needed 70 %; the writer pass accepted a rewrite that was still under 18 words
+**Fix:** `schema.SCHEMA_WORDS` (heading falls back to the lesson title) and `content.schema_echo` (a retry with feedback); an identical heading is always dropped; scenes whose first six words are the same are dropped; `review` runs a second `only_short` rewrite for scenes still under 18 words
+**Files Changed:** backend/app/schema.py, content.py, planner.py, review.py, tests/test_content_quality.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-044] — 2026-10-28
+**Title:** test_figure_captions_are_stored_on_the_page_and_found_by_search failed only in the full suite
+**Symptom:** `seen` was empty after `wait_for_upgrades(10)`
+**Root Cause:** two tests in test_knowledge_bridge.py ingested a PDF without `notes=False`, which started the real study-notes writer (it holds the GPU slot, the shared Ollama model); the figures thread waited behind it
+**Fix:** `notes=False` in those two tests; `wait_for_upgrades` is asserted, so a timeout fails clearly
+**Files Changed:** backend/tests/test_knowledge_bridge.py, tests/test_pdf_markdown_figures.py
+**Status:** Resolved

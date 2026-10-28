@@ -14,6 +14,7 @@ import requests
 from pydantic import BaseModel
 
 from . import config, llm
+from . import content
 from .schema import LessonPlan, MAX_CODE_COLS, ScenePlan
 
 log = logging.getLogger(__name__)
@@ -47,14 +48,17 @@ def _words(plan: LessonPlan) -> int:
     return sum(len(s.narration.split()) for s in plan.scenes)
 
 
-def _lengthen(plan: LessonPlan, target_words: int) -> bool:
+def _lengthen(plan: LessonPlan, target_words: int, only_short: bool = False) -> bool:
     """Writer agent: small models write lessons that are too short, and shorten even more under a JSON constraint.
     So each scene's narration is rewritten with a short free-text call, in order, each seeing the one before it.
     The scenes, points and code stay exactly as planned. Returns True if anything was lengthened."""
     nl = chr(10)
-    per_scene = max(14, round(target_words / len(plan.scenes)))      # a floor of 22 made a 4-minute plan of 23 scenes run to 3.5 minutes
+    per_scene = min(34, max(22, round(target_words / len(plan.scenes))))      # a scene of fewer than about 20 words is a label, not teaching
     changed, previous = False, ""
     for i, s in enumerate(plan.scenes):
+        if only_short and (i == 0 or len(s.narration.split()) >= content.MIN_NARRATION_WORDS) and not content.is_placeholder(s):
+            previous = s.narration
+            continue
         facts = []
         if s.items:
             facts.append("Points, in this order: " + "; ".join(s.items))
@@ -93,7 +97,10 @@ def review(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3) -> tuple[Le
     notes: list[str] = []
     target = round(duration_s * wps)
     before = _words(plan)
-    if config.LLM_BACKEND != "mock" and before < 0.85 * target and _lengthen(plan, target):
+    short = bool(content.narration_problems(plan))
+    if config.LLM_BACKEND != "mock" and (before < 0.85 * target or short) and _lengthen(plan, target, only_short=before >= 0.85 * target):
+        if content.narration_problems(plan):
+            _lengthen(plan, target, only_short=True)                    # a rewrite that stayed under 18 words gets one more try
         notes.append(f"lengthened narration from {before} to {_words(plan)} words (target about {target})")
     for i, s in enumerate(plan.scenes):
         if s.template == "code" and s.code_lang in ("python", "py"):

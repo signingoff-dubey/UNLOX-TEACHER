@@ -17,6 +17,7 @@ import re
 import requests
 
 from . import config, llm
+from . import content
 from .schema import LessonPlan, ScenePlan, normalize
 
 log = logging.getLogger(__name__)
@@ -99,6 +100,13 @@ def direct(plan: LessonPlan, concept: str, on_progress=lambda f: None) -> tuple[
     if config.LLM_BACKEND == "mock":
         return plan, notes
     domain = domain_of(f"{concept} {plan.title}")
+    # A title card in the middle with a one-line caption has nothing to show or say: it is removed. (Turning it into a code scene made
+    # "Let's learn about ." appear on top of a code block.)
+    empty = [i for i, s in enumerate(plan.scenes) if i and s.template == "title" and (content.is_placeholder(s) or len(s.narration.split()) < content.MIN_NARRATION_WORDS)]
+    for i in reversed(empty):
+        if len(plan.scenes) > 3:
+            notes.append(f"scene {i + 1}: removed (an empty title card in the middle of the lesson)")
+            del plan.scenes[i]
     todo = [(i, _weak_reasons(plan.scenes, i, domain)) for i in range(len(plan.scenes))]
     todo = [(i, why) for i, why in todo if why]
     for k, (i, why) in enumerate(todo):

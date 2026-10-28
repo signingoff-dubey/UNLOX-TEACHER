@@ -42,7 +42,7 @@ def test_retrieve_uses_new_search_when_library_exists(dirs):
 def test_retrieve_upload_passages_cite_pages(dirs):
     path = make_pdf(dirs, ["Mitochondria are the powerhouse of the cell and make ATP energy. " * 12,
                            "Ribosomes make proteins inside the cell from amino acids. " * 12])
-    info = I.ingest_pdf(path, "en", None, lambda s, p: None, unlimited=False, embedder=E)
+    info = I.ingest_pdf(path, "en", None, lambda s, p: None, unlimited=False, embedder=E, notes=False)
     [p, *_] = knowledge.retrieve("mitochondria ATP energy", upload=info["sha"])
     assert p.source == "upload"
     assert p.section == "Pages 1–2, pp. 1–2"
@@ -67,7 +67,7 @@ def test_retrieve_never_raises(dirs, monkeypatch):
 def test_pages_passages_reading_order(dirs):
     path = make_pdf(dirs, [f"Page {i} explains topic {i} in detail. " * 30 for i in range(1, 5)])
     set_toc(path, [[1, "Motion", 1], [1, "Energy", 3]])
-    info = I.ingest_pdf(path, "en", None, lambda s, p: None, unlimited=False, embedder=E)
+    info = I.ingest_pdf(path, "en", None, lambda s, p: None, unlimited=False, embedder=E, notes=False)
     got = knowledge.pages_passages(info["sha"], "pages 2-3")
     starts = [int(p.url.rsplit("=", 1)[1]) for p in got]
     assert got and starts == sorted(starts) and all(s <= 3 for s in starts)    # chunks overlapping pages 2-3

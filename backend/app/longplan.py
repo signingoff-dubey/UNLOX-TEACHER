@@ -17,13 +17,14 @@ from typing import Callable
 from pydantic import BaseModel, Field
 
 from . import config, llm
+from . import content
 from .planner import plan_lesson
 from .schema import LessonPlan
 
 log = logging.getLogger(__name__)
 
 LONG_MIN = 90                      # seconds: anything longer is planned in parts
-PART_S = 30                        # about how long one part is (a 2 minute video is 4 parts)
+PART_S = 40                        # about how long one part is: a 2 minute video is 3 parts, never more (more parts, a less coherent video)
 MAX_S = 240
 
 
@@ -37,8 +38,11 @@ class Storyboard(BaseModel):
     chapters: list[Chapter]
 
 
+MAX_PARTS = 3
+
+
 def parts_for(duration_s: int) -> int:
-    return max(2, round(min(duration_s, MAX_S) / PART_S))
+    return max(2, min(MAX_PARTS, round(min(duration_s, MAX_S) / PART_S)))
 
 
 def outline(concept: str, n: int, level: str, duration_s: int) -> Storyboard:
@@ -64,7 +68,7 @@ def outline(concept: str, n: int, level: str, duration_s: int) -> Storyboard:
     return Storyboard(title=sb.title.strip() or fallback.title, chapters=chapters)
 
 
-WORKERS = int(os.getenv("LONGPLAN_WORKERS", "2"))     # Ollama runs 2 requests at once (OLLAMA_NUM_PARALLEL=2); the parts do not wait for each other
+WORKERS = int(os.getenv("LONGPLAN_WORKERS", "1"))     # one after the other: part k is told what parts 1..k-1 really contain (headings, points, code), which writing them at the same time could not
 
 
 def plan_long(concept: str, level: str, duration_s: int, upload: str | None, focus: str, wps: float,
@@ -96,9 +100,11 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
 
     def one(i: int) -> tuple[LessonPlan, list[dict]]:
         ch = sb.chapters[i]
+        with lock:
+            taught = "\n".join(content.taught_summary(done[j][0]) for j in range(i) if j in done)           # what the earlier parts really contain
         series = {"segment": True, "title": sb.title, "topic": concept or focus or sb.title, "index": i + 1, "total": n,
                   "previous": [f"{c.title}: {c.goal}" for c in sb.chapters[:i]], "this": ch.goal or ch.title,
-                  "next": sb.chapters[i + 1].title if i + 1 < n else ""}
+                  "next": sb.chapters[i + 1].title if i + 1 < n else "", "taught": taught[:1400]}
         topic = f"{concept}: {ch.title}" if concept else ch.title
         got = plan_lesson(topic, level=level, duration_s=part_s, upload=upload, focus=focus, wps=wps, series=series,
                           extra=extra, mode=mode, on_progress=lambda f: report(i, f), on_text=preview.feed if preview is not None and i == 0 else None)
@@ -118,5 +124,8 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
             if key not in seen:
                 seen.add(key)
                 sources.append(s_)
+    plan = LessonPlan(title=sb.title, scenes=scenes)
+    for note in content.dedupe_plan(plan):                             # the joined video, judged the way a viewer would
+        log.info("long plan: %s", note)
     on_progress(1.0)
-    return LessonPlan(title=sb.title, scenes=scenes), sources
+    return plan, sources

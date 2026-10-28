@@ -13,7 +13,7 @@ from . import config, llm
 
 log = logging.getLogger(__name__)
 
-MAX_CONCEPTS = 8
+MAX_CONCEPTS = 3                              # 2-3 videos at most: more is less coherent, and the first is the one people watch
 
 
 class Concept(BaseModel):
@@ -31,7 +31,7 @@ RULES = (
     "Rules:\n"
     "- One concept is one idea that needs its own explanation with an example. Merge ideas that are only variations or steps of the same idea.\n"
     "- Never list a concept twice. Ignore question numbers, page numbers and chapter headings.\n"
-    "- A narrow topic has 1 or 2 concepts. A broad topic has 3 to 6. Never more than 8, and do not pad the list.\n"
+    "- A narrow topic has 1 or 2 concepts. A broad topic has 3. Never more than 3: pick the three that matter most and make each one rich.\n"
     "- Order them from the foundation to the advanced.\n"
     "Examples of how many: 'what is a variable in Python' = 1 concept. 'Newton's laws of motion' = 3 (inertia, force and acceleration, "
     "action and reaction). 'Photosynthesis' = 3 (what plants need and make, the light reactions, the Calvin cycle). "

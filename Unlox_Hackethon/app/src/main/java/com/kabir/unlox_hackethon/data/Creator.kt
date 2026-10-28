@@ -31,7 +31,7 @@ data class CreationState(
 )
 
 private const val LONG_S = 90        // a video longer than this is planned in parts
-private const val PART_S = 30        // about how long one part is (a 2 minute video is 4 parts)
+private const val PART_S = 40        // about how long one part is: a 2 minute video is 3 parts, never more (more parts, a less coherent video)
 
 /** How much of one video each stage is (they add up to 1). */
 private val WEIGHT = listOf(0.02f, 0.30f, 0.20f, 0.42f, 0.06f)
@@ -119,7 +119,7 @@ class Creator(
     private suspend fun make(req: LessonRequest) {
         val codes = req.languages.map { langByName(it).code }.distinct().ifEmpty { listOf("en") }
         val pdf = req.source.removePrefix("pdf:").takeIf { req.source.startsWith("pdf:") }?.let { pdfs.get(it) }
-        val topic = req.concept.ifBlank { pdf?.name?.removeSuffix(".pdf") ?: "Your lesson" }
+        val topic = req.concept.ifBlank { pdf?.name?.removeSuffix(".pdf") ?: "Your lesson" }.let { cleanTopic(it) }       // never "Teach me about ..." in a title or caption
         val wanted = req.videos.toIntOrNull() ?: 0                       // 0 = Auto: the tutor decides
 
         stage(0, 0.3f, "Loading the tutor", if (pdf != null) "From ${pdf.name}" else "From Gemma's own knowledge, on this phone")
@@ -132,7 +132,7 @@ class Creator(
         if (wanted != 1) {
             val chapters = pdf?.let { pdfs.chapters(it.id) }.orEmpty()
             if (wanted == 0 && chapters.size >= 2) {
-                outline = chapters.take(8).map { it.title to it.title }
+                outline = chapters.take(3).map { it.title to it.title }
             } else {
                 stage(1, 0.02f, "Planning the videos", "Gemma · ${llm.backendName}")
                 val cur = curriculum(topic, wanted, pdf?.let { pdfs.retrieve(it.id, topic, 1500) }.orEmpty())
@@ -249,14 +249,14 @@ class Creator(
      * Part 1 is made scene by scene while it is written; every later part is handed to the player whole, in order, as soon as it is finished.
      */
     private suspend fun planParts(req: LessonRequest, subject: String, series: String, material: String, preview: ScenePreview): Pair<String, List<SceneT>> {
-        val n = ((req.seconds + 15) / PART_S).coerceIn(2, 8)
+        val n = ((req.seconds + 20) / PART_S).coerceIn(2, 3)
         stage(1, 0.02f, "Outlining $n parts", "Gemma · ${llm.backendName}")
         val (title, parts) = curriculum(subject, n, material, "parts of ONE continuous video")
         val raw = ArrayList<PlanScene>()
         for (k in 0 until n) {
             val goal = parts.getOrNull(k)?.second?.ifBlank { null } ?: parts.getOrNull(k)?.first ?: subject
             val partSeries = series + "This is part ${k + 1} of $n of ONE continuous video titled \"$title\" about $subject. This part teaches only: $goal. " +
-                (if (k > 0) "Already covered (do NOT repeat): ${parts.take(k).joinToString("; ") { it.first }}. Do NOT start with a title scene or a greeting: continue straight on. " else "") +
+                (if (k > 0) "Already covered (do NOT repeat these headings, points, examples or code; build on them and go further):\n${taughtOf(raw)}\nDo NOT start with a title scene or a greeting: continue straight on. " else "") +
                 (if (k < n - 1) "No quiz and no summary here: end with one sentence leading into \"${parts[k + 1].first}\". " else "This is the last part: end with a quiz scene and then a summary scene. ")
             plan(req, subject, partSeries, material, if (k == n - 1) 4 else 3, part = k + 1,
                 onRaw = { scenes -> raw.addAll(scenes); if (k > 0) preview.addScenes(scenes) },
@@ -264,6 +264,11 @@ class Creator(
         }
         return normalizePlan(PlanDoc(title, raw))
     }
+
+    /** What the parts written so far really contain (headings, first points, the first line of code), for the next part to build on. */
+    private fun taughtOf(scenes: List<PlanScene>): String = scenes.filter { it.template !in setOf("title", "quiz", "summary") }.joinToString("\n") { s ->
+        "- ${s.heading}: ${s.items.take(3).joinToString("; ").ifBlank { s.narration.substringBefore('.').take(80) }}" + (s.code.firstOrNull { it.isNotBlank() }?.let { " [code: ${it.trim().take(60)}]" } ?: "")
+    }.take(900)
 
     /** "Make one more video on X", asked in the tutor chat: it joins the lesson's playlist (a lesson on its own becomes video 1 of a new one) and is made scene by scene. Null while another lesson is being made. */
     fun addVideo(base: Lesson, topic: String, seconds: Int, onFirst: (String) -> Unit, onDone: (Lesson?) -> Unit): String? {
@@ -311,7 +316,7 @@ class Creator(
 
     /** The outline of a set of videos: one idea each, building up. `wanted` 0 lets the tutor choose how many. */
     private suspend fun curriculum(topic: String, wanted: Int, material: String, noun: String = "videos"): Pair<String, List<Pair<String, String>>> {
-        val how = if (wanted > 0) "exactly $wanted $noun" else "between 3 and 6 videos, one per idea the learner must understand"
+        val how = if (wanted > 0) "exactly $wanted $noun" else "2 or 3 videos, one per idea the learner must understand (never more than 3)"
         val system = "You design short video courses. Reply with one JSON object and nothing else."
         val user = "Design a course of $how that teaches: $topic.\nEach video teaches ONE clear idea and builds on the one before. The first gives the big picture, the last is a recap. Titles are at most 6 words and name the idea (not 'Part 2'). Each focus is one sentence.\n" +
             (if (material.isNotBlank()) "Material from the learner:\n$material\n" else "") +
@@ -320,7 +325,7 @@ class Creator(
             val reply = llm.ask(system, user, if (attempt == 0) 0.4 else 0.2)
             val cur = extractJson(reply)?.let { runCatching { lenient.decodeFromString<Curriculum>(it) }.getOrNull() }
             val eps = cur?.episodes?.filter { it.title.isNotBlank() }.orEmpty()
-            if (eps.size >= 2) return (cur!!.title.ifBlank { topic }) to eps.take(if (wanted > 0) wanted else 8).map { it.title.trim() to it.focus.trim() }
+            if (eps.size >= 2) return (cur!!.title.ifBlank { topic }) to eps.take(if (wanted > 0) wanted.coerceAtMost(3) else 3).map { it.title.trim() to it.focus.trim() }
         }
         val steps = listOf("The big picture", "The core idea", "A worked example", "Common mistakes", "Going one step further", "Putting it together", "Practice time", "Recap")
         val n = if (wanted > 0) wanted else 4
@@ -343,6 +348,8 @@ class Creator(
             if (material.isNotBlank()) append("Use only facts from this material from the learner's own document:\n").append(material.take(3200)).append("\n\n")
             append(hint).append('\n').append(templateGuide(domainOf(subject))).append('\n')
             append("""JSON shape: {"title": "short title", "scenes": [{"template": "title", "heading": "...", "narration": "...", "icon": "lightbulb", "items": []}, ...]}""").append('\n')
+            append("Every scene adds NEW information with a specific fact or real example, and the narration is 2-3 full sentences of about 25 words. Never repeat a heading, a point, an example or code that was already shown.").append('\n')
+            if (domainOf(subject) == "code") append("Programming: build up in small steps; every code scene shows DIFFERENT code that builds on the one before, only the lines that matter, never a repeated class or main() skeleton.").append('\n')
             if (part == 0) append("Scene 1 is template \"title\". Use at least ${minOf(4, n)} different templates so it is not all bullets. The last scene is \"summary\" or \"quiz\". Be accurate. Output only the JSON.")
             else append("Use different templates for the scenes so it is not all bullets. Be accurate. Output only the JSON.")
         }

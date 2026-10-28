@@ -66,6 +66,7 @@ NLLB_MODEL = os.getenv("NLLB_MODEL", "facebook/nllb-200-distilled-600M")
 
 # Narration: "piper", "parler" (AI4Bharat Indic Parler-TTS, GPU) or "silent" (timing-only placeholder)
 TTS_ENGINE = os.getenv("TTS_ENGINE", "piper")
+TTS_EXPRESSIVE = os.getenv("TTS_EXPRESSIVE", "1") == "1"        # each sentence is spoken with the delivery that fits it (see expression.py)
 # Languages whose Piper voice is weak: use the Indic-TTS (CPU ONNX) voice first. Checked by round-tripping speech
 # through Whisper: Marathi and Bengali Piper voices were unintelligible, the Indic-TTS ones are not.
 TTS_PREFER_INDIC = [c.strip() for c in os.getenv("TTS_PREFER_INDIC", "bn,mr").split(",") if c.strip()]

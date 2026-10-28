@@ -299,14 +299,20 @@ def points_from_narration(narration: str, limit: int = 4) -> list[str]:
     return out[:limit]
 
 
-def normalize(plan: LessonPlan) -> LessonPlan:
-    """Repair the small mistakes local models make so the renderer never sees bad data."""
+SCHEMA_WORDS = {"string", "heading", "title", "text", "narration", "scene title", "scene heading", "...", "null", "none", "n/a"}
+
+
+def normalize(plan: LessonPlan, segment: bool = False, last: bool = True, title: bool | None = None) -> LessonPlan:
+    """Repair the small mistakes local models make so the renderer never sees bad data. A `segment` (one part of a longer video) gets no title card
+    of its own (that was the \"title card in the middle\" with the caption \"Let's learn about ...\"), and only the `last` part gets the misconceptions scene."""
     scenes: list[ScenePlan] = []
     for s in plan.scenes[:24]:                                  # a 4-minute video has up to ~20 scenes
         s.items = [i.strip() for i in s.items if i and i.strip()][:6]
         s.left = [i.strip() for i in s.left if i and i.strip()][:4]
         s.right = [i.strip() for i in s.right if i and i.strip()][:4]
-        s.heading = s.heading.strip() or plan.title
+        s.heading = s.heading.strip()
+        if not s.heading or s.heading.lower().strip(".:") in SCHEMA_WORDS:
+            s.heading = plan.title                          # the model copied a word of the schema ("string") instead of writing a heading
         s.narration = " ".join(s.narration.split())
         if not s.narration:
             continue
@@ -335,10 +341,11 @@ def normalize(plan: LessonPlan) -> LessonPlan:
         scenes.append(s)
     if not scenes:
         raise ValueError("Lesson plan has no usable scenes")
-    if scenes[0].template != "title":
+    if scenes[0].template != "title" and (not segment if title is None else title):      # (the first part of a long video gets the opening card, the others do not)
         scenes.insert(0, ScenePlan(template="title", heading=plan.title,
                                    narration=f"Let's learn about {plan.title}.", icon=scenes[0].icon))
-    _add_misconceptions(plan, scenes)
+    if not segment or last:
+        _add_misconceptions(plan, scenes)
     plan.scenes = scenes
     return plan
 

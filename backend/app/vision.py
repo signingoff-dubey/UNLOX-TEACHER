@@ -7,6 +7,7 @@ import hashlib
 import io
 import logging
 import re
+import threading
 
 import requests
 
@@ -17,12 +18,12 @@ log = logging.getLogger(__name__)
 IMAGES_DIR = config.MEDIA_DIR / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 MAX_BYTES = 12 * 1024 * 1024
-MAX_SIDE = 1280                                     # llava looks at about this many pixels anyway
+MAX_SIDE = 1024                                     # llava looks at about this many pixels anyway (1280 only made the read slower)
 VISION_MODEL = config.VISION_MODEL
 
 PROMPT = (
     "You are helping a student. Look at this photo and write plain text (no markdown) in this order:\n"
-    "1. All text you can read, copied exactly, including question numbers, numbers and formulas.\n"
+    "1. All text you can read, copied exactly, including question numbers, numbers and formulas. At most 15 lines, and never repeat a line.\n"
     "2. A short description of any diagram, graph, figure or object.\n"
     "3. A last line that starts with 'Topic:' and names the school subject and topic in at most 8 words."
 )
@@ -84,8 +85,45 @@ def _small_jpeg(path) -> bytes:
         return out.getvalue()
 
 
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock_for(sha: str) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(sha, threading.Lock())
+
+
 def describe(sha: str, progress=lambda s, p: None) -> dict:
-    """Read one stored photo. Returns {"id", "description", "topic"}."""
+    """Read one stored photo. Returns {"id", "description", "topic"}. One reader per photo at a time: a lesson that starts while the photo is still
+    being read waits for that read and uses its result instead of asking llava a second time."""
+    with _lock_for(sha):
+        return _describe(sha, progress)
+
+
+def pending(images: list[str]) -> list[str]:
+    """The photos that have not been read yet."""
+    out = []
+    for sha in images or []:
+        try:
+            if not (IMAGES_DIR / f"{sha}.txt").exists():
+                path_of(sha)
+                out.append(sha)
+        except (ImageError, FileNotFoundError):
+            continue
+    return out
+
+
+def ensure(images: list[str]) -> None:
+    """Read every photo that is not read yet (waits for a read already in progress). A photo that cannot be read is simply left out."""
+    for sha in pending(images):
+        try:
+            describe(sha)
+        except Exception as e:  # noqa: BLE001
+            log.warning("photo %s could not be read: %s", sha, e)
+
+
+def _describe(sha: str, progress=lambda s, p: None) -> dict:
     path = path_of(sha)
     cache = IMAGES_DIR / f"{sha}.txt"
     if cache.exists():
@@ -94,18 +132,45 @@ def describe(sha: str, progress=lambda s, p: None) -> dict:
         progress("Reading the photo", 0.2)
         body = {"model": VISION_MODEL, "stream": False, "keep_alive": "30s",       # let the language model have the GPU back soon
                 "messages": [{"role": "user", "content": PROMPT, "images": [base64.b64encode(_small_jpeg(path)).decode()]}],
-                "options": config.ollama_options({"temperature": 0.1, "num_predict": 700})}
+                "options": config.ollama_options({"temperature": 0.1, "num_predict": 380, "repeat_penalty": 1.2})}
         try:
             r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=body, timeout=300)
             r.raise_for_status()
         except requests.RequestException as e:
             raise RuntimeError(f"The photo could not be read: is '{VISION_MODEL}' installed in Ollama? ({e})") from e
-        text = r.json()["message"]["content"].strip()
+        text = clean_description(r.json()["message"]["content"])
         if not text:
             raise RuntimeError("The photo model returned nothing")
         cache.write_text(text, encoding="utf-8")
     progress("Ready", 1.0)
     return {"id": sha, "description": text, "topic": topic_of(text)}
+
+
+def clean_description(text: str, max_lines: int = 15, max_chars: int = 900) -> str:
+    """llava sometimes loops: one photo of a topic list came back as 104 lines drifting into unrelated subjects and repeating the same lines. Repeated
+    lines are dropped and the reading is cut to what a photo can plausibly hold; the Topic line is kept."""
+    out, seen, topic = [], set(), ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if re.match(r"^\s*topic\s*:", line, re.I):
+            topic = line
+            continue
+        key = re.sub(r"^\d+[.)]\s*", "", line).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(line)
+    body = "\n".join(out[:max_lines])[:max_chars].rstrip()
+    return (body + ("\n" + topic if topic else "")).strip()
+
+
+def relevant(text: str, focus: str, limit: int = 6) -> str:
+    """The lines of a photo's text that share words with what one video of a course is about (empty when none do: that video does not mention the photo)."""
+    want = set(re.findall(r"[a-z0-9+#]{4,}", focus.lower()))
+    hits = [ln for ln in text.splitlines() if ln.strip() and not re.match(r"^\s*topic\s*:", ln, re.I) and want & set(re.findall(r"[a-z0-9+#]{4,}", ln.lower()))]
+    return "\n".join(hits[:limit])
 
 
 def topic_of(text: str) -> str:
@@ -115,11 +180,12 @@ def topic_of(text: str) -> str:
 
 def cached(sha: str) -> str:
     f = IMAGES_DIR / f"{sha}.txt"
-    return f.read_text(encoding="utf-8") if f.exists() else ""
+    return clean_description(f.read_text(encoding="utf-8")) if f.exists() else ""          # (a reading cached before the clean-up is cleaned here too)
 
 
 def context(images: list[str], limit: int = 3500) -> str:
-    """What the attached photos show, as one block for the planner."""
+    """What the attached photos show, as one block for the planner. Photos that are not read yet are read now."""
+    ensure(images)
     parts = []
     for i, sha in enumerate(images or [], 1):
         text = cached(sha)
@@ -129,6 +195,7 @@ def context(images: list[str], limit: int = 3500) -> str:
 
 
 def topics(images: list[str]) -> str:
+    ensure(images)
     return "; ".join(t for t in (topic_of(cached(s)) for s in images or []) if t)
 
 

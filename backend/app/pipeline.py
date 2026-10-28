@@ -16,6 +16,7 @@ from .longplan import LONG_MIN, plan_long
 from .planner import plan_lesson
 from .director import direct
 from .review import review as review_plan
+from . import content, expression
 from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
 from .translate import translate_batch
 from .tts import synthesize
@@ -32,6 +33,7 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
                  progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
     """Builds a lesson. `documents` holds uploaded PDFs (their sha): facts come from the first one before the
     library; with an empty concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
+    concept = content.clean_topic(concept) if concept.strip() else concept          # never "Teach me about ..." in a title or a caption
     # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
     # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
     with _gpu_slot():
@@ -50,7 +52,11 @@ def _gpu_slot():
 def _build(concept: str, languages: list[str], level: str, duration_s: int, documents: list[str],
            series: dict | None, progress: Progress, focus: str, images: list[str], mode: str, progressive: bool) -> dict:
     upload = documents[0] if documents else None
-    extra = vision.context(images)                            # what the attached photos show (read earlier by llava)
+    if vision.pending(images):
+        progress("Reading your photo", 0.03)                  # the learner did not have to wait for it: the lesson starts with it
+    extra = vision.context(images)                            # what the attached photos show (read earlier by llava, or now)
+    if series and extra and mode != "homework":
+        extra = vision.relevant(extra, f"{series.get('this', '')} {series.get('title', '')} {concept}")     # this video gets only the part of the photo that is about it
     if not concept.strip() and not documents and extra:
         concept = vision.topics(images) or "the topic in the attached photo"
     t0 = time.perf_counter()
@@ -85,7 +91,8 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         from .streaming import ScenePreview
         expected = parts_for(duration_s) * scene_target(round(duration_s / parts_for(duration_s))) if long_video else scene_target(duration_s)
         preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, expected, lesson_path(lesson_id),
-                               on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id))
+                               on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id),
+                               reject=(lambda o: o.get("template") in ("summary", "quiz")) if long_video else None)      # part 1 of a long video has no quiz or summary
         on_text = preview.feed
     if long_video:
         plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, preview=preview)      # 1.5-4 min: planned in parts
@@ -93,11 +100,15 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
                                     series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
     note = source_note(sources)
+    for n in content.dedupe_plan(plan):                       # no repeated scene, code block or summary reaches the screen
+        log.info("plan cleaned: %s", n)
     progress("Designing the visuals", 0.43)
     plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
     progress("Checking the lesson", 0.57)
     plan, review_notes = review_plan(plan, duration_s, wps)
     review_notes = director_notes + review_notes
+    if series is not None:
+        raw_progress("Checking the lesson", 0.58, taught=content.taught_summary(plan))       # the next video of the course is planned knowing this
     timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -257,6 +268,8 @@ def _scene_texts(scene) -> list[str]:
 def _translated_scenes(plan: LessonPlan, lang: str) -> tuple[tuple[str, list[dict]], str]:
     """Translate every visible/spoken string in one batch, keeping the plan's structure."""
     scenes = [s.model_dump() for s in plan.scenes]
+    for sc, ps in zip(scenes, plan.scenes):
+        sc["tone"] = expression.tone_for_scene(ps.template, ps.heading)       # how the narrator should deliver this scene
     slots: list[tuple] = [("title",)]
     texts = [plan.title]
     for i, s in enumerate(scenes):
@@ -296,7 +309,7 @@ def _narrate(translated: tuple[str, list[dict]], lang: str, on_progress=lambda f
     engines = set()
     for k, s in enumerate(scenes):
         on_progress(k / max(len(scenes), 1))
-        speech = synthesize(s["narration"], voice_lang or lang)
+        speech = synthesize(s["narration"], voice_lang or lang, tone=s.get("tone"))
         engines.add(speech.engine)
         s["audio_url"] = f"/media/audio/{speech.path.name}"
         s["speech_s"] = round(speech.duration_s, 3)
