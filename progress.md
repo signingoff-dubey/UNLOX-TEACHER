@@ -443,6 +443,9 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| f4a3de6 | 2026-10-28 | v0.16.3: Flash streams every part without pauses, course videos overlap, languages in parallel, full worksheets/papers with download popup, real progress bars, animated take-away buttons |
+| d9c4009 | 2026-10-29 | v0.16.2: Android player fixes (centred picture, full-screen exit, progress that keeps moving, build progress card) |
+| aca1c6c | 2026-10-29 | v0.16.1: audit fixes (offline by default, duration follows the slowest language, placeholder-heading regression, recap scene, more code topics, Indian languages preselected, verified licence table) |
 | d350caf | 2026-10-29 | docs: team details (The Last Commit, RV University), complete documentation PDF and its build script |
 | d2d2546 | 2026-10-29 | v0.16.0: Flash and Pro modes, memory of existing lessons, fact checker, technical topics shown with code and network scenes, reference notes, retries and readiness checks, full README |
 | d9ed0c9 | 2026-10-28 | v0.15.2: coherent long videos and courses (max 3 parts/videos, no repeats), topic cleaning, expressive narration, non-blocking photo, fixes found by live lessons |
