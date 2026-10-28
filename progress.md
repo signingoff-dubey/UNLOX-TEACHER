@@ -390,6 +390,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| d2d2546 | 2026-10-29 | v0.16.0: Flash and Pro modes, memory of existing lessons, fact checker, technical topics shown with code and network scenes, reference notes, retries and readiness checks, full README |
 | d9ed0c9 | 2026-10-28 | v0.15.2: coherent long videos and courses (max 3 parts/videos, no repeats), topic cleaning, expressive narration, non-blocking photo, fixes found by live lessons |
 | 342b893 | 2026-10-28 | v0.15.0: prompt tightened, PDF upload progress, Android continuous generation and lag fixes, Learnverse graphics, docs |
 | 2dacea8 | 2026-10-28 | v0.14.4: PDF Markdown pipeline, font checks, llava for PDF pictures, caching and pre-warming |
