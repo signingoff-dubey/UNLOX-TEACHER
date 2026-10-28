@@ -460,6 +460,8 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 7f5cb8d | 2026-10-28 | fix: shown Flash scenes stay as heard, next course video starts during the fact check, OCR no longer crashes the backend on a full GPU |
+| ab6a842 | 2026-10-28 | docs: git history in progress.md |
 | 52b37f4 | 2026-10-28 | fix: readable request errors instead of [object Object], longer topics accepted |
 | 671c52c | 2026-10-28 | v0.16.4: languages drafted while the video is made, exports and papers reused instead of remade, MP4 save popup and real export progress, Learnverse world behind Start, study-tool borders, notes panel fix, architecture and flow docs |
 | 7227da8 | 2026-10-28 | docs: git history in progress.md |
