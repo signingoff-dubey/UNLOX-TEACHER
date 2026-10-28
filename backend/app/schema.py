@@ -302,6 +302,18 @@ def points_from_narration(narration: str, limit: int = 4) -> list[str]:
 SCHEMA_WORDS = {"string", "heading", "title", "text", "narration", "scene title", "scene heading", "...", "null", "none", "n/a"}
 
 
+def _own_heading(s: ScenePlan, title: str, used: list[str]) -> str:
+    """A heading for a scene that has none: its first point, else the first words of its narration. Never the same as another scene's, and never the lesson title
+    for every scene (identical headings are what the cleaner removes as repeats)."""
+    cands = [s.items[0] if s.items else "", " ".join(s.narration.split()[:5]).strip(" ,.;:!?"), title]
+    taken = {u.lower() for u in used}
+    for c in cands:
+        c = " ".join(c.split()[:6]).strip(" ,.;:!?")
+        if c and c.lower() not in taken and c.lower() not in SCHEMA_WORDS:
+            return c
+    return f"{title} ({len(used) + 1})"
+
+
 def normalize(plan: LessonPlan, segment: bool = False, last: bool = True, title: bool | None = None) -> LessonPlan:
     """Repair the small mistakes local models make so the renderer never sees bad data. A `segment` (one part of a longer video) gets no title card
     of its own (that was the \"title card in the middle\" with the caption \"Let's learn about ...\"), and only the `last` part gets the misconceptions scene."""
@@ -312,7 +324,7 @@ def normalize(plan: LessonPlan, segment: bool = False, last: bool = True, title:
         s.right = [i.strip() for i in s.right if i and i.strip()][:4]
         s.heading = s.heading.strip()
         if not s.heading or s.heading.lower().strip(".:") in SCHEMA_WORDS:
-            s.heading = plan.title                          # the model copied a word of the schema ("string") instead of writing a heading
+            s.heading = _own_heading(s, plan.title, [x.heading for x in scenes])     # the model copied a word of the schema ("string") instead of writing a heading
         s.narration = " ".join(s.narration.split())
         if not s.narration:
             continue
@@ -346,8 +358,23 @@ def normalize(plan: LessonPlan, segment: bool = False, last: bool = True, title:
                                    narration=f"Let's learn about {plan.title}.", icon=scenes[0].icon))
     if not segment or last:
         _add_misconceptions(plan, scenes)
+        _ensure_close(scenes)
     plan.scenes = scenes
     return plan
+
+
+def _ensure_close(scenes: list[ScenePlan]) -> None:
+    """A lesson must end with a recap or a quiz. When the model stopped on a teaching scene (small models often do), a summary of the scene headings is added,
+    so the learner is never left hanging. The recap is made from the lesson's own headings, nothing new is claimed."""
+    if len(scenes) < 3 or scenes[-1].template in ("quiz", "summary"):
+        return
+    heads = [" ".join(x.heading.split()[:5]) for x in scenes[1:] if x.template not in ("title", "quiz", "summary") and x.heading.strip()
+             and x.heading.strip().lower() != "common mistakes"]
+    heads = list(dict.fromkeys(heads))[:4]
+    if len(heads) < 2:
+        return
+    spoken = "To sum up, we looked at " + ", ".join(h.lower() for h in heads[:-1]) + f" and {heads[-1].lower()}. Try explaining these ideas in your own words to check that you have them."
+    scenes.append(ScenePlan(template="summary", heading="Summary", narration=spoken, items=heads, icon="lightbulb"))
 
 
 def _add_misconceptions(plan: LessonPlan, scenes: list[ScenePlan]) -> None:

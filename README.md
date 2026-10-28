@@ -337,8 +337,29 @@ Built and measured on a laptop with an RTX 5060 (8 GB VRAM), 15 GB RAM, Windows 
 
 ## Licences
 
-| Component | Licence |
-|---|---|
+Verified from the model's own licence file or from Ollama (`ollama show <model> --license`) where noted; the rest are the published licences and should be re-checked before redistribution.
+
+| Component | Licence | Basis |
+|---|---|---|
+| Qwen2.5-7B-Instruct (planner, tutor) | Apache-2.0 | `ollama show --license` |
+| LLaVA 7B (photos) | Apache-2.0 | `ollama show --license` |
+| nomic-embed-text (knowledge-base embeddings) | Apache-2.0 | `ollama show --license` |
+| Unlimited-OCR (accurate OCR) | MIT | `models/Unlimited-OCR/LICENSE` |
+| Whisper / faster-whisper (speech to text) | MIT | model card |
+| IndicTrans2 (translation) | MIT (gated download) | `models/indictrans2/LICENSE` |
+| AI4Bharat Indic-TTS, Indic Parler-TTS | MIT / Apache-2.0 | upstream cards (ONNX repack is unofficial) |
+| multilingual-e5-small, bge-reranker-v2-m3 | MIT / Apache-2.0 | upstream cards |
+| NLLB-200 distilled 600M (translator used when IndicTrans2 is not installed) | **CC-BY-NC 4.0 (non-commercial)** | upstream card; set `TRANSLATE_BACKEND=indictrans2` (MIT) to avoid it |
+| piper-tts (voice engine) | GPL-3.0-or-later | pip metadata; each Piper voice has its own card |
+| Tesseract | Apache-2.0 | upstream |
+| Wikipedia text | CC BY-SA 4.0 | downloaded at setup; each lesson lists its articles |
+| Noto fonts | SIL OFL 1.1 | upstream |
+| Remotion (renderer) | Remotion licence (free for individuals and small teams) | upstream terms |
+| ffmpeg | LGPL/GPL by build | upstream |
+| Gemma 4 E2B (Android only) | Gemma terms of use | upstream |
+| NCERT / OpenStax (optional library) | NCERT: local use only; OpenStax: CC BY 4.0 | upstream |
+
+---|---|
 | Qwen2.5-7B-Instruct | Apache-2.0 |
 | LLaVA, nomic-embed-text, bge-reranker, multilingual-e5-small | see each model card |
 | NLLB-200 | CC-BY-NC (research/education use; check before commercial use) |

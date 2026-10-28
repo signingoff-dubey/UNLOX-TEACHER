@@ -24,6 +24,8 @@ from typing import Iterator
 
 import requests
 
+import os
+os.environ["CHANAKYA_ONLINE"] = "1"      # these scripts download: the offline default of the app does not apply
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.rag.paths import LIBRARY_DIR  # noqa: E402
 

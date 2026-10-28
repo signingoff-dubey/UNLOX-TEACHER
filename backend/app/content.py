@@ -111,7 +111,7 @@ def dedupe_plan(plan: LessonPlan) -> list[str]:
 
 def narration_problems(plan: LessonPlan) -> list[int]:
     """Indexes of scenes whose narration is too short to teach anything (not the title card, which may be one line)."""
-    return [i for i, s in enumerate(plan.scenes) if i and len(s.narration.split()) < MIN_NARRATION_WORDS]
+    return [i for i, s in enumerate(plan.scenes) if (i and len(s.narration.split()) < MIN_NARRATION_WORDS) or (not i and is_placeholder(s))]
 
 
 def repeated_code(plan: LessonPlan) -> str | None:

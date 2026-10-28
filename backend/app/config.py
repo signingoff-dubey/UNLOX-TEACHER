@@ -15,6 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]          # chanakya/
 BACKEND = ROOT / "backend"
 WEB_DIR = ROOT / "web"
+if os.getenv("CHANAKYA_ONLINE", "0") != "1":
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")            # the project is offline: models come from disk, a missing one is an error, never a download or a hang without Wi-Fi
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 MODELS_DIR = Path(os.getenv("MODELS_DIR", ROOT / "models"))
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", ROOT / "media"))
 FONTS_DIR = WEB_DIR / "public" / "fonts"

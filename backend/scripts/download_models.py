@@ -10,6 +10,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import os
+os.environ["CHANAKYA_ONLINE"] = "1"      # these scripts download: the offline default of the app does not apply
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import config  # noqa: E402
 from app.languages import LANGUAGES  # noqa: E402

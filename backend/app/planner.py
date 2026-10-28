@@ -97,10 +97,11 @@ MATH_WORDS = re.compile(r"\b(maths?|mathematics|algebra|geometry|graphs?|plot\w*
                         r"triangles?|statistics|probability|sqrt|logarithm\w*)\b", re.I)
 CODE_WORDS = re.compile(r"\b(python|java|javascript|typescript|rust|golang|go lang|c\+\+|c#|sql|react|jsx|html|css|node|code|coding|programming?|"
                         r"loops?|arrays?|algorithms?|recursion|variables?|syntax|api|database|git|linux|bash|shell|compilers?|classes|objects?|pointers?|dsa|"
-                        r"data structures?|avl|bst|binary (search )?trees?|linked lists?|stacks?|queues?|heaps?|hash ?(maps?|tables?)|sorting|searching|big-?o|"
+                        r"data structures?|binary search|linear search|bubble sort|merge sort|quick ?sort|insertion sort|selection sort|time complexity|"
+                        r"space complexity|dynamic programming|greedy|backtracking|two pointers?|sliding window|avl|bst|binary (search )?trees?|linked lists?|stacks?|queues?|heaps?|hash ?(maps?|tables?)|sorting|searching|big-?o|"
                         r"graph algorithms?|dijkstra|bfs|dfs|mern|mean stack|oop|oops|dbms)\b", re.I)
 NET_WORDS = re.compile(r"\b(trees?|avl|bst|graphs? (theory|algorithms?)|linked lists?|networks?|hierarch\w+|architecture|pipeline|flowcharts?|mind ?maps?|"
-                       r"org(anisation|anization)? chart|family tree|heaps?|tries?|dijkstra|bfs|dfs|stack|mern|mean stack|osi|tcp|internet|food (web|chain))\b", re.I)
+                       r"org(anisation|anization)? chart|family tree|heaps?|tries?|dijkstra|bfs|dfs|stack|binary search|mern|mean stack|osi|tcp|internet|food (web|chain))\b", re.I)
 LANGS = {"python": "python", "java": "java", "javascript": "javascript", "js": "javascript", "typescript": "typescript", "c++": "cpp", "cpp": "cpp", "c#": "csharp",
          "rust": "rust", "go": "go", "golang": "go", "sql": "sql", "kotlin": "kotlin", "react": "jsx", "html": "html", "bash": "bash", "c": "c"}
 SUBJECT_DROP = {"graph": frozenset({"curves", "marks", "equation", "x_range", "y_range"}),
@@ -368,6 +369,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
                  extra: str = "", mode: str = "explain", on_text=None) -> str:
     words = round(duration_s * wps / 10) * 10                 # spoken words per second of the slowest chosen language
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
+    scenes = max(4, min(scenes, round(words / 24)))           # a scene says about 24 words: the scene count follows the word budget of the SLOWEST chosen language, or a 60 s lesson ran 111 s in Telugu
     technical = any(subject_of(concept))
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
                 else "an intermediate learner: assume the basics, add the why and one deeper detail or edge case")

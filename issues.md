@@ -418,3 +418,24 @@
 **Fix:** none yet; rerun when the laptop is idle
 **Files Changed:** none
 **Status:** Ongoing (flaky under load)
+
+
+---
+
+## [ISSUE-047] — 2026-10-29
+**Title:** Placeholder headings ("string") were replaced by the lesson title and the repeat cleaner then deleted the scenes
+**Symptom:** "What is photosynthesis?" (60 s, three languages) came out with 3 scenes: title, diagram, compare; the log said scenes 3, 4, 5 and 7 were "dropped: the heading 'What is photosynthesis?' again"
+**Root Cause:** my fix for ISSUE-043 set a placeholder heading to `plan.title`; when the model wrote "string" for several headings they all became identical, and `dedupe_plan` removes a scene with a heading that was already used
+**Fix:** `schema._own_heading` (the scene's first point, else the first words of its narration, never a duplicate); regression test
+**Files Changed:** backend/app/schema.py, tests/test_content_quality.py
+**Status:** Resolved
+
+---
+
+## [ISSUE-048] — 2026-10-29
+**Title:** A 60 s lesson ran 111 s in Telugu
+**Symptom:** English 55 s, Hindi 95 s, Telugu 111 s for the same request; the rules ask for 30 to 90 s
+**Root Cause:** the word budget used the slowest language's speed, but the number of scenes depended on the duration only (6 to 7) and every scene was written, then lengthened, to at least 22 words
+**Fix:** `scenes = min(by duration, round(words / 24))` in the planner; a recap scene is added when a lesson stops on a teaching scene; now 37 s / 58 s / 66 s
+**Files Changed:** backend/app/planner.py, schema.py
+**Status:** Resolved

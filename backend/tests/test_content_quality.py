@@ -215,7 +215,7 @@ def test_a_word_copied_from_the_schema_is_not_a_heading():
     assert "placeholder" in content.schema_echo(plan)
     assert content.schema_echo(LessonPlan(title="T", scenes=[sc("title", "Why planets?"), sc("flow", "Steps")])) is None
     fixed = schema.normalize(LessonPlan(title="The Solar System", scenes=[sc("title", "string"), sc("flow", "Steps"), sc("bullets", "More"), sc("summary", "End")]))
-    assert fixed.scenes[0].heading == "The Solar System"
+    assert fixed.scenes[0].heading.lower() != "string" and fixed.scenes[0].heading                         # a heading of its own, not the placeholder
 
 
 def test_the_same_heading_is_never_shown_twice():
@@ -244,3 +244,38 @@ def test_a_quiz_must_ask_a_question_and_not_give_the_answer_away():
     assert "answer away" in content.quiz_problem(leaked)
     dup = part([sc("title", "T"), sc("quiz", "Q", "Which one is it?", items=["Red", "red", "Green"], answer_index=1)])
     assert "distinct" in content.quiz_problem(dup)
+
+
+def test_placeholder_headings_get_headings_of_their_own_not_the_lesson_title():
+    """Regression: every 'string' heading became the lesson title, the cleaner then removed all but one of those scenes (a 7-scene lesson became 3)."""
+    scenes = [ScenePlan(template="title", heading="string", narration="Plants make their own food from sunlight, water and air every single day of the year.", items=[]),
+              ScenePlan(template="diagram", heading="string", narration="Chlorophyll in the leaf captures the light energy that drives the whole process of making sugar.", items=["Chlorophyll", "Sunlight", "Water"]),
+              ScenePlan(template="flow", heading="", narration="Water travels up from the roots to the leaves while carbon dioxide enters through tiny pores.", items=["Water rises", "Gas enters"]),
+              ScenePlan(template="quiz", heading="string", narration="Which gas do plants take in during photosynthesis? Carbon dioxide is the answer.", items=["Oxygen", "Carbon dioxide", "Nitrogen"], answer_index=1),
+              ScenePlan(template="summary", heading="string", narration="So plants turn light, water and carbon dioxide into sugar and oxygen for us all.", items=["Light in", "Sugar out"])]
+    plan = schema.normalize(LessonPlan(title="What is photosynthesis?", scenes=scenes))
+    heads = [s.heading for s in plan.scenes]
+    assert len(set(h.lower() for h in heads)) == len(heads) and "string" not in [h.lower() for h in heads]
+    content.dedupe_plan(plan)
+    assert len(plan.scenes) == 5                                                         # nothing was thrown away as a repeat
+
+
+def test_a_placeholder_title_card_is_rewritten_by_the_writer_pass():
+    p = LessonPlan(title="Binary search", scenes=[sc("title", "Binary Search Basics", "Let's learn about Binary Search Basics."), sc("flow", "Halving")])
+    assert content.narration_problems(p) == [0]
+
+
+def test_more_programming_topics_are_recognised_as_code_topics():
+    for t in ("How does binary search work?", "explain merge sort", "what is time complexity", "teach me dynamic programming"):
+        assert planner.subject_of(t)[1], t
+    assert not planner.subject_of("How does photosynthesis work?")[1]
+
+
+def test_a_lesson_that_stops_on_a_teaching_scene_is_given_a_recap():
+    body = [sc("title", "Photosynthesis"), sc("bullets", "Sunlight gives energy"), sc("flow", "Water and air in"), sc("diagram", "Inside the leaf")]
+    plan = schema.normalize(LessonPlan(title="Photosynthesis", scenes=body))
+    assert plan.scenes[-1].template == "summary" and len(plan.scenes[-1].items) == 3 and "sunlight gives energy" in plan.scenes[-1].narration.lower()
+    done = schema.normalize(LessonPlan(title="P", scenes=[sc("title", "P"), sc("bullets", "A idea"), sc("flow", "B idea"), sc("quiz", "Q", items=["x", "y", "z"])]))
+    assert [s.template for s in done.scenes][-1] == "quiz"                                  # an existing quiz or summary is never doubled
+    part = schema.normalize(LessonPlan(title="V", scenes=[sc("flow", "A idea"), sc("bullets", "B idea"), sc("diagram", "C idea")]), segment=True, last=False)
+    assert part.scenes[-1].template != "summary"                                            # a middle part of a long video is not closed

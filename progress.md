@@ -1,7 +1,23 @@
 # Progress Log
 
-## Current Version: v0.16.0
+## Current Version: v0.16.1
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.16.1] — 2026-10-29
+### What's New
+- **Audit against the judging rules** (offline, three languages, 60 s, judge-style prompts), and the fixes it led to:
+  - *Offline for real*: the whole pipeline (plan, IndicTrans2 translation, Piper voices, fact check) was run with every outbound connection blocked and built English, Hindi and Telugu lessons in 81 to 121 s; the app now sets `HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE` itself (`CHANAKYA_ONLINE=1` lets the download scripts through)
+  - *Duration*: a 60 s request ran 111 s in Telugu (English 55 s). The scene count now follows the word budget of the slowest chosen language; the same request is now 37 s English, 58 s Hindi, 66 s Telugu
+  - *A regression of mine*: a placeholder heading ("string") was replaced by the lesson title, every scene then had the same heading and the repeat cleaner deleted all but three (a 7-scene photosynthesis lesson became 3). A placeholder heading now gets its own heading from the scene's points or narration
+  - A lesson that stops on a teaching scene gets a recap made from its own headings; a placeholder title card ("Let's learn about X.") is rewritten; binary search, sorting, complexity and dynamic programming are taught with code scenes
+  - The first screen selects English, Hindi and Telugu (the rules ask for two Indian languages); the README licence table lists the verified licence of every component and marks NLLB-200 as non-commercial
+
+### Known Issues
+- No `LICENSE` file in the repository yet, and no sample MP4s under `samples/`
+- English narration uses an American Piper voice; the AI4Bharat English (Indian accent) voice is installed but not the default
+- CPU-only: the 7B model decodes at 5.9 tokens/s on a 24-thread CPU, so a lesson takes minutes without a GPU; the CPU setup path translates with the language model, which is weaker than IndicTrans2
 
 ---
 
