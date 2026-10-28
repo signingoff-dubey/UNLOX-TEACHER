@@ -374,6 +374,7 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| d9ed0c9 | 2026-10-28 | v0.15.2: coherent long videos and courses (max 3 parts/videos, no repeats), topic cleaning, expressive narration, non-blocking photo, fixes found by live lessons |
 | 342b893 | 2026-10-28 | v0.15.0: prompt tightened, PDF upload progress, Android continuous generation and lag fixes, Learnverse graphics, docs |
 | 2dacea8 | 2026-10-28 | v0.14.4: PDF Markdown pipeline, font checks, llava for PDF pictures, caching and pre-warming |
 | e7f578e | 2026-10-28 | v0.14.3: ask the chat for another video, every course episode streams |
