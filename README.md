@@ -133,7 +133,6 @@ Everything below runs locally. Nothing is called over the internet at run time, 
 | Scanned pages | **Tesseract** (fast) then **Unlimited-OCR** (accurate, when the GPU is idle) | CPU / GPU | Gives way to lessons |
 | Phone | **Gemma 4 E2B** (LiteRT-LM), **Piper** via sherpa-onnx, **Whisper base** and **Vosk**, **ML Kit** translation and OCR | On the phone | See [Android app](#android-app) |
 
-A larger model was measured and rejected for this card: `qwen3.5:9b` needs 8.8 GB with the context window, so only 72 % fits in 8 GB of VRAM; it ran at 17 tokens/s against 43 and returned invalid JSON on the test plan (see `issues.md`, ISSUE-046).
 
 ---
 
@@ -351,7 +350,7 @@ Built and measured on a laptop with an RTX 5060 (8 GB VRAM), 15 GB RAM, Windows 
 | ffmpeg | LGPL/GPL by build |
 | NCERT / OpenStax (optional library) | NCERT: local use only; OpenStax: CC BY 4.0 |
 
-Excluded: Meta MMS-TTS (CC-BY-NC), sarvam-translate (GPL tag + Gemma base). Please verify the licences of anything you redistribute.
+Please verify the licences of anything you redistribute.
 
 ---
 

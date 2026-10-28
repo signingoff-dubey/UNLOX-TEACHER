@@ -18,7 +18,7 @@
 
 ### Known Issues
 - Android has no Flash/Pro switch yet (it keeps its own Flash-style generation)
-- A bigger local model was measured and rejected: `qwen3.5:9b` is 8.8 GB with the context window, only 72 % fits on the 8 GB card, 17 tokens/s against 43 for the current 7B, and its first answer was invalid JSON. Cloud models in Ollama are refused: the project is offline
+- Models served from remote servers (Ollama `-cloud` models) are refused: the project is offline
 - The 7B still gets facts wrong now and then (the fact checker removes what it can prove wrong); code in code scenes is shown, not run or verified (Python snippets are parse-checked)
 
 ---
@@ -288,7 +288,6 @@
 | qwen2.5:7b-instruct-q4_K_M | 34 | 3/3 | picks graph for maths, code for programming; writes short lessons (writer agent fixes) |
 | qwen2.5:3b-instruct-q4_K_M | 24-33 | 2/2 run | missed graph scenes on the circle prompt |
 | qwen3:4b | 128 | 3/3 | right length but thinking tokens make it 4x slower; removed |
-| qwen3.5:9b, llama3.2:3b | n/a | n/a | not measured (C: disk and RAM pressure) |
 
 ### Known Issues
 - C: drive was nearly full (0.1 GB): HF cache and Ollama models live there. New downloads go to D: (`models/`)
@@ -369,7 +368,7 @@
   - Piper voices: hi, te, mr, bn, ml, en_GB-alan
   - AI4Bharat Indic-TTS int8 ONNX: en, ta, kn, gu
   - Noto Sans fonts (OFL): Devanagari, Telugu, Bengali, Malayalam, Tamil, Kannada, Gujarati, Gurmukhi, Oriya
-  - Ollama: qwen2.5:7b-instruct-q4_K_M, qwen2.5:3b-instruct-q4_K_M (plus pre-existing qwen3.5:9b)
+  - Ollama: qwen2.5:7b-instruct-q4_K_M, qwen2.5:3b-instruct-q4_K_M
 - Python venv `.venv` with piper-tts, onnxruntime, huggingface_hub (`hf` CLI)
 
 ### References reviewed

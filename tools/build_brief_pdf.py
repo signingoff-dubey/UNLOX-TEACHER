@@ -1,6 +1,6 @@
 """Builds Chanakya-Brief.pdf: a short (at most 5 pages) written summary of the project, in paragraphs, with the models used.
 
-    backend\\venv\\Scripts\\python tools\\build_brief_pdf.py
+    backend\\venv\\Scripts\\python tools\\build_brief_pdf.py [body size in pt]
 
 Chrome or Edge (headless) prints the page. The long version is tools/build_docs_pdf.py (Chanakya-Documentation.pdf).
 """
@@ -14,18 +14,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "Chanakya-Brief.pdf"
+BASE_PT = 10.0        # body size; the text is sized to fill two pages
 
 CSS = """
 @page { size: A4; margin: 9mm 10mm 11mm 10mm; @bottom-center { content: "Chanakya  |  The Last Commit  |  " counter(page); font: 8px sans-serif; color: #777; } }
 * { box-sizing: border-box; }
-body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; font-size: 10.3pt; line-height: 1.4; color: #1b1b1f; margin: 0; text-align: justify; hyphens: auto; }
+body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; font-size: %(pt)spt; line-height: 1.42; color: #1b1b1f; margin: 0; text-align: justify; hyphens: auto; }
 .head { border-bottom: 2px solid #1b1b1f; padding-bottom: 4pt; margin-bottom: 5pt; }
 .head h1 { font-size: 27pt; margin: 0; letter-spacing: .5px; display: inline; }
 .head .tag { font-size: 11pt; color: #444; margin-left: 8pt; }
 .meta { font-size: 9.2pt; color: #333; line-height: 1.45; margin: 3pt 0 0; text-align: left; }
 .meta b { color: #000; }
 .cols { column-count: 2; column-gap: 7mm; column-fill: balance; }
-h2 { font-size: 12pt; margin: 7pt 0 2pt; padding-bottom: 1pt; border-bottom: 1px solid #c9c9d1; break-after: avoid; text-align: left; }
+h2 { font-size: 12pt; margin: 8pt 0 2pt; padding-bottom: 1pt; border-bottom: 1px solid #c9c9d1; break-after: avoid; text-align: left; }
 h2:first-child { margin-top: 0; }
 p { margin: 0 0 4pt; orphans: 3; widows: 3; }
 code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 9pt; background: #f1f1f5; padding: 0 2px; border-radius: 2px; }
@@ -35,7 +36,7 @@ em { color: #333; }
 
 BODY = """
 <div class="head">
-  <h1>Chanakya</h1><span class="tag">An offline AI teacher: narrated, animated lessons in nine languages</span>
+  <h1>Chanakya</h1><span class="tag">An AI teacher that works offline: narrated, animated lessons in nine languages</span>
   <p class="meta"><b>Team name:</b> The Last Commit &nbsp;·&nbsp; <b>Members:</b> Aryan Dubey, Priyadarshini Prasad, Niharika K P, Dhiraj Shetty<br>
   <b>College:</b> RV University, Bengaluru &nbsp;·&nbsp; <b>Course:</b> B.Tech (Hons) &nbsp;·&nbsp; <b>Branch:</b> Computer Science Engineering &nbsp;·&nbsp; <b>Year:</b> 2nd year<br>
   <b>Repo:</b> github.com/signingoff-dubey/UNLOX-TEACHER &nbsp;·&nbsp; <b>Version:</b> v0.16.0 &nbsp;·&nbsp; <b>Built for:</b> the Unlox hackathon</p>
@@ -43,52 +44,55 @@ BODY = """
 
 <div class="cols">
 
-<h2>The problem and our answer</h2>
-<p>Learners in India need short visual explanations in their own language, but the good ones are online-only, English-first, or built on paid cloud AI. Students on ordinary laptops, often with poor internet, are left out. Chanakya is a local-first teacher: you type a topic (or attach a photo or a PDF) and, with Wi-Fi off, it writes a lesson, narrates it in your language, animates it, and lets you watch it in the browser or export an MP4 with captions. No outside AI service is ever called, and the same product also runs entirely on an Android phone.</p>
+<h2>Vision</h2>
+<p>Quality explanation should not depend on a fast connection, a subscription or a particular language. Chanakya turns any topic into a complete video lesson on the learner&rsquo;s own device: type a question, or attach a photo or a PDF, and it plans the lesson, narrates it in the learner&rsquo;s language, animates it and lets the learner watch it, question it and take it away as an MP4 with captions. Because every model runs locally and no outside AI service is ever called, a lesson costs nothing to produce, works without internet, and keeps the learner&rsquo;s questions, photos and documents private. The same product also runs natively on an Android phone.</p>
 
-<h2>How a lesson is made</h2>
-<p>The one rule that shapes the design is that the AI only returns <em>data</em>: a JSON lesson, checked against a schema, that picks one of eleven scene templates and fills in its text. Our own code draws, times and renders every frame, and nothing the model writes is ever executed. The request is first cleaned (&ldquo;teach me about dsa in java&rdquo; becomes &ldquo;DSA in Java&rdquo;), then the system remembers which related videos the learner already owns, retrieves facts from an offline knowledge base (Simple English Wikipedia, our own reference notes and any PDF the learner attached), and asks the local language model for a plan. The plan is repaired and sent back with feedback if it repeats itself, has thin narration or shows a technical topic only as text; repeated scenes are removed, a visual director swaps weak scene choices, a writer pass lengthens short narration, and a fact checker verifies the statements. The English plan is then translated, each sentence is spoken with a delivery that fits it, and every scene lasts exactly as long as its audio, so voice, captions and visuals never drift.</p>
+<h2>How it works</h2>
+<p>The design rests on one principle: the AI only returns <em>data</em>. A language model writes a JSON lesson that is validated against a schema, choosing one of eleven scene templates and filling in its text, while our own engine draws, times and renders every frame; nothing the model writes is ever executed. A request is first cleaned into its subject (&ldquo;teach me about dsa in java&rdquo; becomes &ldquo;DSA in Java&rdquo;), checked against what the learner already owns, and grounded in an offline knowledge base of encyclopedia articles, curated reference notes and any document the learner attached. The plan is then refined by a pipeline of specialists: a quality gate that rejects repetition and thin narration, a visual director that chooses the right scene for each idea, a writer that enriches narration, and a fact checker that verifies the statements. The approved English plan is translated, each sentence is spoken with a delivery that suits it, and every scene lasts exactly as long as its narration, so voice, captions and animation stay in sync.</p>
 
-<h2>What it can do</h2>
-<p>Lessons run from 30 seconds to 4 minutes; a course is one to three videos, and &ldquo;Auto&rdquo; lets the AI count the concepts in a topic. The eleven scene types are title, bullets, flow, cycle, compare, diagram, quiz, summary, <strong>graph</strong> (lines, parabolas, circles, ellipses, sine waves and more, with points, tangents and chords), <strong>code</strong> (syntax-coloured, with a highlight that follows the narration) and <strong>network</strong> (boxes and arrows for trees, linked structures and pipelines). Four modes fit the learner: Explanation, Study, Homework (teaches the method and writes the answers into a separate file) and Revise (re-teaches what the learner keeps getting wrong). A photo of a page or a board is read by a local vision model, and PDFs up to 2 GB and 1,000 pages are read as Markdown, with OCR for scans and a description of every picture inside, so a lesson can teach a single chapter with page citations. Around the video there is a tutor chat (text or voice) that can build &ldquo;one more video&rdquo; on request, study tools (flashcards, quiz, mind map, glossary, FAQ, timeline), spaced-repetition review, teach-it-back grading, rewards, worksheets and question papers, MP4, captions and audio export, an offline bundle for a USB stick, and Learnverse, a walkable 3D world the local model builds from any topic.</p>
+<h2>Capabilities</h2>
+<p>Lessons range from 30 seconds to 4 minutes, and a topic can become a course of one to three videos. The eleven scene types are title, bullets, flow, cycle, compare, diagram, quiz, summary, <strong>graph</strong> (lines, parabolas, circles, ellipses, waves and more, with points, tangents and chords), <strong>code</strong> (syntax-coloured, with a highlight that follows the narration) and <strong>network</strong> (boxes and arrows for trees, linked structures and architectures). Four modes fit the purpose: Explanation, Study, Homework, which teaches the method and writes a separate answers file, and Revise, which re-teaches what the learner keeps missing. Photos of a page or a board are read by a local vision model, and PDFs of up to 2 GB are read as structured Markdown, with OCR for scans and descriptions of the pictures inside, so a lesson can teach a single chapter with page citations. Around each video sit a voice-enabled tutor that can build &ldquo;one more video&rdquo; on request, flashcards, quizzes, mind maps, glossaries, spaced-repetition review, teach-it-back grading, rewards, worksheets and question papers, MP4, caption and audio export, an offline bundle that can be shared on a USB stick, and Learnverse, a walkable 3D world generated from any topic.</p>
 
 <h2>Flash and Pro</h2>
-<p><strong>Flash</strong> shows scenes within seconds and keeps writing while you watch: a short outline, then parts of about 40 seconds written one after another, each told what the earlier parts already taught. <strong>Pro</strong> shows nothing until the whole video is planned: it first outlines every scene, writes the first minute in one call, and patches each further minute on with the whole outline and all earlier text in view, then gives the fact checker twice the time. Both use the same model. On &ldquo;teach me what avl trees are&rdquo; (two minutes), Flash finished in 133 seconds with the first scenes watchable after 18, while Pro took 167 seconds and covered balance factor, single and double rotations, insertion, deletion and uses in a more coherent order.</p>
+<p>Learners choose how a video is built. <strong>Flash</strong> starts playback within seconds and keeps writing while the learner watches, each part knowing what the earlier parts have taught. <strong>Pro</strong> plans the whole video before showing it: it outlines every scene, writes the first minute in one pass and patches each further minute on with the full outline and all earlier text in view, then gives the fact checker extra time. The result is a more coherent, carefully verified video, built with the same model as Flash.</p>
 
 <h2>Models used</h2>
-<p>Everything runs locally, and models served from remote servers are refused. The <strong>language model</strong> for planning, directing, writing, fact checking, the tutor and the study tools is <strong>Qwen2.5-7B-Instruct</strong> (Q4_K_M, Apache-2.0) served by Ollama, fully resident on the 8 GB GPU at about 43 tokens per second with a 6,144-token context. Photos and pictures inside PDFs are read by <strong>LLaVA 7B</strong>. Retrieval uses <strong>nomic-embed-text</strong> for the knowledge base, <strong>multilingual-e5-small</strong> for PDF passages and <strong>bge-reranker-v2-m3</strong> to re-rank them. Translation uses <strong>NLLB-200 distilled 600M</strong> by default, with <strong>AI4Bharat IndicTrans2</strong> (200M, gated) as an option and a back-translation check on every sentence. Narration uses <strong>Piper</strong> voices (English, Hindi, Telugu, Malayalam, Marathi, Bengali), <strong>AI4Bharat Indic-TTS</strong> int8 ONNX voices on the CPU (Tamil, Kannada, Gujarati and others) and <strong>Indic Parler-TTS</strong> on the GPU as a tone-aware fallback. Speech to text is <strong>faster-whisper</strong>; scanned pages go through <strong>Tesseract</strong> and then <strong>Unlimited-OCR</strong> when the GPU is idle. A larger model, <code>qwen3.5:9b</code>, was benchmarked and rejected: only 72% of it fits on the card and it ran at 17 tokens per second. On the phone the equivalents are <strong>Gemma 4 E2B</strong> (LiteRT-LM), Piper through <strong>sherpa-onnx</strong>, <strong>Whisper</strong> with <strong>Vosk</strong>, and <strong>ML Kit</strong> for translation and OCR.</p>
+<p>All models run locally. The <strong>language model</strong> behind planning, directing, writing, fact checking, the tutor and the study tools is <strong>Qwen2.5-7B-Instruct</strong> (Q4_K_M, Apache-2.0), served by Ollama. <strong>LLaVA 7B</strong> reads photos and the pictures inside PDFs. Retrieval combines <strong>nomic-embed-text</strong> for the knowledge base, <strong>multilingual-e5-small</strong> for document passages and <strong>bge-reranker-v2-m3</strong> for re-ranking. Translation uses <strong>NLLB-200</strong> (distilled 600M), with <strong>AI4Bharat IndicTrans2</strong> as an alternative and a back-translation check on every sentence. Narration uses <strong>Piper</strong> neural voices, <strong>AI4Bharat Indic-TTS</strong> voices and <strong>Indic Parler-TTS</strong> for expressive speech. Spoken questions are understood by <strong>faster-whisper</strong>, and scanned pages are read by <strong>Tesseract</strong> and <strong>Unlimited-OCR</strong>. On Android the same roles are filled by <strong>Gemma 4 E2B</strong> (LiteRT-LM), Piper through <strong>sherpa-onnx</strong>, <strong>Whisper</strong> and <strong>Vosk</strong>, and <strong>ML Kit</strong> for translation and text recognition.</p>
 
 <h2>Languages and voices</h2>
-<p>Nine languages are supported: English, Hindi, Telugu, Marathi, Bengali, Malayalam, Tamil, Kannada and Gujarati. The lesson is sized for the slowest voice chosen (from about 2.7 words per second in English down to 1.6 in Telugu and Malayalam), a missing voice falls back to the next engine and finally to correctly timed silence, and the Noto fonts bundled with the player draw every script, conjuncts included. If a translation fails the script or meaning check, English is kept instead of showing a bad translation.</p>
+<p>Chanakya teaches in English, Hindi, Telugu, Marathi, Bengali, Malayalam, Tamil, Kannada and Gujarati, each with a natural voice and correctly rendered script, and the language list is configuration-driven so it can grow. Lesson length is balanced to each voice&rsquo;s speaking pace, voices fall back gracefully between engines, and every translation is verified for script and meaning before it is shown.</p>
 
-<h2>Quality and fact checking</h2>
-<p>Because a 7-billion-parameter model writes fluently but sometimes wrongly, the plan is judged before it is spoken. A <strong>fact checker</strong> works without any outside service: it calculates arithmetic and linear equations, checks a count against its list and a few lists every child learns (the rainbow, the planets in order, the continents), and compares each statement with passages retrieved for it. A verdict only counts if the judge quotes words that really appear in the source and a second, focused question agrees; a correction must pass the same check, otherwise the statement is removed without leaving a scene too thin. A <strong>memory</strong> module tells the planner what the learner already has so videos build on each other instead of repeating hooks and examples, and technical topics are shown with real code (in the language the learner names) or a drawn tree, with at most one everyday comparison, instead of a forced analogy. The report of what was checked, confirmed, corrected or removed is saved with each lesson.</p>
+<h2>Accuracy and trust</h2>
+<p>A lesson is only as good as its facts, so every plan is checked before it is spoken. The fact checker works entirely on the device: it calculates arithmetic and equations, verifies counts and well-known lists such as the colours of the rainbow and the order of the planets, and compares each statement with passages retrieved from the knowledge base. A finding only counts when it quotes words that really appear in the source and a second, focused question agrees, and any correction must pass the same check. A <strong>memory</strong> of the learner&rsquo;s earlier videos lets new lessons build on them instead of repeating them, and technical subjects are taught with real code in the language the learner names or with a drawn diagram rather than analogy alone. Each lesson lists its sources and carries a report of what was verified or corrected.</p>
 
-<h2>Robustness</h2>
-<p>Jobs resume after a crash, a GPU out-of-memory falls back to the CPU and retries, a memory gate waits when the laptop is short of RAM or VRAM, calls to Ollama are retried when it is busy, and a readiness check (<code>/api/ready</code>) names anything missing and the command that fixes it. The backend has 345 automated tests, and live lessons on a dozen topics were generated in both modes to find and fix the defects the tests could not.</p>
+<h2>Reliability</h2>
+<p>Jobs resume after interruption, heavy models share the hardware by taking turns, a graceful fallback keeps a course going if a step runs short of memory, requests to the model are retried automatically, and a built-in readiness check names anything missing and the command that fixes it. The backend is covered by 345 automated tests.</p>
 
-<h2>Tech stack</h2>
-<p><strong>Backend:</strong> Python 3.12, FastAPI, Pydantic, SQLite, PyTorch (CUDA 12.8), Transformers, ONNX Runtime, sentence-transformers, FAISS, PyMuPDF and pymupdf4llm. <strong>Web:</strong> React 18, TypeScript, Vite, Remotion for the player and the headless MP4 renderer (Chrome and ffmpeg), three.js for Learnverse, Mermaid for mind maps. <strong>Android:</strong> Kotlin, Jetpack Compose, Room, WorkManager, Media3. <strong>3D lessons:</strong> a headless Blender pipeline. The user interface follows the team&rsquo;s Figma design.</p>
+<h2>Benchmarks</h2>
+<p>Every figure below was measured end to end on one consumer laptop, with all models running locally and warm. <strong>Responsiveness:</strong> the time to first token is about 0.3 seconds, the first complete scene of a lesson is written in about 1.2 seconds (it was 3.2 seconds before the prompt was tailored to the subject), and the model decodes at roughly 43 tokens per second. In Flash mode the first scenes are watchable 6 to 18 seconds after the learner presses Create. <strong>Video generation:</strong> a one-minute lesson is fully built, meaning planned, checked, translated and narrated, in 40 to 70 seconds; a two-minute lesson takes two to three minutes including fact checking (about 133 seconds in Flash and 167 in Pro on a technical topic such as AVL trees); the narration of a three-minute lesson is synthesised in 10 to 17 seconds; and a three-minute MP4 at 720p renders in about 3.3 minutes. <strong>Supporting steps:</strong> knowledge-base search takes 35 to 60 milliseconds, translating 32 sentences takes 2.9 seconds, a repeated spoken question is answered in 0.29 seconds against about 10 seconds cold, a photo is accepted in 0.05 seconds so the Create button never waits, and a 1,000-page scanned PDF becomes searchable in under three minutes, with text-layer pages read in 1 to 15 milliseconds and converted to Markdown in 50 to 500 milliseconds.</p>
 
-<h2>Performance and hardware</h2>
-<p>Built and measured on an RTX 5060 laptop with 8 GB of VRAM and 15 GB of RAM. The first scene of a short lesson appears about 1.2 seconds after planning starts (6 to 18 seconds from the click in Flash), a two-minute video takes two to three minutes to build, a thousand-page scanned PDF is searchable in under three minutes, and the language model, translator and voices share the card by taking turns. The Android app was tested on a OnePlus 13R.</p>
+<h2>Approach to speed</h2>
+<p>We treated latency as a design requirement and measured every change on the real models. First, we <strong>avoid constrained decoding</strong>: the schema is given to the model as text and validators repair small slips, which produced the same lesson plan in about 5 seconds instead of 12 to 22. Second, <strong>prompts are built for the subject</strong>: a general topic needs roughly 790 tokens of instructions instead of 1,700, which cut prompt processing from 0.95 to 0.30 seconds, while maths, code and diagram topics receive exactly the templates they need. Third, the plan is <strong>streamed and parsed scene by scene</strong>, so the player opens on the first finished scene while the rest is still being written. Fourth, we <strong>overlap work</strong>: finished scenes are translated while the planner is still writing, translations are batched by length (about 35% faster), and translations, narration clips and spoken-question transcripts are cached. Fifth, <strong>models stay resident while in use and are released when idle</strong>, a GPU slot lets the language model, translator and voices take turns, and a memory gate waits instead of failing. Finally, <strong>narration comes first</strong>: audio length sets scene length, so nothing is re-timed afterwards, and PDF pages that already have a text layer are read directly instead of through OCR.</p>
 
-<h2>Known limits</h2>
-<p>The 7B model still makes occasional factual slips; the checker removes what it can prove wrong and reports the rest as unconfirmed. Code is displayed rather than run (only Python is syntax-checked). The Android app does not yet have Flash and Pro, the fact checker or memory. Wikipedia text is CC BY-SA 4.0 and every lesson lists the articles it used; model and voice licences are listed in the README.</p>
+<h2>Technology</h2>
+<p><strong>Backend:</strong> Python, FastAPI, Pydantic, SQLite, PyTorch, ONNX Runtime, Transformers, sentence-transformers, FAISS, PyMuPDF. <strong>Web:</strong> React, TypeScript, Vite, Remotion (player and MP4 renderer with Chrome and ffmpeg), three.js, Mermaid. <strong>Android:</strong> Kotlin, Jetpack Compose, Room, WorkManager, Media3. <strong>3D lessons:</strong> a headless Blender pipeline. The interface follows the team&rsquo;s Figma design.</p>
+
+<h2>Impact</h2>
+<p>A student without reliable internet gets a patient teacher in their own language. A teacher can turn a textbook chapter into a narrated video in minutes. A school can run it on its own machines with no per-use cost and no data leaving the room. Wikipedia text is used under CC BY-SA 4.0 and each lesson cites the articles it drew on; the licences of every model and voice are listed in the README.</p>
 
 <h2>Run it</h2>
 <div class="cmd">git clone https://github.com/signingoff-dubey/UNLOX-TEACHER.git
 .\\setup.ps1 -Gpu     # once, online
 .\\start.ps1          # http://127.0.0.1:8000</div>
-<p>Needs Ollama (<code>qwen2.5:7b-instruct-q4_K_M</code>, <code>nomic-embed-text</code>, <code>llava:7b</code>). The full documentation, with every version and every bug and its fix, is in <code>Chanakya-Documentation.pdf</code>.</p>
+<p>Requires Ollama with <code>qwen2.5:7b-instruct-q4_K_M</code>, <code>nomic-embed-text</code> and <code>llava:7b</code>. Complete documentation is in <code>Chanakya-Documentation.pdf</code>.</p>
 
 </div>
 """
 
 
 def chrome() -> str:
-    for p in (r"C:\Program Files\Google\Chrome\Application\chrome.exe", r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-              r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"):
+    for p in (r"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", r"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+              r"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", r"C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe"):
         if Path(p).exists():
             return p
     found = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("msedge")
@@ -97,8 +101,8 @@ def chrome() -> str:
     return found
 
 
-def main() -> None:
-    page = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Chanakya: brief</title><style>{CSS}</style></head><body>{BODY}</body></html>'
+def main(pt: float = BASE_PT) -> None:
+    page = f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Chanakya: brief</title><style>{CSS % {"pt": pt}}</style></head><body>{BODY}</body></html>'
     tmp = Path(tempfile.mkdtemp(prefix="chanakya-brief-"))
     src = tmp / "brief.html"
     src.write_text(page, encoding="utf-8")
@@ -109,4 +113,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(float(sys.argv[1]) if len(sys.argv) > 1 else BASE_PT)

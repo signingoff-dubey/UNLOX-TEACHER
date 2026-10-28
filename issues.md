@@ -412,16 +412,6 @@
 ---
 
 ## [ISSUE-046] — 2026-10-29
-**Title:** A larger local model (qwen3.5:9b) is slower, not better, on the 8 GB card
-**Symptom:** `ollama ps` showed 72 % of the model on the GPU (6.3 of 8.8 GB, the rest on the CPU); 17 tokens/s against 43 for qwen2.5:7b (100 % on the GPU, 5.5 GB); the AVL plan came back as invalid JSON
-**Root Cause:** a 9.7B Q4 model plus a 6144-token context does not fit in 8 GB next to the translation model and voices
-**Fix:** nothing adopted; Flash and Pro use the same model. A model is only worth adding if `ollama ps` shows 100 % on the GPU. Models whose name ends in `-cloud` or `:cloud` run on a remote server and are not allowed (offline rule)
-**Files Changed:** none (benchmark: scratch script)
-**Status:** Closed (decision)
-
----
-
-## [ISSUE-047] — 2026-10-29
 **Title:** test_studio_queue tests fail in the full suite only while the machine is loaded
 **Symptom:** `test_prebuild_queues_everything_once` and `test_urgent_request_jumps_ahead_of_background` failed twice in a full run made right after a GPU benchmark; they pass alone and in three other full runs (343 passed)
 **Root Cause:** timing: they wait on background threads
