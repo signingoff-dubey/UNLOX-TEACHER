@@ -1,4 +1,4 @@
-import { runJob, url } from "./api";
+import { runJob, url, errorText } from "./api";
 import type { Job } from "./types";
 
 export type Mode = "study" | "homework" | "explain" | "revise";
@@ -12,7 +12,7 @@ export async function uploadPhoto(file: File, onId: (id: string) => void): Promi
   form.append("file", file);
   const start = fetch(url("/api/images"), { method: "POST", body: form }).then(async (r) => {
     const body = await r.json().catch(() => null);
-    if (!r.ok) throw new Error(body?.detail ?? `Upload failed (${r.status})`);
+    if (!r.ok) throw new Error(errorText(body?.detail, `Upload failed (${r.status})`));
     return body as Job;
   });
   const first = await start;

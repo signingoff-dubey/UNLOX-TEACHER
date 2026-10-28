@@ -495,3 +495,11 @@
 **Fix:** `ScenePreview._pre_run` translates and voices each finished scene for every other language and publishes draft tracks; the final save keeps them until the final versions replace them; a failed language drops its draft
 **Files Changed:** backend/app/streaming.py, pipeline.py; web/src/pages/LessonPage.tsx
 **Status:** Resolved
+
+## [ISSUE-056] — 2026-10-28
+**Title:** Making a lesson from a PDF showed "[object Object]"
+**Symptom:** after uploading a PDF, Create failed with the message "[object Object]"; the log showed `POST /api/playlists 422`
+**Root Cause:** the request failed validation (the topic was limited to 200 characters, short for an instruction typed next to a PDF), and FastAPI returns validation errors as a list of objects, which the page turned into text with `new Error(detail)`
+**Fix:** topics and concepts accept 1000 characters; a `RequestValidationError` handler returns one readable sentence and logs it; `errorText()` in `web/src/api.ts` turns any error shape into text, used by every fetch
+**Files Changed:** backend/app/main.py; web/src/api.ts, components/ChatPanel.tsx, TeachBack.tsx, PdfUpload.tsx, pages/Library.tsx, photos.ts
+**Status:** Resolved

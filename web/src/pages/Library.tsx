@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { LessonSummary, PlaylistSummary } from "../api";
-import { url } from "../api";
+import { url, errorText } from "../api";
 import { Glyph } from "../ds/Glyph";
 
 const TONES = ["green", "orange", "pink", "blue"] as const;
@@ -21,7 +21,7 @@ export const Library: React.FC<Props> = (p) => {
       form.append("file", file);
       const res = await fetch(url("/api/bundle/import"), { method: "POST", body: form });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail ?? `Import failed (${res.status})`);
+      if (!res.ok) throw new Error(errorText(body.detail, `Import failed (${res.status})`));
       setNote("Imported. It is in your library now.");
       p.onImported?.(body.id);
     } catch (e) { setNote((e as Error).message); } finally { setBusy(false); }

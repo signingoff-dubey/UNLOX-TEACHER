@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, url } from "../api";
+import { api, url, errorText } from "../api";
 import { StudioModal } from "../studio/StudioModal";
 import { TOOLS, type StudioKind } from "../studio/types";
 import { requestTool, useStudioStatus } from "../studio/useStudio";
@@ -140,7 +140,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
         const r = await fetch(url(`/api/stt?lang=auto&lesson_id=${lesson.id}`),
           { method: "POST", body: new Blob(chunks, { type: mr.mimeType }) });
         const body = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(body.detail ?? `Speech recognition failed (${r.status})`);
+        if (!r.ok) throw new Error(errorText(body.detail, `Speech recognition failed (${r.status})`));
         if (!body.text) setNote("I did not catch that. Try again a little closer to the microphone.");
         else void send(body.text, true, body.lang);       // the language it was spoken in decides the language of the answer
       } catch (e) {

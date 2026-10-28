@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { api, url } from "../api";
+import { api, url, errorText } from "../api";
 import type { Lesson } from "../types";
 import { Glyph } from "../ds/Glyph";
 import { useRewards } from "../rewards/RewardsContext";
@@ -44,7 +44,7 @@ export const TeachBack: React.FC<{ lesson: Lesson; onSeekScene?: (scene: number)
       try {
         const r = await fetch(url(`/api/stt?lang=en&lesson_id=${lesson.id}`), { method: "POST", body: new Blob(chunks, { type: mr.mimeType }) });
         const body = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(body.detail ?? `Speech recognition failed (${r.status})`);
+        if (!r.ok) throw new Error(errorText(body.detail, `Speech recognition failed (${r.status})`));
         if (body.text) setText((t) => (t ? t + " " : "") + body.text); else setError("I did not catch that. Try again a little closer to the microphone.");
       } catch (e) { setError((e as Error).message); } finally { setRec("off"); }
     };

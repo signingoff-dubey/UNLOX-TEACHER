@@ -27,11 +27,27 @@ export function setApiBase(base: string) {
 /** Absolute URL for a backend path such as /media/... */
 export const url = (path: string) => getApiBase() + path;
 
+/** The backend's error as a sentence, whatever its shape (a string, FastAPI's list of {loc, msg}, or an object). Never "[object Object]". */
+export function errorText(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d) => {
+      if (typeof d === "string") return d;
+      const e = d as { loc?: unknown[]; msg?: string };
+      const where = (e.loc ?? []).filter((x) => x !== "body" && x !== "query").join(".");
+      return where ? `${where}: ${e.msg ?? "invalid"}` : e.msg ?? JSON.stringify(d);
+    });
+    if (parts.length) return parts.join("; ");
+  }
+  if (detail && typeof detail === "object") return (detail as { message?: string }).message ?? JSON.stringify(detail);
+  return fallback;
+}
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(url(path), body === undefined ? undefined : {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(errorText((await res.json().catch(() => null))?.detail, `${res.status} ${res.statusText}`));
   return res.json();
 }
 

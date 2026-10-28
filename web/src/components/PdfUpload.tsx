@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, runJob, url } from "../api";
+import { api, runJob, url, errorText } from "../api";
 import type { Job, UploadStatus } from "../types";
 
 type Props = {
@@ -51,7 +51,7 @@ function sendPdf(file: File, onProgress: (fraction: number) => void): Promise<Jo
       let body: any = null;
       try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
       if (xhr.status >= 200 && xhr.status < 300) resolve(body as Job);
-      else reject(new Error(body?.detail ?? `Upload failed (${xhr.status})`));
+      else reject(new Error(errorText(body?.detail, `Upload failed (${xhr.status})`)));
     };
     xhr.onerror = () => reject(new Error("Upload failed: backend not reachable"));
     const form = new FormData();

@@ -9,6 +9,7 @@ import time
 from typing import Literal
 
 import requests
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -89,6 +90,18 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Chanakya", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def readable_validation_error(request, exc: RequestValidationError):
+    """A request the API cannot accept: one plain sentence for the page (FastAPI's list of objects showed as "[object Object]"), and the details in the log."""
+    from fastapi.responses import JSONResponse
+    parts = []
+    for err in exc.errors():
+        where = ".".join(str(x) for x in err.get("loc", ()) if x not in ("body", "query", "path"))
+        parts.append(f"{where}: {err.get('msg', 'invalid')}" if where else str(err.get("msg", "invalid")))
+    log.warning("%s %s rejected: %s", request.method, request.url.path, "; ".join(parts))
+    return JSONResponse(status_code=422, content={"detail": "The request was not accepted: " + "; ".join(parts)})
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 app.include_router(routes_rag.router)        # PDF uploads + OCR status + hybrid search
 
@@ -96,7 +109,7 @@ app.include_router(routes_rag.router)        # PDF uploads + OCR status + hybrid
 class LessonRequest(BaseModel):
     # Either a concept, or an uploaded PDF (upload=<sha>) with an optional focus such as "chapter 4" or
     # "pages 120-135". A concept plus a PDF searches that PDF first. `documents` is the same thing as a list.
-    concept: str = Field("", max_length=200)
+    concept: str = Field("", max_length=1000)     # a whole question or instruction is fine: clean_topic shortens it for titles
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=240)     # target video length (over 90 s is planned in parts)
@@ -109,7 +122,7 @@ class LessonRequest(BaseModel):
 
 
 class PlaylistRequest(BaseModel):
-    topic: str = Field("", max_length=200)
+    topic: str = Field("", max_length=1000)
     languages: list[str] = Field(default_factory=lambda: ["en"], min_length=1, max_length=9)
     level: Literal["beginner", "intermediate"] = "beginner"
     duration_s: int = Field(60, ge=30, le=240)        # per episode
@@ -264,7 +277,7 @@ def create_playlist(req: PlaylistRequest) -> dict:
 
 
 class HomeworkRequest(BaseModel):
-    concept: str = Field("", max_length=200)
+    concept: str = Field("", max_length=1000)     # a whole question or instruction is fine: clean_topic shortens it for titles
     documents: list[str] = []
     images: list[str] = Field(default_factory=list, max_length=4)
 
