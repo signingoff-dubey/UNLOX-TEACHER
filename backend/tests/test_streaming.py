@@ -94,3 +94,14 @@ def test_a_retry_of_the_planner_keeps_what_is_on_screen_and_carries_on_after_it(
         time.sleep(0.05)
     assert [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == want
     pv.close()
+
+
+def test_scenes_already_shown_stay_as_they_were_in_the_final_plan():
+    from app.schema import LessonPlan, ScenePlan
+    shown = [ScenePlan(template="bullets", heading="Why tides happen", narration="The moon pulls the sea.", items=["Moon", "Pull"])]
+    final = LessonPlan(title="Tides", scenes=[
+        ScenePlan(template="compare", heading="Why  tides happen", narration="The moon pulls the sea, and the sea bulges toward it on both sides.", items=["Moon", "Pull"]),
+        ScenePlan(template="bullets", heading="Spring tides", narration="When sun and moon line up the tides are biggest.", items=["Sun", "Moon"])])
+    assert pipeline.keep_shown(final, shown) == 1
+    assert final.scenes[0].narration == "The moon pulls the sea." and final.scenes[0].template == "bullets"     # same words, same voice as on screen
+    assert final.scenes[1].heading == "Spring tides"                                                            # scenes not shown yet keep the final version

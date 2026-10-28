@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 LESSONS_DIR = config.MEDIA_DIR / "lessons"
 
 Progress = Callable[[str, float], None]
+FLASH_FACT_BUDGET_S = float(__import__("os").getenv("FLASH_FACT_BUDGET_S", "30"))      # Flash: the learner is already watching; Pro keeps twice FACTCHECK_BUDGET_S
 
 
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
@@ -122,14 +123,20 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         progress("Checking the lesson", 0.57)
         plan, review_notes = review_plan(plan, duration_s, wps)
         review_notes = director_notes + review_notes
+        if preview is not None:                              # Flash: what the learner already watched stays as it was (same words, same voice), so the
+            preview.drain()                                  # final video does not change under the player; only the fact check below may still correct it
+            kept = keep_shown(plan, preview.shown())
+            if kept:
+                log.info("kept %d scenes as they were shown", kept)
+        if series is not None:                               # the next video of the course is planned knowing this, and starts now: it does not wait for the fact check
+            raw_progress("Checking the facts", 0.575, taught=content.taught_summary(plan), planned=True)
         fact_report = None
         if config.FACTCHECK and config.LLM_BACKEND != "mock":
             progress("Checking the facts", 0.575)
-            fact_report = facts.check_plan(plan, concept or plan.title, upload, budget_s=config.FACTCHECK_BUDGET_S * (2 if pro else 1),
+            budget = config.FACTCHECK_BUDGET_S * 2 if pro else min(config.FACTCHECK_BUDGET_S, FLASH_FACT_BUDGET_S)
+            fact_report = facts.check_plan(plan, concept or plan.title, upload, budget_s=budget,
                                            progress=lambda f: progress("Checking the facts", 0.575 + 0.02 * f))
             review_notes = review_notes + fact_report.notes()
-        if series is not None:
-            raw_progress("Checking the lesson", 0.58, taught=content.taught_summary(plan))       # the next video of the course is planned knowing this
         timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -227,6 +234,19 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     progress("Ready", 1.0)
     log.info("Lesson %s built in %.1fs %s", lesson_id, time.perf_counter() - t0, timings)
     return lesson
+
+
+def keep_shown(plan: LessonPlan, shown: list) -> int:
+    """Put back the scenes the learner has already seen, matched by heading, in place of the reworked ones. Returns how many changed back."""
+    key = lambda h: " ".join(str(h).lower().split())  # noqa: E731
+    seen = {key(s.heading): s for s in shown}
+    n = 0
+    for i, s in enumerate(plan.scenes):
+        old = seen.get(key(s.heading))
+        if old is not None and old.model_dump() != s.model_dump():
+            plan.scenes[i] = old
+            n += 1
+    return n
 
 
 def resume_languages(lesson_id: str, progress: Progress = lambda s, p: None) -> dict:

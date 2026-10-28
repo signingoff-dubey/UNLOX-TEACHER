@@ -470,7 +470,17 @@ def wait_for_upgrades(timeout: float | None = None) -> bool:
     return not any(t.is_alive() for t in threads)
 
 
+UNLIMITED_ON = os.getenv("UNLIMITED_OCR", "1") != "0"
+UNLIMITED_MIN_FREE_GB = float(os.getenv("UNLIMITED_MIN_FREE_GB", "7.0"))      # the model needs about 6.7 GB of the card
+
+
 def _upgrade(sha, src, sections, meta, lang, order, unlimited, embedder) -> None:
+    from .. import config
+    free = config.gpu_free_gb()
+    if not UNLIMITED_ON or (unlimited is None and (free is None or free < UNLIMITED_MIN_FREE_GB)):
+        # It cannot fit next to the language model: loading it anyway failed page after page, each try leaving memory behind, until the backend died.
+        log.info("Unlimited-OCR skipped for %s (%s): Tesseract's text is kept", sha, "switched off" if not UNLIMITED_ON else f"{free or 0:.1f} GB free")
+        return
     if unlimited is None:
         from .unlimited import UnlimitedOCR
         unlimited = UnlimitedOCR()
@@ -493,6 +503,10 @@ def _upgrade(sha, src, sections, meta, lang, order, unlimited, embedder) -> None
                             results = [None]          # keep Tesseract's text for this page
                         except Exception as e:
                             log.warning("Unlimited-OCR failed on %s pages %s: %s", sha, pages, e)
+                            if "out of memory" in str(e).lower():          # it will not fit now: free what was loaded and stop, never retry page after page
+                                unlimited.unload()
+                                log.warning("Unlimited-OCR stopped for %s: not enough GPU memory; Tesseract's text is kept", sha)
+                                return
                             results = [None] * len(pages)
                         for p, res in zip(pages, results):
                             rec = records[p]

@@ -178,7 +178,7 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
             if extra.get("taught"):                                          # what this video teaches: the next one is written knowing it
                 ep["taught"] = extra["taught"]
             frac[i] = value
-            if value >= 0.6:
+            if value >= 0.6 or extra.get("planned"):                         # written and reviewed: the next episode starts while this one is fact-checked
                 planned[i].set()
             progress(f"Episode {i + 1} of {n}: {stage}", 0.05 + 0.95 * sum(frac) / n)
 

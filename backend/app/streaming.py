@@ -190,11 +190,25 @@ class ScenePreview:
                 return
             gen, obj = item
             if gen != self._gen or self._closed:
+                self._q.task_done()
                 continue
             try:
                 self._one(gen, obj)
             except Exception as e:  # noqa: BLE001  a scene that cannot be previewed is simply made in the final pass
                 log.warning("preview of a scene failed: %s", e)
+            finally:
+                self._q.task_done()
+
+    def drain(self, timeout: float = 30.0) -> None:
+        """Wait (at most `timeout` s) until every scene the planner has written so far is on screen."""
+        deadline = time.monotonic() + timeout
+        while self._q.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+    def shown(self) -> list:
+        """The scenes as the learner has seen them (after cleaning), in order."""
+        with self._lock:
+            return [s.model_copy(deep=True) for s in self._pp]
 
     def _one(self, gen: int, obj: dict) -> None:
         from .languages import get as get_lang

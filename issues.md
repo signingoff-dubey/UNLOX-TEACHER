@@ -503,3 +503,27 @@
 **Fix:** topics and concepts accept 1000 characters; a `RequestValidationError` handler returns one readable sentence and logs it; `errorText()` in `web/src/api.ts` turns any error shape into text, used by every fetch
 **Files Changed:** backend/app/main.py; web/src/api.ts, components/ChatPanel.tsx, TeachBack.tsx, PdfUpload.tsx, pages/Library.tsx, photos.ts
 **Status:** Resolved
+
+## [ISSUE-057] — 2026-10-28
+**Title:** Flash audio jumped when the final version arrived; the preview ended early and the real video came later
+**Symptom:** while a Flash video played, scenes already watched changed under the player (different narration and audio); the preview finished fast and the longer final video appeared afterwards
+**Root Cause:** the director and the writer pass reworked scenes after they had been shown (narration lengthened, templates swapped), so the final track replaced audio the learner was hearing
+**Fix:** `ScenePreview.drain()` waits for the scenes written so far, and `pipeline.keep_shown` puts back every scene already shown (same words, same cached voice) before the fact check, which may still correct one
+**Files Changed:** backend/app/streaming.py, pipeline.py
+**Status:** Resolved
+
+## [ISSUE-058] — 2026-10-28
+**Title:** The fact check held up the next video of a course
+**Symptom:** video 2 of a course waited until video 1's fact check (up to 50 s) was done
+**Root Cause:** an episode only counted as planned at 60% progress, after the fact check
+**Fix:** the episode reports `planned` (and what it taught) before the fact check, so the next one starts in parallel; Flash fact check budget 30 s (`FLASH_FACT_BUDGET_S`), Pro keeps twice `FACTCHECK_BUDGET_S`
+**Files Changed:** backend/app/pipeline.py, playlist.py
+**Status:** Resolved
+
+## [ISSUE-059] — 2026-10-28
+**Title:** Backend crashed (exit 5) while a PDF was read in the background
+**Symptom:** "Unlimited-OCR failed ... CUDA out of memory" for page after page, then the backend process died
+**Root Cause:** the accurate OCR model (about 6.7 GB) cannot load next to the language model on an 8 GB card; the out-of-memory error during loading was not the handled kind, so every page tried to load it again, each try leaving memory behind
+**Fix:** the pass is skipped when less than 7 GB is free (`UNLIMITED_MIN_FREE_GB`), stopped and unloaded on the first out-of-memory error, and can be switched off (`UNLIMITED_OCR=0`); Tesseract's text is kept
+**Files Changed:** backend/app/ocr/ingest.py
+**Status:** Resolved
