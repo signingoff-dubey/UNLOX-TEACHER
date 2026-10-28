@@ -126,6 +126,25 @@ fun SeekBar(elapsed: Int, total: Int, marks: List<Float>, onSeek: (Float) -> Uni
     }
 }
 
+/** The build that is still going on behind a video that is already playing: overall progress, then the five stages with their own percentages. */
+@Composable
+private fun BuildCard(progress: Float, stages: List<Stage>, scene: Int, total: Int, making: String) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(U.Surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = U.TextPrimary, strokeWidth = 2.dp)
+            Column(Modifier.weight(1f)) {
+                Text("Still being built", style = T.Chip, color = U.TextPrimary, maxLines = 1)
+                Text("$scene of about $total scenes ready · $making", style = T.Caption, color = U.TextTertiary, maxLines = 2)
+            }
+            Text("${(progress.coerceIn(0f, 1f) * 100).toInt()}%", style = T.Chip, color = U.TextPrimary)
+        }
+        Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(U.Raised)) {
+            Box(Modifier.fillMaxWidth(progress.coerceIn(0.02f, 1f)).fillMaxHeight().clip(CircleShape).background(U.Accent))
+        }
+        stages.forEach { StageRow(it) }
+    }
+}
+
 /** A part of a set of videos: its title and whether it has been made yet. */
 data class PartRef(val title: String, val ready: Boolean)
 
@@ -161,6 +180,7 @@ fun PlayerScreen(
     title: String, scenes: List<SceneT>, scene: Int, onScene: (Int) -> Unit, playing: Boolean, onPlaying: (Boolean) -> Unit, sceneMs: Int,
     language: Int, languages: List<String>, onLanguage: (Int) -> Unit, onBack: () -> Unit, onAskTutor: (Offset) -> Unit, onStudy: () -> Unit,
     onSeek: (Float) -> Unit, making: String? = null, scenesTotal: Int = 0, parts: List<PartRef> = emptyList(), part: Int = 0, onPart: (Int) -> Unit = {},
+    buildProgress: Float = 0f, stages: List<Stage> = emptyList(), pending: List<String> = emptyList(),
 ) {
     val total = scenes.sumOf { it.seconds.toInt().coerceAtLeast(1) }
     val current = scenes.getOrNull(scene) ?: return
@@ -173,8 +193,12 @@ fun PlayerScreen(
     val marks = remember(scenes) { var acc = 0f; scenes.dropLast(1).map { acc += it.seconds.coerceAtLeast(1f); acc / total.coerceAtLeast(1) } }
     val speech = (current.seconds - 0.6f).coerceAtLeast(1f)
     if (full || landscape) {
-        FullPlayer(current, title, time, speech, playing, onPlaying, elapsed, total, marks, onSeek, { onScene((scene - 1).coerceAtLeast(0)) }, { onScene((scene + 1).coerceAtMost(scenes.size - 1)) }, captions, { captions = !captions }, exit = landscape.not()) { full = false }
-        BackHandler(enabled = full) { full = false }
+        val activity = LocalContext.current as? Activity
+        // Leaving full screen: ask for portrait first (a phone that was turned sideways by the full-screen button would otherwise stay in landscape, and landscape is full screen too);
+        // FullPlayer gives the orientation back to the sensor when it closes.
+        val leave = { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT; full = false }
+        FullPlayer(current, title, time, speech, playing, onPlaying, elapsed, total, marks, onSeek, { onScene((scene - 1).coerceAtLeast(0)) }, { onScene((scene + 1).coerceAtMost(scenes.size - 1)) }, captions, { captions = !captions }, turn = full && !landscape, onExit = leave)
+        BackHandler(enabled = true, onBack = leave)
         return
     }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(top = 12.dp)) {
@@ -220,7 +244,12 @@ fun PlayerScreen(
                     }
                 }
             }
-            if (languages.size > 1) Segmented(languages, language, onLanguage)
+            // what is still being made, like the website's "on its way" panel: the whole build, its stages, and the languages that are not ready yet
+            if (making != null) BuildCard(buildProgress, stages, scene = scenes.size, total = maxOf(scenesTotal, scenes.size), making = making)
+            if (languages.size > 1 || pending.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (languages.size > 1) Box(Modifier.widthIn(max = 280.dp)) { Segmented(languages, language, onLanguage) }
+                pending.forEach { Chip("$it · making…", selected = false) {} }
+            }
             SectionHeader("Scenes", trailing = if (making != null) "${scene + 1} of ~${maxOf(scenesTotal, scenes.size)}" else "${scene + 1} of ${scenes.size}")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 scenes.forEachIndexed { i, s ->
@@ -247,7 +276,7 @@ fun PlayerScreen(
 private fun FullPlayer(
     scene: SceneT, title: String, time: State<Float>, speech: Float, playing: Boolean, onPlaying: (Boolean) -> Unit, elapsed: Int, total: Int,
     marks: List<Float>, onSeek: (Float) -> Unit, onPrev: () -> Unit, onNext: () -> Unit,
-    captions: Boolean, onCaptions: () -> Unit, exit: Boolean, onExit: () -> Unit,
+    captions: Boolean, onCaptions: () -> Unit, turn: Boolean, onExit: () -> Unit,
 ) {
     val view = LocalView.current
     val activity = LocalContext.current as? Activity
@@ -256,7 +285,7 @@ private fun FullPlayer(
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
-        if (exit) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        if (turn) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE      // the button was pressed in portrait: turn the screen
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -267,6 +296,8 @@ private fun FullPlayer(
         SceneArt(scene, title, time, speech, Modifier.fillMaxHeight().aspectRatio(16f / 9f, matchHeightConstraintsFirst = true))
         if (captions) Text(scene.narration, Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp, start = 48.dp, end = 48.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 14.dp, vertical = 6.dp),
             style = T.Body, color = Color.White, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        // always visible, whatever the orientation and even when the control bar is hidden: the way back to the lesson page
+        IconBtn(R.drawable.ic_minimize, "Exit full screen", Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 16.dp), bg = Color.Black.copy(alpha = 0.55f), size = 44.dp, iconSize = 22.dp, onClick = onExit)
         androidx.compose.animation.AnimatedVisibility(bar, Modifier.align(Alignment.BottomCenter), enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
             Row(Modifier.fillMaxWidth().padding(16.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconBtn(R.drawable.ic_chevron_right, "Previous scene", bg = Color.Transparent, size = 36.dp, iconSize = 20.dp, iconRotation = 180f, onClick = onPrev)
@@ -276,7 +307,6 @@ private fun FullPlayer(
                 SeekBar(elapsed, total, marks, onSeek, Modifier.weight(1f))
                 Text(clock(total), style = T.Caption, color = Color.White)
                 IconBtn(R.drawable.ic_captions, if (captions) "Captions on" else "Captions off", bg = Color.Transparent, size = 36.dp, iconSize = 20.dp, off = !captions, onClick = onCaptions)
-                if (exit) IconBtn(R.drawable.ic_minimize, "Exit full screen", bg = Color.Transparent, size = 36.dp, iconSize = 20.dp, onClick = onExit)
             }
         }
     }

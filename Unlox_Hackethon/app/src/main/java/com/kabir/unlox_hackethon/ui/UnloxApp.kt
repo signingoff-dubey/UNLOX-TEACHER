@@ -389,6 +389,8 @@ fun UnloxApp() {
                     onAskTutor = { o -> chatOrigin = o; chatOpen = true }, onStudy = { push(Route.Study) }, onSeek = ::seekTo,
                     making = lesson?.takeIf { it.building }?.let { "${creation.status.ifBlank { "Making the rest" }} · ${(creation.progress * 100).toInt()}%" },
                     scenesTotal = lesson?.scenesTotal ?: 0,
+                    buildProgress = creation.progress, stages = stagesFor(creation),
+                    pending = lesson?.pending.orEmpty().map { c -> LANGS.firstOrNull { it.code == c }?.name ?: c },
                     parts = course?.episodes?.map { PartRef(it.title, it.lessonId != null) }.orEmpty(), part = lesson?.episode ?: 0,
                     onPart = { i -> course?.episodes?.getOrNull(i)?.lessonId?.let { id -> scope.launch { withContext(Dispatchers.IO) { Graph.lessons.load(id) }?.let { openLessonObj(it) } } } },
                 )

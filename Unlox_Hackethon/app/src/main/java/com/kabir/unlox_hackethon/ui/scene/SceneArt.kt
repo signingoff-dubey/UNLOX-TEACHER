@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -564,7 +565,7 @@ fun SceneArt(scene: SceneT, lessonTitle: String, time: State<Float>, speech: Flo
     BoxWithConstraints(modifier.aspectRatio(16f / 9f).clip(RoundedCornerShape(24.dp)).background(BG)) {
         val k = constraints.maxWidth / W
         CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
-            Box(Modifier.requiredSize(1920.dp, 1080.dp).graphicsLayer { scaleX = k; scaleY = k; transformOrigin = TransformOrigin(0f, 0f) }) {
+            Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).size(1920.dp, 1080.dp).graphicsLayer { scaleX = k; scaleY = k; transformOrigin = TransformOrigin(0f, 0f) }) {   // pinned to the top-left: requiredSize centred it, so a phone-width player showed the picture shifted left
                 when (scene.kind) {
                     "title" -> TitleScene(scene, lessonTitle, time)
                     "summary" -> ListScene(scene, speech, time, true)

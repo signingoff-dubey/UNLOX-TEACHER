@@ -13,6 +13,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -314,6 +315,13 @@ class Creator(
         return courseId
     }
 
+    /** Runs a step that gives no sign of life (one non-streaming answer) while its stage creeps forward and says what is going on; the stage ends where `ceiling` says. */
+    private suspend fun <T> waiting(detail: String, ceiling: Float, block: suspend () -> T): T {
+        stage(1, detail = detail)
+        val beat = Graph.scope.launch { var f = 0.02f; while (true) { delay(1200); f = minOf(ceiling, f + 0.01f); stage(1, f) } }
+        try { return block() } finally { beat.cancel() }
+    }
+
     /** The outline of a set of videos: one idea each, building up. `wanted` 0 lets the tutor choose how many. */
     private suspend fun curriculum(topic: String, wanted: Int, material: String, noun: String = "videos"): Pair<String, List<Pair<String, String>>> {
         val how = if (wanted > 0) "exactly $wanted $noun" else "2 or 3 videos, one per idea the learner must understand (never more than 3)"
@@ -322,7 +330,7 @@ class Creator(
             (if (material.isNotBlank()) "Material from the learner:\n$material\n" else "") +
             """JSON: {"title": "course title", "episodes": [{"title": "...", "focus": "..."}]}"""
         repeat(3) { attempt ->
-            val reply = llm.ask(system, user, if (attempt == 0) 0.4 else 0.2)
+            val reply = waiting("Gemma is outlining the videos", 0.30f) { llm.ask(system, user, if (attempt == 0) 0.4 else 0.2) }
             val cur = extractJson(reply)?.let { runCatching { lenient.decodeFromString<Curriculum>(it) }.getOrNull() }
             val eps = cur?.episodes?.filter { it.title.isNotBlank() }.orEmpty()
             if (eps.size >= 2) return (cur!!.title.ifBlank { topic }) to eps.take(if (wanted > 0) wanted.coerceAtMost(3) else 3).map { it.title.trim() to it.focus.trim() }
@@ -355,7 +363,15 @@ class Creator(
         }
         val expected = n * 430f                                              // about how many characters the JSON for n scenes comes to
         repeat(3) { attempt ->
-            val reply = llm.askStreaming(system, user, temperature = if (attempt == 0) 0.4 else 0.2) { text -> onText(text); progress(0.02f + 0.95f * (text.length / expected).coerceAtMost(1f)) }
+            var writing = false
+            val beat = Graph.scope.launch { var f = 0.02f; while (true) { delay(1200); f = minOf(0.15f, f + 0.007f); progress(f) } }          // Gemma reads the prompt first: no token for a while
+            val reply = try {
+                stage(1, detail = "Gemma is reading your request…")
+                llm.askStreaming(system, user, temperature = if (attempt == 0) 0.4 else 0.2) { text ->
+                    if (!writing) { writing = true; beat.cancel(); stage(1, detail = "Writing the scenes, one by one") }
+                    onText(text); progress(0.02f + 0.95f * (text.length / expected).coerceAtMost(1f))
+                }
+            } finally { beat.cancel() }
             val doc = extractJson(reply)?.let { runCatching { lenient.decodeFromString<PlanDoc>(it) }.getOrNull() }
             if (doc != null && doc.scenes.size >= 2) {
                 runCatching { val done = normalizePlan(PlanDoc(doc.title.ifBlank { subject }, doc.scenes)); onRaw(doc.scenes); return done }.onFailure { Log.w("Chanakya", "plan not usable: ${it.message}") }

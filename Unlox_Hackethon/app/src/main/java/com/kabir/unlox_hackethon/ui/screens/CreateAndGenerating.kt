@@ -200,7 +200,7 @@ fun rememberSteadyProgress(real: Float, tau: Float = 45f): State<Float> {
             if (realNow >= 1f) v += (1f - v) * minOf(dt * 7f, 1f)                                 // finished: glide to the end
             else {
                 val clock = 0.93f * (1f - exp(-((now - t0) / 1e9f) / tau))
-                val target = minOf(0.985f, maxOf(realNow, minOf(clock, realNow + 0.04f)))                // the clock may only run a little ahead of the real work
+                val target = minOf(0.985f, maxOf(realNow, minOf(clock, realNow + 0.10f)))                // the clock may run a little ahead of the real work (0.04 held the dial at 7% while Gemma read the prompt)
                 val want = if (target > v) (target - v) * 1.6f + 0.012f else 0f                    // faster when far behind, never zero while behind
                 vel += (want - vel) * minOf(dt * 4f, 1f)                                           // the speed itself changes smoothly
                 v = minOf(0.985f, v + vel * dt)
@@ -239,7 +239,7 @@ private fun ProgressDial(progress: State<Float>, status: String) {
 }
 
 @Composable
-private fun StageRow(s: Stage) {
+internal fun StageRow(s: Stage) {
     val active = s.state == StageState.ACTIVE
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).then(if (active) Modifier.background(U.Raised) else Modifier)

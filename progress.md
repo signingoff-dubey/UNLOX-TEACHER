@@ -1,7 +1,20 @@
 # Progress Log
 
-## Current Version: v0.16.1
+## Current Version: v0.16.2
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.16.2] — 2026-10-29
+### What's New
+- **Android player fixes** (first on-phone findings; compiled, not yet run on the phone after the fix):
+  - the picture of the small player was off-centre: the 1920 x 1080 scene was laid out with `requiredSize`, which centres an oversized child, and then scaled from its top-left corner, so on a phone-width player the picture sat about half its width to the left (full screen only looked right because its width happens to be about 1920 px). It is now pinned to the top-left
+  - full screen had no way back: the full-screen button rotates the phone to landscape, and the exit button was only shown when the phone was NOT in landscape, so it hid itself. There is now an always-visible exit button (top right), the Back button leaves too, and leaving asks for portrait first so a phone turned by the button does not stay sideways
+  - the progress dial stuck at 7% while Gemma read the prompt (the dial may only run ahead of the real progress by a little, and the real progress is about 2.6% until the first token): the dial may run further ahead, the planning stage now keeps creeping while there is no token yet and says "Gemma is reading your request" then "Writing the scenes, one by one", and the course outline (one non-streaming answer) does the same
+  - the player now shows what is still being built, like the website: a "Still being built" card with the overall percentage, the five stages with their own percentages, and a "Hindi · making…" chip for each language that is not ready yet
+
+### Known Issues
+- Not yet checked on the phone; the cause of the long wait before the first scene (prompt reading on the CPU, then scenes narrated one after another) needs the phone's log of a run
 
 ---
 
