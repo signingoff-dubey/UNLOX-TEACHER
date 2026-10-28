@@ -45,6 +45,10 @@ def export_bundle(lesson_id: str, lessons_dir: Path | None = None, audio_dir: Pa
                     names.append(name)
     portable.pop("videos", None)
     portable["pending"] = []
+    from . import cache
+    key = cache.key_of(portable)                       # everything that goes into the file; the list of MP4s does not
+    if cache.is_fresh(out, key):
+        return out                                     # made before from this very lesson: no second zip
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps({"format": "chanakya-bundle", "version": 1, "lesson_id": lesson_id, "concept": lesson.get("concept", ""),
                                                 "languages": list(portable["languages"])}, ensure_ascii=False))
@@ -58,6 +62,7 @@ def export_bundle(lesson_id: str, lessons_dir: Path | None = None, audio_dir: Pa
         z.writestr("player.html", player_html(portable))
         z.writestr("README.txt", f"Chanakya lesson: {lesson.get('concept', '')}\n\nOpen player.html in any browser to watch it (no internet needed).\n"
                                  "To add it to another Chanakya: Library > Import a lesson, and choose this file.\n")
+    cache.mark(out, key)
     return out
 
 

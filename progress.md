@@ -1,7 +1,24 @@
 # Progress Log
 
-## Current Version: v0.16.3
+## Current Version: v0.16.4
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.16.4] — 2026-10-28
+### What's New
+- **Other languages while the video is made**: in Flash, every finished scene is also translated and voiced for the other languages (`ScenePreview` draft tracks), so their tabs appear during the build; the final pass reuses the cached translations and clips and replaces the drafts
+- **Made once, kept** (`cache.py`): MP4, narration audio, the lesson file and the course MP4 are reused while what they were made from is unchanged (a hash of the inputs next to each file); a worksheet or paper for the same lesson, counts, level and language is opened instead of written again. Measured: second MP4 export of the same track returns at once ("Already made")
+- **MP4 export no longer sits at "Waiting 0%"**: papers and narration have their own job queues, so an MP4 waits only for another MP4; the first export after a code change shows the real template-bundling progress
+- **Save popup for MP4s** (`FileReady.tsx`): when a video or a whole course video is ready: save it, or watch it in a new tab
+- **Learnverse**: the 3D world is visible behind the Start page (only the scene, the camera circling it); the world's own topic card fades in after Start (`Metaverse intro`)
+- **Tutor study tools**: every clicked tool keeps its flowing border until it is built (not only the last one clicked); built tools have a black border
+- **Notes panel**: Sources and Fact check are padded boxes inside the panel (their text ran out of the edge); long words wrap
+- **Docs**: `architecture.md` (components, models and who calls them, scheduling, storage) and `flow.md` (every flow step by step with each model call)
+
+### Known Issues
+- A lesson started while a course is still building shares the one LLM with it, so its scenes arrive more slowly
+- The draft languages were covered by tests but not yet watched on a live build
 
 ---
 

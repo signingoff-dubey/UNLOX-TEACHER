@@ -23,8 +23,15 @@ async function getBundle() {
   const index = path.join(BUNDLE_DIR, "index.html");
   const fresh = fs.existsSync(index) && fs.statSync(index).mtimeMs > newestMtime(path.resolve("src"));
   if (fresh) return BUNDLE_DIR;
-  progress("bundling", 0.02);
-  return bundle({ entryPoint: ENTRY, outDir: BUNDLE_DIR });
+  progress("bundling", 0.0);
+  let shown = -1;
+  return bundle({
+    entryPoint: ENTRY, outDir: BUNDLE_DIR,
+    onProgress: (p) => {                                      // 0-100: the real bundling progress (the first export after a code change)
+      const pct = Math.floor(p);
+      if (pct !== shown) { shown = pct; progress("preparing_the_video_templates", 0.04 * (p / 100)); }
+    },
+  });
 }
 
 const [, , propsFile, outFile, concurrency] = process.argv;

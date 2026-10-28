@@ -52,20 +52,35 @@ def test_precache_only_runs_when_it_costs_nothing_visible(fresh_cache, monkeypat
     assert translate.precache(texts, "en") == 0
 
 
-def test_scenes_are_pre_translated_for_the_other_languages_while_the_planner_writes(tmp_path, monkeypatch):
-    got = []
-    monkeypatch.setattr(translate, "precache", lambda texts, code: got.append((code, list(texts))))
+def test_the_other_languages_are_drafted_scene_by_scene_while_the_planner_writes(tmp_path, monkeypatch):
+    import json
+    from app import pipeline
+    made = []
+
+    def fake_translate(plan, code):
+        made.append(code)
+        return (f"{plan.title} [{code}]", [{**s.model_dump(), "heading": f"{s.heading} [{code}]"} for s in plan.scenes]), "indictrans2"
+
+    monkeypatch.setattr(pipeline, "_translated_scenes", fake_translate)
+    monkeypatch.setattr(pipeline, "_narrate", lambda tr, lang, on_progress=None, voice_lang=None: {
+        "title": tr[0], "duration_s": 3.0, "tts_engines": ["piper"],
+        "scenes": [{**s, "audio_url": "", "speech_s": 2.5, "duration_s": 3.0, "start_s": 0.0, "captions": []} for s in tr[1]]})
     monkeypatch.setattr(ScenePreview, "_one", lambda self, gen, obj: None)
-    p = ScenePreview("x", "Tides", "en", ["hi", "te"], ["en", "hi", "te"], 5, tmp_path / "lesson.json")
+    path = tmp_path / "lesson.json"
+    p = ScenePreview("x", "Tides", "en", ["hi", "te"], ["en", "hi", "te"], 5, path)
     scene = ScenePlan(template="bullets", heading="Why tides happen", narration="The moon pulls on the sea.", items=["Moon", "Gravity"])
     p._pre_q.put([scene])
-    for _ in range(100):
-        if len(got) == 2:
+    p._pre_q.put([scene.model_copy(update={"heading": "Spring tides"})])
+    for _ in range(150):
+        if all(len(t["scenes"]) == 2 for t in p.drafts().values()) and len(p.drafts()) == 2:
             break
         time.sleep(0.02)
+    drafts = p.drafts()
     p.close()
-    assert [c for c, _ in got] == ["hi", "te"]
-    assert set(got[0][1]) >= {"Why tides happen", "The moon pulls on the sea.", "Moon", "Gravity"}
+    assert made == ["hi", "te", "hi", "te"]                                                      # every scene, every other language, in order
+    assert [s["heading"] for s in drafts["hi"]["scenes"]] == ["Why tides happen [hi]", "Spring tides [hi]"]
+    assert drafts["te"]["scenes"][1]["start_s"] == 3.0 and drafts["te"]["duration_s"] == 6.0 and drafts["hi"]["draft"]
+    assert set(json.loads(path.read_text(encoding="utf-8"))["languages"]) == {"hi", "te"}     # the tabs appear while the video is made
 
 
 # ------------------------------------------------------------------ speech recognition

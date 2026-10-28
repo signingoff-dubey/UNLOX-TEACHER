@@ -14,7 +14,9 @@ log = logging.getLogger(__name__)
 _pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lesson")
 # Separate workers: a course in progress must not block a single lesson or an export, and a long OCR pass must not block any of them.
 _pools = {"default": _pool, "playlist": ThreadPoolExecutor(max_workers=1, thread_name_prefix="playlist"),
-          "export": ThreadPoolExecutor(max_workers=1, thread_name_prefix="export"),
+          "export": ThreadPoolExecutor(max_workers=1, thread_name_prefix="export"),          # MP4 renders: one at a time (Chrome + ffmpeg)
+          "paper": ThreadPoolExecutor(max_workers=1, thread_name_prefix="paper"),            # worksheets and papers never make an MP4 wait (or the other way round)
+          "audio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="audio"),            # narration files
           "upload": ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload"),
           "studio": ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio"),
           "vision": ThreadPoolExecutor(max_workers=1, thread_name_prefix="vision"),

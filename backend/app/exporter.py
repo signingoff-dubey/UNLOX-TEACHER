@@ -6,7 +6,7 @@ import logging
 import os
 import subprocess
 
-from . import config
+from . import cache, config
 from .pipeline import LESSONS_DIR, load_lesson, save_lesson
 
 log = logging.getLogger(__name__)
@@ -20,6 +20,14 @@ def export_mp4(lesson_id: str, lang: str, height: int = 720, progress=lambda s, 
     props_file = out_dir / f"props_{lang}.json"
     height = 1080 if height == 1080 else 720
     out_file = out_dir / f"lesson_{lang}_{height}p.mp4"
+    url = f"/media/lessons/{lesson_id}/{out_file.name}"
+    key = cache.key_of(lesson["languages"][lang], height)
+    if cache.is_fresh(out_file, key):                                   # already rendered from this very track: no second render
+        progress("Already made", 1.0)
+        if lesson["videos"].get(lang if height == 720 else f"{lang}_{height}p") != url:
+            lesson["videos"][lang if height == 720 else f"{lang}_{height}p"] = url
+            save_lesson(lesson)
+        return {"url": url, "cached": True}
     # The headless renderer fetches audio and fonts from this backend over localhost.
     props = {"track": lesson["languages"][lang], "assetBase": config.PUBLIC_BASE_URL}
     props_file.write_text(json.dumps(props, ensure_ascii=False), encoding="utf-8")
@@ -42,8 +50,9 @@ def export_mp4(lesson_id: str, lang: str, height: int = 720, progress=lambda s, 
             tail = (tail + [line])[-20:]
     if proc.wait() != 0:
         raise RuntimeError("Render failed:\n" + "\n".join(tail))
+    cache.mark(out_file, key)
 
-    url = f"/media/lessons/{lesson_id}/{out_file.name}"
+    lesson = load_lesson(lesson_id)                                     # re-read: a language may have been added while it rendered
     lesson["videos"][lang if height == 720 else f"{lang}_{height}p"] = url
     save_lesson(lesson)
     progress("Done", 1.0)

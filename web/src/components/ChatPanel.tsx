@@ -53,23 +53,29 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
     setStudioKind(k);
     if (k && lesson) award({ type: "study_tool_open", lesson_id: lesson.id, tool: k });
   };
-  const [wanted, setWanted] = useState<StudioKind | null>(null);          // clicked while still being built: opens when ready
+  // Clicked while still being built, in click order: each keeps its flowing border until it is ready; the last one clicked opens then.
+  const [wanted, setWanted] = useState<StudioKind[]>([]);
   const { tools, refresh } = useStudioStatus(lesson?.id, lang);
+  useEffect(() => { setWanted([]); }, [lesson?.id]);
 
   useEffect(() => {
-    if (!wanted || !tools) return;
-    const t = tools[wanted];
-    if (t.state === "ready") { setWanted(null); setStudio(wanted); }
-    else if (t.state === "error") { setWanted(null); setNote(t.error ?? "That could not be made. Click it to try again."); }
-  }, [tools, wanted]);
+    if (!wanted.length || !tools) return;
+    const ready = wanted.filter((k) => tools[k]?.state === "ready");
+    const failed = wanted.filter((k) => tools[k]?.state === "error");
+    if (!ready.length && !failed.length) return;
+    const latest = wanted[wanted.length - 1];
+    setWanted((w) => w.filter((k) => !ready.includes(k) && !failed.includes(k)));
+    if (ready.includes(latest) && !studio) setStudio(latest);          // the others are ready too (their border turns black), opened with a click
+    if (failed.length) setNote(tools[failed[0]]?.error ?? "That could not be made. Click it to try again.");
+  }, [tools, wanted, studio]);
 
   const pick = (kind: StudioKind) => {
     const t = tools?.[kind];
     if (t?.state === "ready") { setStudio(kind); return; }
     if (!lesson) return;
     setNote("");
-    setWanted(kind);                                                    // the border fills as it is built; it opens when done
-    void requestTool(lesson.id, kind, lang).then(refresh).catch((e: Error) => { setWanted(null); setNote(e.message); });
+    setWanted((w) => [...w.filter((k) => k !== kind), kind]);          // the border fills as it is built; it opens when done
+    void requestTool(lesson.id, kind, lang).then(refresh).catch((e: Error) => { setWanted((w) => w.filter((k) => k !== kind)); setNote(e.message); });
   };
   const meta = async () => {
     if (!onMetaQuiz || metaBusy) return;
@@ -189,7 +195,7 @@ export const ChatPanel: React.FC<Props> = ({ lesson, track, lang, current, getTi
 
       <div className="studio-bar" role="group" aria-label="Study tools made from this lesson">
         {TOOLS.map((t) => (
-          <StudioButton key={t.kind} kind={t.kind} label={t.label} hint={t.hint} state={tools?.[t.kind]} wanted={wanted === t.kind}
+          <StudioButton key={t.kind} kind={t.kind} label={t.label} hint={t.hint} state={tools?.[t.kind]} wanted={wanted.includes(t.kind)}
             disabled={!lesson} onClick={() => pick(t.kind)} />
         ))}
         {onMetaQuiz && <MetaButton busy={metaBusy} disabled={!lesson} onClick={meta} />}

@@ -10,7 +10,7 @@ import subprocess
 import wave
 from pathlib import Path
 
-from . import config
+from . import cache, config
 from .pipeline import LESSONS_DIR, load_lesson
 from .tts import synthesize
 
@@ -77,8 +77,12 @@ def podcast(lesson_id: str, lang: str, fmt: str = "mp3", progress=lambda s, p: N
     if not files:
         raise ValueError("This lesson has no recorded narration to export")
     out_dir = LESSONS_DIR / lesson_id
-    gap = _silence(out_dir / "_gap.wav", config.SCENE_PADDING_S)
     out = out_dir / f"podcast_{lang}.{fmt}"
+    key = cache.key_of([s.get("audio_url") for s in track["scenes"]], fmt, config.SCENE_PADDING_S)
+    if cache.is_fresh(out, key):                                         # the same narration was joined before
+        progress("Already made", 1.0)
+        return {"url": f"/media/lessons/{lesson_id}/{out.name}", "seconds": round(track["duration_s"], 1), "bytes": out.stat().st_size, "cached": True}
+    gap = _silence(out_dir / "_gap.wav", config.SCENE_PADDING_S)
     inputs: list[str] = []
     for k, f in enumerate(files):
         inputs += ["-i", str(f)] + (["-i", str(gap)] if k < len(files) - 1 else [])
@@ -90,6 +94,7 @@ def podcast(lesson_id: str, lang: str, fmt: str = "mp3", progress=lambda s, p: N
     gap.unlink(missing_ok=True)
     if proc.returncode != 0:
         raise RuntimeError("ffmpeg failed: " + proc.stderr[-300:])
+    cache.mark(out, key)
     progress("Done", 1.0)
     return {"url": f"/media/lessons/{lesson_id}/{out.name}", "seconds": round(track["duration_s"], 1), "bytes": out.stat().st_size}
 

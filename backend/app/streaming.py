@@ -84,27 +84,53 @@ class ScenePreview:
         self._track: dict | None = None
         self._announced = False
         self._pre_q: queue.Queue = queue.Queue()
+        self._drafts: dict[str, dict] = {}
         self._thread = threading.Thread(target=self._run, name="scene-preview", daemon=True)
         self._thread.start()
         self._pre = threading.Thread(target=self._pre_run, name="scene-precache", daemon=True)
         self._pre.start()
 
-    # ---- the other languages: translate each finished scene into the cache (the final pass then finds most of it ready)
+    # ---- the other languages: each finished scene is translated and voiced too, so their tabs fill in while the video is made
+    #      (a draft track per language; translations and clips are cached, so the final pass then finds most of it ready)
     def _pre_run(self) -> None:
-        from .pipeline import _scene_texts
-        from .translate import precache
+        from .languages import get as get_lang
+        from .pipeline import _narrate, _translated_scenes
+        from .schema import LessonPlan
         while True:
             item = self._pre_q.get()
             if item is None:
                 return
             if self._closed or not self.rest:
                 continue
-            texts = [t for sc in item for t in _scene_texts(sc)]
             for code in self.rest:
+                if self._closed:
+                    break
                 try:
-                    precache(texts, code)
-                except Exception as e:  # noqa: BLE001  pre-caching is a bonus, never a reason to fail
-                    log.info("pre-translation to %s skipped: %s", code, e)
+                    (title, scenes), engine = _translated_scenes(LessonPlan(title=self.title, scenes=item), code)
+                    part = _narrate((title, scenes), code, voice_lang="en" if engine == "untranslated" else code)
+                except Exception as e:  # noqa: BLE001  a draft is a bonus: the final pass makes the language anyway
+                    log.info("draft %s scene skipped: %s", code, e)
+                    continue
+                with self._lock:
+                    if self._closed:
+                        return
+                    track = self._drafts.get(code)
+                    if track is None:
+                        lang = get_lang(code)
+                        track = self._drafts[code] = {"lang": code, "name": lang.name, "native": lang.native, "title": title, "scenes": [],
+                                                      "duration_s": 0.0, "tts_engines": [], "translator": engine, "source_note": "", "draft": True}
+                    offset = track["duration_s"]
+                    for s in part["scenes"]:
+                        s["start_s"] = round(s["start_s"] + offset, 3)
+                    track["scenes"].extend(part["scenes"])
+                    track["duration_s"] = round(offset + part["duration_s"], 3)
+                    track["tts_engines"] = sorted(set(track["tts_engines"]) | set(part["tts_engines"]))
+                    self._publish()
+
+    def drafts(self) -> dict[str, dict]:
+        """The other languages as far as they were made while the video was written (shown until their final version is ready)."""
+        with self._lock:
+            return {c: t for c, t in self._drafts.items() if t["scenes"]}
 
     # ---- fed by the planner's token stream
     def feed(self, text: str) -> None:
@@ -210,7 +236,8 @@ class ScenePreview:
         draft = {
             "id": self.id, "concept": self.concept, "upload": None, "focus": "", "created": self.created,
             "plan": {"title": self.title, "scenes": [s.model_dump() for s in self._pp]},
-            "documents": [], "series": None, "review": [], "languages": {self.lang: self._track},
+            "documents": [], "series": None, "review": [],
+            "languages": {c: t for c, t in ({self.lang: self._track} | self._drafts).items() if t and t["scenes"]},
             "pending": [{"code": c, "name": get_lang(c).name, "native": get_lang(c).native} for c in self.rest],
             "failed": [], "order": self.langs, "sources": [], "timings": {}, "videos": {},
             "building": True, "scenes_total": max(self.expected, len(self._pp)),

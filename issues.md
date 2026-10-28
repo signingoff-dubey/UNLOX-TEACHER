@@ -479,3 +479,19 @@
 **Fix:** use the Edit tool for any change that contains backslashes; scan changed files for control characters
 **Files Changed:** backend/app/paper.py
 **Status:** Resolved
+
+## [ISSUE-054] — 2026-10-28
+**Title:** MP4 export stuck at "Waiting 0%"; finished files and papers were made again
+**Symptom:** clicking Make MP4 showed "Waiting 0%" for a long time; making the same MP4, paper or lesson file again redid all the work
+**Root Cause:** MP4 exports, papers and narration shared one `export` worker, so an MP4 queued behind any paper; the renderer re-bundled its templates after any change under `web/src` with no progress; nothing checked whether an output already existed for the same inputs
+**Fix:** own job pools for papers (`paper`) and narration (`audio`); real bundling progress in `render.mjs`; `cache.py` keys every output by a hash of its inputs (MP4, podcast, bundle, course MP4) and `paper._find` reuses a paper for the same request
+**Files Changed:** backend/app/cache.py, jobs.py, main.py, exporter.py, exports.py, bundle.py, playlist.py, paper.py; web/render.mjs
+**Status:** Resolved
+
+## [ISSUE-055] — 2026-10-28
+**Title:** Other languages appeared only after the whole video was finished
+**Symptom:** "how the human heart works" in English, Hindi and Telugu: Hindi and Telugu tabs only after the English video was final
+**Root Cause:** the preview only pre-translated text for the other languages; voices and tracks were made by `finish_languages` after the final save
+**Fix:** `ScenePreview._pre_run` translates and voices each finished scene for every other language and publishes draft tracks; the final save keeps them until the final versions replace them; a failed language drops its draft
+**Files Changed:** backend/app/streaming.py, pipeline.py; web/src/pages/LessonPage.tsx
+**Status:** Resolved

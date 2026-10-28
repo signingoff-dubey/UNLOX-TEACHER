@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import config, llm
+from . import cache, config, llm
 from .pipeline import load_lesson
 from .translate import translate_batch
 
@@ -180,11 +180,31 @@ def _translate(strings: list[str], qs: list[PaperQ], lang: str, progress, group:
     return out, engine
 
 
+def _find(key: str) -> dict | None:
+    """A paper made before from the same lesson and the same request, if there is one."""
+    if not PAPERS_DIR.exists():
+        return None
+    for f in sorted(PAPERS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
+        try:
+            doc = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if doc.get("key") == key:
+            return doc
+    return None
+
+
 def generate(lesson_id: str, counts: dict[str, int], level: str = "beginner", lang: str = "en", title: str = "", progress=lambda s, p: None) -> dict:
     """Writes the paper and saves it. `counts` is how many of each kind: {"mcq": 10, "short": 5, "long": 2}."""
     counts = {k: max(0, min(int(counts.get(k, 0)), 25)) for k in MARKS}
     if not sum(counts.values()):
         raise ValueError("Ask for at least one question")
+    asked = lang
+    req_key = cache.key_of(lesson_id, counts, level, lang, title.strip(), (load_lesson(lesson_id).get("plan") or {}))
+    made = _find(req_key)
+    if made:                                             # the same paper for the same lesson was made before: open that one
+        progress("Already made", 1.0)
+        return made
     progress("Reading the lesson", 0.02)
     topic, text = source_text(lesson_id)
     progress("Reading the lesson", 0.1)                  # the model reads it before the first question appears
@@ -210,7 +230,8 @@ def generate(lesson_id: str, counts: dict[str, int], level: str = "beginner", la
         d = {"kind": q.kind, "marks": MARKS[q.kind], "question": next(it), "answer": next(it), "options": [next(it) for _ in q.options], "answer_index": q.answer_index}
         items.append(d)
     paper = {"id": uuid.uuid4().hex[:10], "lesson_id": lesson_id, "lang": lang, "title": title_t, "created": int(time.time()), "topic": topic, "questions": items,
-             "total_marks": sum(d["marks"] for d in items), "counts": {k: sum(1 for d in items if d["kind"] == k) for k in MARKS}}
+             "total_marks": sum(d["marks"] for d in items), "counts": {k: sum(1 for d in items if d["kind"] == k) for k in MARKS},
+             "key": req_key if lang == asked else None}          # a paper that fell back to English is not reused for a Hindi request
     PAPERS_DIR.mkdir(parents=True, exist_ok=True)
     (PAPERS_DIR / f"{paper['id']}.json").write_text(json.dumps(paper, ensure_ascii=False, indent=1), encoding="utf-8")
     progress("Ready", 1.0)

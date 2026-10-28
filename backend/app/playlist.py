@@ -239,11 +239,15 @@ def export_all(playlist_id: str, lang: str, height: int = 720, progress=lambda s
     listing = out_dir / f"concat_{lang}_{height}.txt"
     listing.write_text("".join(f"file '{f.as_posix()}'\n" for f in files), encoding="utf-8")
     out = out_dir / f"course_{lang}_{height}p.mp4"
-    progress("Joining episodes", 0.93)
-    proc = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(out)],
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError("ffmpeg join failed: " + proc.stderr[-300:])
+    from . import cache
+    key = cache.key_of([f.name for f in files], [(f.with_name(f.name + ".key").read_text(encoding="utf-8") if f.with_name(f.name + ".key").exists() else f.stat().st_mtime) for f in files])
+    if not cache.is_fresh(out, key):                    # the same episodes were joined before: no second join
+        progress("Joining episodes", 0.93)
+        proc = subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(out)],
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError("ffmpeg join failed: " + proc.stderr[-300:])
+        cache.mark(out, key)
     url = f"/media/playlists/{playlist_id}/{out.name}"
     pl.setdefault("videos", {})[f"{lang}_{height}p"] = url
     save(pl)

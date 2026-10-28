@@ -135,3 +135,24 @@ def test_a_paper_downloads_as_a_named_html_file(lesson, monkeypatch):
     r = c.get(f"/api/papers/{p['id']}/html?key=true&download=true")
     assert r.headers["content-disposition"].endswith('-answers.html"') and "Answer:" in r.text
     assert "content-disposition" not in c.get(f"/api/papers/{p['id']}/html").headers            # opened to print, not saved
+
+
+def test_the_same_paper_is_not_written_twice(lesson, monkeypatch):
+    writes = []
+    real = paper._mock
+    monkeypatch.setattr(paper, "_mock", lambda text, counts: writes.append(counts) or real(text, counts))
+    first = paper.generate("L1", {"mcq": 2, "short": 1, "long": 0})
+    again = paper.generate("L1", {"mcq": 2, "short": 1, "long": 0})
+    other = paper.generate("L1", {"mcq": 3, "short": 1, "long": 0})
+    assert again["id"] == first["id"] and other["id"] != first["id"]                  # the saved one is opened; a different request is new
+    assert len(writes) == 2
+
+
+def test_cache_keys_follow_the_inputs(tmp_path):
+    from app import cache
+    out = tmp_path / "a.mp4"
+    k = cache.key_of({"scenes": [1, 2]}, 720)
+    assert not cache.is_fresh(out, k)
+    out.write_bytes(b"x")
+    cache.mark(out, k)
+    assert cache.is_fresh(out, k) and not cache.is_fresh(out, cache.key_of({"scenes": [1, 2, 3]}, 720))

@@ -9,6 +9,7 @@ import { ChatPanel } from "../components/ChatPanel";
 import type { ChatVideo } from "../components/VideoCard";
 import { preloadMetaverse } from "../components/MetaverseLayer";
 import { NotesPanel } from "../components/NotesPanel";
+import { FileReady } from "../components/FileReady";
 import { Pending } from "../components/Pending";
 import { PlayerControls } from "../components/PlayerControls";
 import { TakeAway } from "../components/TakeAway";
@@ -65,6 +66,7 @@ export const LessonPage: React.FC<Props> = (
   const [waitingNext, setWaitingNext] = useState(false);
   const [courseJob, setCourseJob] = useState<Job | null>(null);
   const [courseUrls, setCourseUrls] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<{ title: string; detail: string; href: string; name: string } | null>(null);      // the save popup for a finished MP4
 
   const inputProps = useMemo(() => (track ? { track, assetBase, captions } : null), [track, assetBase, captions]);
   const frames = track ? lessonFrames(track) : 1;
@@ -198,6 +200,7 @@ export const LessonPage: React.FC<Props> = (
       const done = await runJob(api<Job>(`/api/lessons/${lesson.id}/export`, { lang, height: quality }),
         (j) => setExportJobs((x) => ({ ...x, [key]: j })));
       onVideo(key, done.result.url);
+      setSaved({ title: "Your video is ready", detail: `${track?.name ?? lang} · ${quality}p MP4`, href: done.result.url, name: `${lesson.concept}-${lang}-${quality}p.mp4` });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -214,6 +217,8 @@ export const LessonPage: React.FC<Props> = (
     try {
       const done = await runJob(api<Job>(`/api/playlists/${playlist.id}/export`, { lang, height: quality }), setCourseJob);
       setCourseUrls((u) => ({ ...u, [courseKey]: done.result.url }));
+      setSaved({ title: "Your course video is ready", detail: `${playlist.episodes.length} videos in one MP4 · ${track?.name ?? lang} · ${quality}p`,
+        href: done.result.url, name: `${playlist.title}-${lang}-${quality}p.mp4` });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -254,7 +259,7 @@ export const LessonPage: React.FC<Props> = (
                 <button key={t.lang} type="button" role="tab" aria-selected={t.lang === lang} className={t.lang === lang ? "tab on" : "tab"}
                   onClick={() => switchLang(t.lang)}>{t.native}</button>
               ))}
-              {lesson.pending?.map((p) => (
+              {lesson.pending?.filter((p) => !(p.code in lesson.languages)).map((p) => (      // a language with a draft already has its own tab
                 <button key={p.code} type="button" role="tab" aria-selected={false} aria-disabled="true" className="tab making" disabled
                   title={`${p.name} is being made. It appears here when it is ready.`}><span className="tab-spin" aria-hidden />{p.native}</button>
               ))}
@@ -369,6 +374,10 @@ export const LessonPage: React.FC<Props> = (
                 ))}
               </div>
             </section>
+          )}
+          {saved && (
+            <FileReady title={saved.title} detail={saved.detail} onClose={() => setSaved(null)}
+              actions={[{ label: "Save the MP4", href: url(saved.href), download: saved.name }, { label: "Watch it in a new tab", href: url(saved.href), newTab: true }]} />
           )}
           {lesson && !lesson.building && <TakeAway lesson={lesson} lang={lang} />}
           <ChatPanel lesson={lesson} track={track} lang={lang} current={sceneIndex} getTime={getTime} onMetaQuiz={onMetaQuiz} metaBusy={metaBusy}

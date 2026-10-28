@@ -378,7 +378,7 @@ Please verify the licences of anything you redistribute.
 
 ## Docs and team
 
-`prd.md`, `problem_statement.md`, `pitch.md`, `progress.md` (versions and git history), `issues.md` (every bug and its fix), `todo.md`, `docs/` (long videos, voice assistant, presentation mode, RAG and OCR design), `blender 3d/README.md`, `CLAUDE.md`.
+`architecture.md` (components, models and who calls them, scheduling, storage), `flow.md` (every user flow step by step, with each model call), `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md` (versions and git history), `issues.md` (every bug and its fix), `todo.md`, `docs/` (long videos, voice assistant, presentation mode, RAG and OCR design), `blender 3d/README.md`, `CLAUDE.md`.
 
 Team folders in the repo: `Dhiraj/` (Dhiraj Shetty's snapshot of the RAG, OCR and library work), `Niharika/` (Niharika K P's voice-assistant and metaverse notes), `Priya/` (Priyadarshini Prasad's screen designs). See the team table at the top.
 

@@ -76,7 +76,7 @@ export const MetaverseLayer = memo(function MetaverseLayer({ trigger, lesson, la
       {(phase === "start" || phase === "open") && (
         <div className="mv-overlay" role="dialog" aria-label="Metaverse quiz world">
           <Suspense fallback={null}>
-            <Metaverse lesson={lesson} lang={lang} world={world} onExit={leave} onBuild={onBuild} store={store} />
+            <Metaverse lesson={lesson} lang={lang} world={world} onExit={leave} onBuild={onBuild} store={store} intro={phase !== "open"} />
             <Ready onReady={onReady} />
           </Suspense>
         </div>

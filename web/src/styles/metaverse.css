@@ -6,8 +6,8 @@
 .mv-tunnel.leaving { opacity: 0; }
 
 .mv-start { position: fixed; inset: 0; z-index: 1050; display: grid; place-items: center; padding: 24px; animation: mv-fade .9s ease both;
-  background: radial-gradient(ellipse 75% 70% at 50% 46%, #0b0724 0, #0b0724 52%, rgba(7, 4, 22, .86) 100%); font-family: "Chakra Petch", "Figtree", system-ui, sans-serif; }
-.mv-start-card { max-width: 580px; text-align: center; color: #f6efe2; }
+  background: radial-gradient(ellipse 62% 56% at 50% 46%, rgba(11, 7, 36, .74) 0, rgba(11, 7, 36, .46) 55%, rgba(7, 4, 22, .18) 100%); font-family: "Chakra Petch", "Figtree", system-ui, sans-serif; }
+.mv-start-card { max-width: 580px; text-align: center; color: #f6efe2; text-shadow: 0 2px 18px rgba(6, 3, 20, .85), 0 1px 3px rgba(6, 3, 20, .9); }      /* readable over the moving 3D world behind it */
 .mv-start-card > * { animation: mv-rise .85s cubic-bezier(.2, .8, .2, 1) both; }
 .mv-start-card > :nth-child(1) { animation-delay: .15s; }
 .mv-start-card > :nth-child(2) { animation-delay: .27s; }

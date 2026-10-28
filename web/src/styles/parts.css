@@ -79,7 +79,10 @@
 .mine .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .mine textarea { width: 100%; resize: vertical; min-height: 70px; max-height: 160px; padding: 10px 14px; border: 0; border-radius: 18px; background: var(--surface); font-size: 14px; }
 .mine textarea:focus { outline: 2px solid var(--ink); }
-.sources-box { margin: 14px 0 4px; }
+.sources-box { margin: 10px 14px 0; padding: 10px 12px; border-radius: 16px; background: var(--surface); flex: none; max-height: 150px; overflow: auto; }
+.sources-box p { margin: 0; font-size: 13px; line-height: 1.45; }
+.notes .note-list { min-height: 200px; }
+.note, .sources-box, .note-title { overflow-wrap: anywhere; }           /* long words (and long Indian-language compounds) wrap instead of running out of the panel */
 .sources-box .label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
 .sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .sources a { color: var(--ink); font-weight: 600; text-decoration: none; }

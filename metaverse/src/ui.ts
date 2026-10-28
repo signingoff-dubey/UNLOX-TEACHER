@@ -24,6 +24,9 @@ button{cursor:pointer}
 :focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 #app{position:relative;height:100%;overflow:hidden;background:var(--ink)}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#app.intro>:not(#gl){opacity:0;visibility:hidden;pointer-events:none}
+#app:not(.intro) #topic .tcard{animation:intro-in .8s cubic-bezier(.2,.8,.2,1) backwards}
+@keyframes intro-in{from{opacity:0;transform:translateY(18px) scale(.97)}}
 .glass{background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);box-shadow:0 10px 40px rgba(6,2,24,.45),inset 0 1px 0 rgba(255,255,255,.09)}
 .eyebrow{font:600 11px/1 var(--f-d);letter-spacing:.18em;text-transform:uppercase;color:var(--amber)}
 .key{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--line);border-bottom-width:3px;border-radius:6px;font:600 12px var(--f-d);color:var(--text);background:rgba(255,255,255,.06)}

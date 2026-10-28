@@ -23,14 +23,18 @@ export type MetaverseProps = {
   onBuild?: StartOptions["onBuild"];
   /** Keeps points and purchases outside the browser as well. */
   store?: StartOptions["store"];
+  /** Only the 3D scene is shown (the camera circles the world): the host has its own page on top, e.g. a Start page. */
+  intro?: boolean;
 };
 
 /**
  * Mounts the 3D world inside a shadow root, so its styles never leak into the host page
  * and the host page's styles never leak into it.
  */
-export default function Metaverse({ lesson, lang = "en", world: given, onExit, onBuild, store }: MetaverseProps) {
+export default function Metaverse({ lesson, lang = "en", world: given, onExit, onBuild, store, intro = false }: MetaverseProps) {
   const host = useRef<HTMLDivElement>(null);
+  const introRef = useRef(intro);
+  introRef.current = intro;
   const exit = useRef(onExit);
   exit.current = onExit;
   const build = useRef(onBuild);
@@ -42,6 +46,7 @@ export default function Metaverse({ lesson, lang = "en", world: given, onExit, o
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${CSS}</style>${MARKUP}`;
+    root.getElementById("app")?.classList.toggle("intro", introRef.current);
     const stop = startMetaverse(root, {
       extraWorlds: world ? { lesson: world } : {},
       onExit: exit.current ? () => exit.current?.() : undefined,
@@ -53,6 +58,10 @@ export default function Metaverse({ lesson, lang = "en", world: given, onExit, o
       root.innerHTML = "";
     };
   }, [world, store]);
+
+  useEffect(() => {
+    host.current?.shadowRoot?.getElementById("app")?.classList.toggle("intro", intro);       // the topic card fades in when the intro ends
+  }, [intro]);
 
   return <div ref={host} style={{ width: "100%", height: "100%" }} />;
 }

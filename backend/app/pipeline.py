@@ -191,6 +191,9 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
                 (out_dir / f"captions_{code}.srt").write_text(_track_srt(track), encoding="utf-8")
         tracks = {code: tracks[code] for code in langs}          # keep the order the learner picked
 
+    drafts = preview.drafts() if preview is not None else {}
+    if drafts:                                         # the other languages as made while the video was written: watchable until their final version replaces them
+        tracks = {c: tracks.get(c) or drafts[c] for c in langs if c in tracks or c in drafts}
     lesson = {
         "id": lesson_id,
         "concept": concept or (f"{focus} (PDF)" if focus else plan.title),
@@ -267,6 +270,8 @@ def finish_languages(lesson_id: str, codes: list[str], make_track, progress: Pro
                 lesson["languages"] = {c: lesson["languages"][c] for c in lesson.get("order", []) if c in lesson["languages"]}
                 lesson["timings"][f"{code}_s"] = round(secs, 2)
             else:
+                if lesson["languages"].get(code, {}).get("draft"):
+                    lesson["languages"].pop(code)           # a draft of a language that then failed is not left behind
                 lesson.setdefault("failed", []).append({"code": code, "name": get_lang(code).name, "error": error})
             save_lesson(lesson)
 

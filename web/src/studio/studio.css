@@ -17,7 +17,7 @@
 .studio-btn.is-busy::before { opacity: 1; }
 .studio-btn.is-busy::after { opacity: .5; }
 @keyframes sb-flow { to { --a: 360deg; } }
-.studio-btn.is-ready { color: var(--ink); border-color: #cfe9e3; background: #f3fbf9; }
+.studio-btn.is-ready { color: var(--ink); border-color: var(--ink); background: #f3fbf9; }          /* built: a black border, opens at once */
 .studio-btn.is-ready:hover { border-color: var(--teal); background: var(--teal-soft); transform: translateY(-1px); }
 .studio-btn.is-error { border-color: var(--rose); color: var(--rose); }
 .studio-btn:hover:not(:disabled):not(.is-busy) { border-color: var(--teal); color: var(--ink); }

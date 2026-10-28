@@ -467,7 +467,7 @@ def podcast(lesson_id: str, req: PodcastRequest) -> dict:
     lesson = get_lesson(lesson_id)
     if req.lang not in lesson["languages"]:
         raise HTTPException(404, f"This lesson has no '{req.lang}' version")
-    return jobs.submit("export", exports.podcast, lesson_id, req.lang, req.format)
+    return jobs.submit("audio", exports.podcast, lesson_id, req.lang, req.format)
 
 
 class SayRequest(BaseModel):
@@ -538,7 +538,7 @@ def create_paper(req: PaperRequest) -> dict:
     _lang(req.lang)
     if not (req.mcq + req.short + req.long):
         raise HTTPException(400, "Ask for at least one question")
-    return jobs.submit("export", paper.generate, req.lesson_id, {"mcq": req.mcq, "short": req.short, "long": req.long}, req.level, req.lang, req.title)
+    return jobs.submit("paper", paper.generate, req.lesson_id, {"mcq": req.mcq, "short": req.short, "long": req.long}, req.level, req.lang, req.title)
 
 
 @app.get("/api/papers/{paper_id}")
