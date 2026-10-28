@@ -134,17 +134,34 @@ def stream_chat(messages: list[dict], options: dict | None = None, *, timeout: f
 
 
 def ask_json(cls: type[T], user: str, system: str = "", options: dict | None = None, *, retries: int = 1, timeout: float = 300,
-             expected_tokens: int = 400, on_progress: Callable[[float], None] | None = None) -> T:
+             expected_tokens: int = 400, on_progress: Callable[[float], None] | None = None,
+             on_text: Callable[[str], None] | None = None) -> T:
     """The model's answer as a validated `cls`. Raises ValueError if it still does not fit after `retries` more tries;
-    requests.RequestException (Ollama not reachable) is left to the caller."""
+    requests.RequestException (Ollama not reachable) is left to the caller. Progress only goes forward: a retry carries on from
+    where the bar got to (it does not start again at 0), and 100% is reported only for an answer that fits."""
     opts = {"temperature": 0.4, **(options or {})}
     err = ""
+    shown = [0.0]
+    base = [0.0]
+
+    def report(f: float) -> None:
+        if on_progress is None or f >= 1.0:              # the end of one call is not the end: its answer may still be invalid
+            return
+        v = base[0] + (0.97 - base[0]) * f
+        if v > shown[0]:
+            shown[0] = v
+            on_progress(v)
+
     for attempt in range(retries + 1):
+        base[0] = shown[0]
         prompt = user + (f"\n\nYour previous answer was not valid ({err}). Answer again with only the JSON object." if err else "")
         text = stream_chat([{"role": "system", "content": with_schema(system, cls)}, {"role": "user", "content": prompt}], opts,
-                           timeout=timeout, expected_tokens=expected_tokens, on_progress=on_progress)
+                           timeout=timeout, expected_tokens=expected_tokens, on_progress=report, on_text=on_text)
         try:
-            return cls.model_validate_json(extract_json(text))
+            out = cls.model_validate_json(extract_json(text))
+            if on_progress:
+                on_progress(1.0)
+            return out
         except (ValidationError, ValueError) as e:
             err = str(e).replace("\n", " ")[:240]
             log.warning("%s answer attempt %d invalid: %s", cls.__name__, attempt + 1, err)

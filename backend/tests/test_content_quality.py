@@ -81,6 +81,8 @@ def test_problems_are_named_so_the_planner_can_retry():
     assert content.narration_problems(bad)                                                           # the 3-word captions
     issue = planner.quality_issue(LessonPlan(title="x", scenes=[sc("title", "A"), sc("flow", "B", "Too short.", items=["1", "2"]), sc("bullets", "C", "Also short.", items=["3", "4"]), sc("diagram", "D", "Short again.", items=["5", "6"])]))
     assert issue and "too short" in issue
+    short = LessonPlan(title="x", scenes=[sc("title", "A"), sc("flow", "B", "Too short.", items=["1", "2"]), sc("bullets", "C", "Also short.", items=["3", "4"]), sc("diagram", "D", "Short again.", items=["5", "6"])])
+    assert planner.quality_issue(short, narration=False) is None                                   # Flash: the writer pass lengthens it, no re-plan
     assert planner.quality_issue(LessonPlan(title="x", scenes=[sc("title", "A"), sc("flow", "B", items=["1", "2"]), sc("bullets", "C", items=["3", "4"]), sc("diagram", "D", items=["5", "6"])])) is None
 
 

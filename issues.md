@@ -439,3 +439,43 @@
 **Fix:** `scenes = min(by duration, round(words / 24))` in the planner; a recap scene is added when a lesson stops on a teaching scene; now 37 s / 58 s / 66 s
 **Files Changed:** backend/app/planner.py, schema.py
 **Status:** Resolved
+
+## [ISSUE-049] — 2026-10-28
+**Title:** A Flash video paused halfway while the next part was still being written
+**Symptom:** "teach me basics of cyber" (course, 2 min videos): the player stopped mid-video; the log showed "Plan attempt 1/2/3 needs work: the narration is too short" for every part
+**Root Cause:** a short-narration plan was thrown away and re-planned (about 10 s a time) even though review.py lengthens short narration; a retry made the preview forget the scenes already on screen (`gen += 1`); parts 2 and 3 of a long video were not streamed, only handed over once whole; the player stayed paused if the final lesson was shorter than the preview
+**Fix:** `plan_lesson(fast=True)` in Flash (no re-plan for short narration, one retry at most); `ScenePreview` keeps what was shown and skips that many scenes of a retry; `ScenePreview.stream()` streams every part; `LessonPage.tsx` resumes or ends properly and ignores a mid-build "ended" for the course
+**Files Changed:** backend/app/planner.py, streaming.py, longplan.py, pipeline.py; web/src/pages/LessonPage.tsx
+**Status:** Resolved
+
+## [ISSUE-050] — 2026-10-28
+**Title:** Video 2 of a course sat "queued" until video 1 was completely done
+**Symptom:** with 2 videos, the second one started only after the first had finished, plus a "Waiting to start episode 2" of 90 s
+**Root Cause:** `build_lesson` held `gpu.big_slot` (exclusive) for the whole build, so the second episode's build blocked on it; the memory gate wanted 2 GB free RAM (0.7 GB free with the models loaded, and waiting frees nothing) and waited its full 90 s timeout
+**Fix:** `BigSlot.hold(shared=True)` lets lesson builds hold the slot together (OCR still waits for all of them); the episode gate is 0.6 GB / 20 s. Course time 292 s -> 171 s
+**Files Changed:** backend/app/gpu.py, pipeline.py, playlist.py
+**Status:** Resolved
+
+## [ISSUE-051] — 2026-10-28
+**Title:** Question paper had 3 questions instead of 17, sat at 75%, then did not open
+**Symptom:** asked for 10 MCQ + 5 short + 2 long: got 1 + 1 + 1; some "questions" were lesson lines ("Why Do We Need Cyber Security?: In today's world..."); the bar stopped around 75% during translation; the paper never opened
+**Root Cause:** one call for the whole paper with `num_predict` 1800: the JSON was cut off and repaired with most questions lost; no check that a question is a question; translation was one silent step; `window.open` after an async job is blocked by the browser's popup blocker
+**Fix:** one call per section with top-ups (`paper._write`), `paper.is_question`, translation in groups with a real count (`paper._translate`), a download popup (`PaperReady.tsx`) and `GET /api/papers/{id}/html?download=true`
+**Files Changed:** backend/app/paper.py, main.py; web/src/components/TakeAway.tsx, PaperReady.tsx, styles/parts.css
+**Status:** Resolved
+
+## [ISSUE-052] — 2026-10-28
+**Title:** Progress bars went backwards or showed numbers the backend never reported
+**Symptom:** a paper's bar went 25% -> 11% (a retry); study tools climbed by themselves to 93%; other bars crept 3-5% past the real value
+**Root Cause:** `stream_chat` reports 1.0 at the end of every call (even an invalid answer), so a retry restarted at 0; `useSteadyProgress` was driven by a clock; `useSmoothProgress` and the PDF bar had a "creep" allowance
+**Fix:** `llm.ask_json` carries progress on across retries and reports 100% only for a valid answer; job progress never goes backwards (`jobs.py`); the three web hooks only glide toward the real value
+**Files Changed:** backend/app/llm.py, jobs.py; web/src/studio/useSteadyProgress.ts, StudioButton.tsx, components/SmoothProgress.tsx, PdfUpload.tsx
+**Status:** Resolved
+
+## [ISSUE-053] — 2026-10-28
+**Title:** Shell heredoc edits collapsed backslashes
+**Symptom:** a regex `\b` became a backspace character and `"\n"` became a real line break (SyntaxError: unterminated string literal) after editing a file through a bash heredoc that ran Python
+**Root Cause:** the Git Bash layer turned `\` into `\` before Python saw the text
+**Fix:** use the Edit tool for any change that contains backslashes; scan changed files for control characters
+**Files Changed:** backend/app/paper.py
+**Status:** Resolved

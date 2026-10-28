@@ -1,7 +1,30 @@
 # Progress Log
 
-## Current Version: v0.16.2
+## Current Version: v0.16.3
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.16.3] — 2026-10-28
+### What's New
+- **Flash videos no longer pause halfway** (a "basics of cyber" test stopped while the next part was being written):
+  - a short-narration plan is no longer re-planned (the writer pass lengthens it anyway); Flash allows one retry at most (`planner.plan_lesson(fast=True)`)
+  - a retry no longer wipes the scenes already on screen; the new answer carries on after them (`streaming.ScenePreview`)
+  - every part of a long video streams to the player token by token (only part 1 did; parts 2 and 3 appeared only once whole) (`ScenePreview.stream`, `longplan.plan_long`)
+  - the player resumes or moves on to the next video when the final lesson comes out shorter than the preview, and running out of scenes while building no longer counts as the end of an episode (`LessonPage.tsx`)
+- **Courses: video 2 no longer waits for video 1 to finish completely**: every lesson build held the GPU slot alone, so `PLAYLIST_WORKERS=2` never overlapped anything. Lessons now share the slot (OCR still waits for all of them) (`gpu.BigSlot(shared=True)`), and the episode memory gate only waits when RAM is nearly gone (0.6 GB, 20 s instead of 2 GB, 90 s). Measured, 2 x 2 min cyber security course in English + Hindi: 171 s (was 292 s); episode 1 built in 80 s with no re-plans (was 115 s with 5)
+- **Other languages are made side by side** (`finish_languages`, `LANG_WORKERS=3`): translation takes turns on the shared model (NLLB now has the same generation lock as IndicTrans2), voices overlap
+- **Worksheet and question paper**:
+  - the right number of questions: one call per section, topped up when the model writes too few (asked for 10 + 5 + 2, it gave 1 + 1 + 1 before; now 10 + 5 + 2 in English and Hindi)
+  - lesson lines copied out as "questions" are dropped (`paper.is_question`)
+  - a popup when it is ready: download the student copy, download the answer key, or open it to print / save as PDF (`?download=true` serves the page as a named file); the old new-tab opened after the job and was blocked by browsers
+  - made in the language selected in the player; translated a few questions at a time with a real count ("Translating into Hindi: question 7 of 17")
+- **Progress bars show real progress only**: papers count the questions the model has finished; a retry of a model call carries on instead of dropping back; a job's progress never goes backwards; the web bars no longer run ahead of the backend (the study tools' clock that climbed to 93% by itself and the 3-5% "creep" are gone)
+- **Take-away buttons animate when clicked**: the study tools' flowing-colour border on Subtitles, Transcript, Narration, Lesson file, Worksheet and Question paper (for as long as their job runs, filled by its progress; briefly for a download)
+
+### Known Issues
+- Two `test_studio_queue` tests fail in the full run on a machine with little free RAM (they pass alone, before and after this change)
+- After the last streamed scene the director, reviewer and fact checker (up to 50 s) still run before the final lesson is saved; a short preview can run out during that time
 
 ---
 

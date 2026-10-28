@@ -16,7 +16,7 @@ def test_parts_for_scales_with_length():
 def test_long_video_joins_parts_in_order(monkeypatch):
     calls = []
 
-    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress, extra="", mode="explain", on_text=None):
+    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress, extra="", mode="explain", on_text=None, fast=False):
         calls.append(series)
         on_progress(1.0)
         return _part(series["index"]), [{"title": "Book", "section": "Ch 1"}]
@@ -33,24 +33,32 @@ def test_long_video_joins_parts_in_order(monkeypatch):
     assert seen[-1] == 1.0 and seen == sorted(seen)
 
 
-def test_parts_reach_the_player_in_order_and_only_the_first_part_streams(monkeypatch):
-    import time
-    streamed, handed = [], []
+def test_every_part_streams_to_the_player_and_later_parts_hide_their_title_and_early_recaps(monkeypatch):
+    streamed, fast_flags = [], []
 
     class Preview:
-        feed = staticmethod(lambda text: None)
+        def __init__(self):
+            self.rejects = []
 
-        def add_scenes(self, objs):
-            handed.append([o["heading"] for o in objs])
+        def feed(self, text):
+            streamed.append(("main", text))
 
-    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress, extra="", mode="explain", on_text=None):
-        streamed.append((series["index"], on_text is not None))
-        if series["index"] == 1:
-            time.sleep(0.15)                                            # part 1 is the slowest: part 2 must still wait for it
+        def stream(self, reject=None):
+            self.rejects.append(reject)
+            k = len(self.rejects)
+            return lambda text: streamed.append((k, text))
+
+    def fake_plan(topic, level, duration_s, upload, focus, wps, series, on_progress, extra="", mode="explain", on_text=None, fast=False):
+        fast_flags.append(fast)
+        on_text(f"part {series['index']}")
         return _part(series["index"]), []
 
     monkeypatch.setattr(longplan, "plan_lesson", fake_plan)
     monkeypatch.setattr(longplan.config, "LLM_BACKEND", "mock")
-    longplan.plan_long("Tides", "beginner", 120, None, "", 2.3, preview=Preview())
-    assert sorted(streamed) == [(1, True), (2, False), (3, False)]                      # only part 1 is streamed token by token
-    assert [h[0] for h in handed] == ["H2.0", "H3.0"]                                   # parts 2 and 3 whole, in order
+    pv = Preview()
+    longplan.plan_long("Tides", "beginner", 120, None, "", 2.3, preview=pv)
+    assert streamed == [("main", "part 1"), (1, "part 2"), (2, "part 3")]               # every part token by token, in order
+    assert fast_flags == [True, True, True]                                             # Flash: no slow retries while the learner watches
+    middle, last = pv.rejects
+    assert middle({"template": "title"}) and middle({"template": "summary"}) and not middle({"template": "code"})
+    assert last({"template": "title"}) and not last({"template": "summary"}) and not last({"template": "quiz"})

@@ -195,8 +195,9 @@ MODE_HINTS = {
 
 def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upload: str | None = None, focus: str = "",
                 on_progress=lambda f: None, wps: float = 2.3, series: dict | None = None,
-                extra: str = "", mode: str = "explain", on_text=None) -> tuple[LessonPlan, list[dict]]:
+                extra: str = "", mode: str = "explain", on_text=None, fast: bool = False) -> tuple[LessonPlan, list[dict]]:
     """Returns the lesson plan and the sources it was grounded in. `on_text` hears the plan's JSON as it is written (see streaming.py).
+    `fast` (Flash, the learner is already watching): at most one retry, and short narration is left to the writer pass in review.py.
 
     - concept only: search the knowledge base / library.
     - concept + upload: search that PDF first, then the library.
@@ -224,7 +225,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
                                                                                not PAGE_REQUEST.search(concept) else "")
     last_error = ""
     best: LessonPlan | None = None
-    for attempt in range(3):
+    for attempt in range(2 if fast else 3):
         try:
             try:
                 raw = _ollama_chat(concept, last_error, level, duration_s, reference, on_progress, wps, series, extra, mode, on_text)
@@ -243,7 +244,7 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
             log.warning("Plan attempt %d invalid: %s", attempt + 1, last_error)
             continue
         issue = quality_issue(plan, min_scenes=2 if (series and series.get('segment')) else 4, questions=None if series else content.sub_questions(concept),
-                              technical=any(subject_of(concept)))
+                              technical=any(subject_of(concept)), narration=not fast)
         if not issue:
             return plan, sources
         log.info("Plan attempt %d needs work: %s", attempt + 1, issue)
@@ -260,7 +261,8 @@ def _words(plan: LessonPlan) -> int:
     return sum(len(s.narration.split()) for s in plan.scenes)
 
 
-def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_scenes: int = 4, questions: list[str] | None = None, technical: bool = False) -> str | None:
+def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_scenes: int = 4, questions: list[str] | None = None, technical: bool = False,
+                  narration: bool = True) -> str | None:
     """Cheap checks for the ways small models write weak lessons. Returns feedback for a retry.
     Narration length is NOT checked here: the writer agent in review.py lengthens short scenes."""
     if len(plan.scenes) < min_scenes:
@@ -280,7 +282,7 @@ def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_
     missed = content.unanswered(plan, questions or [])
     if missed:
         return f"the lesson does not answer the learner's question: '{missed}'. Give it its own scene(s) with the real explanation"
-    short = content.narration_problems(plan)
+    short = content.narration_problems(plan) if narration else []
     if len(short) >= max(2, len(plan.scenes) // 3):
         return "the narration is too short: write 2-3 full sentences (about 25 words) in every scene that explain the idea, never a placeholder like 'Let's learn about'"
     return None

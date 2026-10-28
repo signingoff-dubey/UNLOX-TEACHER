@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * A progress value that moves continuously. The backend reports progress in steps (and a long step, like the
- * planner, can sit still for seconds), so the shown value glides toward the real one and, when it catches up,
- * creeps ahead slowly inside a small allowance. It never goes backwards and never reaches 100% until `done`.
+ * The real progress, shown smoothly. The backend reports progress in steps, so the shown value glides toward the newest
+ * real one. It never runs ahead of what was reported, never goes backwards, and reaches 100% only when `done`.
  */
 export function useSmoothProgress(target: number, done: boolean): number {
   const [shown, setShown] = useState(0);
@@ -21,10 +20,7 @@ export function useSmoothProgress(target: number, done: boolean): number {
       if (s.done) {
         next += (1 - next) * Math.min(dt * 7, 1);
       } else if (next < s.target) {
-        next += (s.target - next) * Math.min(dt * 2.5, 1) + dt * 0.002;       // glide to the real value
-      } else {
-        const ceiling = Math.min(s.target + 0.05, 0.985);                      // creep a little past it
-        next += Math.max(ceiling - next, 0) * dt * 0.18;
+        next = Math.min(s.target, next + (s.target - next) * Math.min(dt * 2.5, 1) + dt * 0.002);       // glide to the real value, never past it
       }
       s.v = Math.max(s.v, Math.min(next, s.done ? 1 : 0.985));
       setShown(s.v);

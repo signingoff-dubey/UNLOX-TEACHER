@@ -551,14 +551,18 @@ def get_paper(paper_id: str) -> dict:
 
 
 @app.get("/api/papers/{paper_id}/html")
-def paper_html(paper_id: str, key: bool = False):
-    """The printable page: the student's copy, or with key=true the teacher's copy with the answers."""
+def paper_html(paper_id: str, key: bool = False, download: bool = False):
+    """The printable page: the student's copy, or with key=true the teacher's copy with the answers. download=true saves it as a file."""
     from fastapi.responses import HTMLResponse
     from . import paper
     try:
-        return HTMLResponse(paper.render_html(paper.load(paper_id), key))
+        doc = paper.load(paper_id)
     except (OSError, ValueError):
         raise HTTPException(404, "No such paper")
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="{paper.file_name(doc, key)}"'
+    return HTMLResponse(paper.render_html(doc, key), headers=headers)
 
 
 class TeachBackRequest(BaseModel):

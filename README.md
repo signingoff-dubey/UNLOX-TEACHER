@@ -2,7 +2,7 @@
 
 > Type a topic, attach a photo or a PDF, and get a narrated, animated video lesson in English and eight Indian languages, with quizzes, study tools and a tutor. Everything runs offline on one laptop (and on a phone). No outside AI service is ever called.
 
-**Latest release: v0.16.0** · Built for the Unlox hackathon · Repo: https://github.com/signingoff-dubey/UNLOX-TEACHER
+**Latest release: v0.16.3** · Built for the Unlox hackathon · Repo: https://github.com/signingoff-dubey/UNLOX-TEACHER
 
 | | |
 |---|---|
@@ -221,6 +221,7 @@ Set in `backend/.env` (copy `.env.example`) or the environment. Common ones:
 | `FACTCHECK`, `FACTCHECK_BUDGET_S` | `1`, `50` | The fact checker and its time budget (Pro doubles it) |
 | `TRANSLATE_BACKEND` | `nllb` | `nllb`, `indictrans2`, `ollama`, `none` |
 | `BACKCHECK` | `1` | Translate back to English and compare |
+| `LANG_WORKERS`, `PLAYLIST_WORKERS` | `3`, `2` | Languages made side by side; course videos in flight at once |
 | `TTS_ENGINE`, `TTS_FALLBACK`, `TTS_EXPRESSIVE` | `piper`, `parler`, `1` | Voices and expressive delivery |
 | `STT_MODEL`, `PRELOAD_STT` | `medium`, `0` | Speech recognition |
 | `DEVICE`, `OLLAMA_NUM_GPU` | `auto` | GPU/CPU choice |
@@ -385,6 +386,6 @@ Team folders in the repo: `Dhiraj/` (Dhiraj Shetty's snapshot of the RAG, OCR an
 
 ## Changelog
 
-Current: **v0.16.0** (2026-10-29): Flash and Pro, memory of what already exists, technical topics shown with code and network scenes, reference notes, retries and readiness checks, fact checker.
-Earlier: v0.15.2 coherent long videos and courses, "Teach me" removed from titles, expressive narration, non-blocking photos; v0.15.0 subject-aware prompt and faster first scene, PDF progress, Android parts and chat video; v0.14.x PDF Markdown and figures, caching, Learnverse worlds, chat videos, resilience; v0.13 Android app; v0.10 photos, modes, homework; v0.9 grey-glass home, rewards, long videos.
+Current: **v0.16.3** (2026-10-28): Flash videos stream every part and no longer pause on re-plans, course videos overlap (292 s -> 171 s for two), languages made side by side, worksheets and papers with the full question count in the selected language and a download popup, progress bars that show only real progress, animated take-away buttons.
+Earlier: v0.16.0 Flash and Pro, memory of what already exists, technical topics shown with code and network scenes, reference notes, retries and readiness checks, fact checker; v0.15.2 coherent long videos and courses, "Teach me" removed from titles, expressive narration, non-blocking photos; v0.15.0 subject-aware prompt and faster first scene, PDF progress, Android parts and chat video; v0.14.x PDF Markdown and figures, caching, Learnverse worlds, chat videos, resilience; v0.13 Android app; v0.10 photos, modes, homework; v0.9 grey-glass home, rewards, long videos.
 Full per-version notes: `progress.md` and `docs/README-notes.md`.

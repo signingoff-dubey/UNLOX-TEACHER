@@ -226,7 +226,13 @@ class _NLLB:
             config.NLLB_MODEL, dtype=torch.float16 if self.device == "cuda" else torch.float32,
         ).to(self.device).eval()
 
+    _gen_lock = threading.Lock()                 # languages are made side by side; the model (and the tokenizer's source language) is shared
+
     def translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4, src: str = "eng_Latn") -> list[str]:
+        with self._gen_lock:
+            return self._translate(texts, tgt, batch_size, beams, src)
+
+    def _translate(self, texts: list[str], tgt: str, batch_size: int = 16, beams: int = 4, src: str = "eng_Latn") -> list[str]:
         out: list[str] = []
         bos = self.tok.convert_tokens_to_ids(tgt)
         self.tok.src_lang = src

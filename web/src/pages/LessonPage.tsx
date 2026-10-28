@@ -96,25 +96,28 @@ export const LessonPage: React.FC<Props> = (
     p.addEventListener("ended", onEnd);
     return () => p.removeEventListener("ended", onEnd);
   }, [lesson?.building, frames, lesson?.id, lang]);
+  // Continuous flow: when an episode ends, start the next one; if it is still being made, wait and start it when ready.
+  const nextEpisode = useCallback(() => {
+    if (!playlist) return;
+    const next = playlist.episodes[episode + 1];
+    if (!next) { award({ type: "course_complete", course_id: playlist.id }); return; }
+    if (playable(next)) onEpisode?.(episode + 1);                 // ready, or already playing while it is made
+    else if (next.status !== "failed") setWaitingNext(true);
+  }, [playlist, episode, onEpisode, award]);
   useEffect(() => {
     const p = player.current;
     const at = stalledAt.current;
-    if (p && at !== null && frames - 1 > at) { stalledAt.current = null; p.seekTo(at); p.play(); }
-  }, [frames]);
-
-  // Continuous flow: when an episode ends, start the next one; if it is still being made, wait and start it when ready.
+    if (!p || at === null) return;
+    if (frames - 1 > at) { stalledAt.current = null; p.seekTo(at); p.play(); }
+    else if (!lesson?.building) { stalledAt.current = null; nextEpisode(); }      // the finished lesson is no longer than where it stopped: it has really ended
+  }, [frames, lesson?.building, nextEpisode]);
   useEffect(() => {
     const p = player.current;
     if (!p || !playlist) return;
-    const onEnd = () => {
-      const next = playlist.episodes[episode + 1];
-      if (!next) { award({ type: "course_complete", course_id: playlist.id }); return; }
-      if (playable(next)) onEpisode?.(episode + 1);                 // ready, or already playing while it is made
-      else if (next.status !== "failed") setWaitingNext(true);
-    };
+    const onEnd = () => { if (!lesson?.building) nextEpisode(); };      // running out of scenes while the rest is made is a pause, not the end
     p.addEventListener("ended", onEnd);
     return () => p.removeEventListener("ended", onEnd);
-  }, [track, playlist, episode, onEpisode, award]);
+  }, [track, playlist, lesson?.building, nextEpisode]);
   useEffect(() => {
     if (waitingNext && playable(playlist?.episodes[episode + 1])) { setWaitingNext(false); onEpisode?.(episode + 1); }
   }, [waitingNext, playlist, episode, onEpisode]);

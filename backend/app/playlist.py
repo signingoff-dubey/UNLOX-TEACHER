@@ -164,7 +164,7 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
     def build_one(i: int) -> None:
         if i:
             planned[i - 1].wait()          # episode 1 gets the model to itself first, so it is playable sooner
-            resources.wait_for_headroom(f"episode {i + 1}", min_ram=2.0)       # memory is short: the next episode waits instead of freezing the computer
+            resources.wait_for_headroom(f"episode {i + 1}", min_ram=0.6, timeout=20)       # only when memory is nearly gone: the models are already loaded, so waiting longer frees nothing
         ep = pl["episodes"][i]
         ep["status"] = "building"
         with state_lock:

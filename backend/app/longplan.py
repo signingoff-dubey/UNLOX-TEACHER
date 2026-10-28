@@ -86,12 +86,16 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
     lock = threading.Lock()
     best = [0.08]
     done: dict[int, tuple[LessonPlan, list[dict]]] = {}
-    handed = [1]                       # parts already given to the player: part 1 is streamed token by token, the others whole and in order
 
-    def hand_over() -> None:           # lock held
-        while preview is not None and handed[0] in done:
-            preview.add_scenes([s.model_dump() for s in done[handed[0]][0].scenes])
-            handed[0] += 1
+    def feeder(i: int):
+        """Every part streams to the player token by token as it is written (the parts are written in order, so their scenes arrive in order).
+        A later part never shows a title card, and only the last one its quiz and summary (the finished parts drop them too, see content.clean_part)."""
+        if preview is None:
+            return None
+        if i == 0:
+            return preview.feed
+        last = i == n - 1
+        return preview.stream(lambda o: o.get("template") == "title" or (not last and o.get("template") in ("summary", "quiz")))
 
     def report(i: int, f: float) -> None:
         with lock:
@@ -108,11 +112,10 @@ def plan_long(concept: str, level: str, duration_s: int, upload: str | None, foc
                   "next": sb.chapters[i + 1].title if i + 1 < n else "", "taught": taught[:1400]}
         topic = f"{concept}: {ch.title}" if concept else ch.title
         got = plan_lesson(topic, level=level, duration_s=part_s, upload=upload, focus=focus, wps=wps, series=series,
-                          extra=extra, mode=mode, on_progress=lambda f: report(i, f), on_text=preview.feed if preview is not None and i == 0 else None)
+                          extra=extra, mode=mode, on_progress=lambda f: report(i, f), on_text=feeder(i), fast=preview is not None)
         report(i, 1.0)
         with lock:
             done[i] = got
-            hand_over()                # part 2 appears in the player as soon as parts 1 and 2 are both written
         return got
 
     with ThreadPoolExecutor(max_workers=max(1, min(WORKERS, n))) as pool:

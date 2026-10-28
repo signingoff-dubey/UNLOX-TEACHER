@@ -78,6 +78,7 @@ class ScenePreview:
         self._lock = threading.Lock()
         self._gen = 0
         self._seen = 0
+        self._main = {"seen": 0, "skip": 0, "reject": reject}      # the first (or only) part, fed through feed()
         self._closed = False
         self._pp: list = []                    # ScenePlan objects made so far (after cleaning)
         self._track: dict | None = None
@@ -107,21 +108,34 @@ class ScenePreview:
 
     # ---- fed by the planner's token stream
     def feed(self, text: str) -> None:
+        self._feed(self._main, text)
+
+    def stream(self, reject: Callable[[dict], bool] | None = None) -> Callable[[str], None]:
+        """A token stream of its own for a later part of a long video: its scenes go after everything fed so far."""
+        state = {"seen": 0, "skip": 0, "reject": reject}
+        return lambda text: self._feed(state, text)
+
+    def _feed(self, state: dict, text: str) -> None:
         title, scenes = extract_scenes(text)
         with self._lock:
             if self._closed:
                 return
-            if title:
+            if title and state is self._main:
                 self.title = title
-            if len(scenes) < self._seen:                       # the planner started over (a retry): forget what was shown
-                self._gen += 1
-                self._seen = 0
-                self._pp, self._track = [], None
-            new = scenes[self._seen:]
-            self._seen = len(scenes)
+            if len(scenes) < state["seen"]:                   # the planner started over (a retry): what is on screen stays, the new answer carries on after it
+                state["skip"] = max(state["skip"], state["seen"])
+                state["seen"] = 0
+            base = state["seen"]
+            new = scenes[base:]
+            state["seen"] = len(scenes)
+            if state is self._main:
+                self._seen = max(self._seen, state["seen"])
             gen = self._gen
-        for obj in new:
-            if self.reject is None or not self.reject(obj):
+        reject = state["reject"]
+        for k, obj in enumerate(new):
+            if base + k < state["skip"]:
+                continue
+            if reject is None or not reject(obj):
                 self._q.put((gen, obj))
 
     def add_scenes(self, objs: list[dict]) -> None:

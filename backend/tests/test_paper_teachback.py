@@ -97,3 +97,41 @@ def test_teachback_falls_back_to_shared_words_and_rejects_empty_answers(lesson, 
 def test_option_letters_the_model_wrote_are_removed():
     doc = paper.PaperDoc(questions=[paper.PaperQ(kind="mcq", question="Which gas do plants take in?", options=["a) O2", "B. CO2", "(c) N2", "4: H2"], answer_index=1)])
     assert paper.clean(doc, {"mcq": 1})[0].options == ["O2", "CO2", "N2", "H2"]                            # "a)" "B." "(c)" "4:" markers go
+
+
+def test_each_section_is_written_on_its_own_and_topped_up_when_the_model_writes_too_few(lesson, monkeypatch):
+    monkeypatch.setattr(config, "LLM_BACKEND", "ollama")
+    asks = []
+
+    def fake_ask(schema, prompt, **kw):
+        asks.append(prompt)
+        n = len(asks)
+        if "multiple-choice" in prompt:
+            qs = [paper.PaperQ(kind="mcq", question=f"Which fact number {n}-{i} is true?", options=["a", "b", "c", "d"], answer_index=1) for i in range(2)]
+            qs.append(paper.PaperQ(kind="mcq", question="How it works?: Plants take in sunlight, water and carbon dioxide.", options=["a", "b", "c", "d"]))   # a copied lesson line
+            return paper.PaperDoc(title="Plants", questions=qs)
+        return paper.PaperDoc(questions=[paper.PaperQ(kind="mcq", question="Explain where it happens.", answer="In the chloroplasts.")])   # wrong label: still a short one
+
+    monkeypatch.setattr(paper.llm, "ask_json", fake_ask)
+    p = paper.generate("L1", {"mcq": 5, "short": 1, "long": 0})
+    assert p["counts"] == {"mcq": 5, "short": 1, "long": 0}                       # 2 + 2 + 1: topped up until the count is right
+    assert sum("multiple-choice" in a for a in asks) == 3 and "Do not repeat these questions" in asks[1]
+    assert not any("Plants take in" in q["question"] for q in p["questions"])     # the copied line never reaches the paper
+
+
+def test_lesson_lines_are_not_questions():
+    assert not paper.is_question("Why Do We Need Cyber Security?: In today's digital world, cyber security keeps us safe.")
+    assert not paper.is_question("Hackers trick people into sharing passwords.")
+    assert paper.is_question("What does HTTPS do?") and paper.is_question("Explain how phishing works.") and paper.is_question("A strong password has ___ characters.")
+
+
+def test_a_paper_downloads_as_a_named_html_file(lesson, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    p = paper.generate("L1", {"mcq": 1, "short": 1, "long": 0})
+    c = TestClient(main.app)
+    r = c.get(f"/api/papers/{p['id']}/html?download=true")
+    assert r.status_code == 200 and r.headers["content-disposition"] == 'attachment; filename="photosynthesis-worksheet-en.html"'
+    r = c.get(f"/api/papers/{p['id']}/html?key=true&download=true")
+    assert r.headers["content-disposition"].endswith('-answers.html"') and "Answer:" in r.text
+    assert "content-disposition" not in c.get(f"/api/papers/{p['id']}/html").headers            # opened to print, not saved

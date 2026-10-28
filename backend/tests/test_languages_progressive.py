@@ -23,6 +23,22 @@ def test_languages_are_added_one_by_one_and_a_failure_does_not_stop_the_rest(mon
         return {"lang": code}, 1.5
 
     pipeline.finish_languages("abc", ["hi", "te", "ta"], make_track)
-    assert saved[0] == (["en", "hi"], ["te", "ta"])             # Hindi is visible as soon as it is done
+    assert len(saved) == 3 and saved[-1] == (["en", "hi", "ta"], [])     # every language is saved as soon as it is done (side by side, so in any order)
     assert list(lesson["languages"]) == ["en", "hi", "ta"]       # order the learner picked, Telugu skipped
     assert lesson["pending"] == [] and lesson["failed"][0]["code"] == "te"
+
+
+def test_languages_are_made_side_by_side(monkeypatch):
+    import threading
+    lesson = {"id": "abc", "languages": {"en": {"lang": "en"}}, "pending": [{"code": c} for c in ("hi", "te", "ta")],
+              "failed": [], "order": ["en", "hi", "te", "ta"], "timings": {}}
+    monkeypatch.setattr(pipeline, "load_lesson", lambda _id: lesson)
+    monkeypatch.setattr(pipeline, "save_lesson", lambda l: None)
+    together = threading.Barrier(3, timeout=2)
+
+    def make_track(code, report=lambda f: None):
+        together.wait()                          # only passes when all three languages are being made at the same time
+        return {"lang": code}, 1.0
+
+    pipeline.finish_languages("abc", ["hi", "te", "ta"], make_track)
+    assert list(lesson["languages"]) == ["en", "hi", "te", "ta"] and lesson["failed"] == []

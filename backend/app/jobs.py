@@ -43,8 +43,8 @@ def submit(kind: str, fn: Callable[..., Any], *args: Any) -> dict:
 
     def progress(stage: str, value: float, **extra: Any) -> None:
         """`extra` is attached to the job as it is (e.g. the id of a lesson whose first scenes can already be watched)."""
-        with _lock:
-            job.update(stage=stage, progress=round(min(max(value, 0.0), 1.0), 3), **extra)
+        with _lock:                                          # never backwards: a retry or a step that re-estimates keeps the bar where it got to
+            job.update(stage=stage, progress=max(job["progress"], round(min(max(value, 0.0), 1.0), 3)), **extra)
         if extra:
             _remember(job)                                   # e.g. the lesson id: worth keeping at once
 

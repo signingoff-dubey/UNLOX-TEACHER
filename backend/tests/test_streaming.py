@@ -69,7 +69,7 @@ def test_preview_publishes_each_scene_as_it_is_made(tmp_path, monkeypatch):
     assert path.read_text(encoding="utf-8") == before
 
 
-def test_a_retry_of_the_planner_starts_the_preview_over(tmp_path, monkeypatch):
+def test_a_retry_of_the_planner_keeps_what_is_on_screen_and_carries_on_after_it(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "_translated_scenes", lambda plan, lang: ((plan.title, [s.model_dump() for s in plan.scenes]), "none"))
     monkeypatch.setattr(pipeline, "_narrate", lambda tr, lang, on_progress=None, voice_lang=None: {
         "lang": lang, "name": "English", "native": "English", "title": tr[0], "duration_s": 2.5 * len(tr[1]), "tts_engines": [],
@@ -78,13 +78,19 @@ def test_a_retry_of_the_planner_starts_the_preview_over(tmp_path, monkeypatch):
     pv = ScenePreview("L2", "X", "en", [], ["en"], 4, path)
     pv.feed(json.dumps(PLAN))
     time.sleep(0.6)
-    assert len(json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]) == 3
-    other = {"title": "Second try", "scenes": [{"template": "title", "heading": "Second try", "narration": "Another start."}]}
-    pv.feed(json.dumps(other))                                                            # fewer scenes than before: the planner began again
+    shown = [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]]
+    assert len(shown) == 3
+    retry = [{"template": "title", "heading": "Second try", "narration": "Another start."}]
+    pv.feed(json.dumps({"title": "Second try", "scenes": retry}))                        # fewer scenes than before: the planner began again
+    time.sleep(0.3)
+    assert [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == shown     # nothing is taken away from the player
+    retry += [{"template": "bullets", "heading": f"Retry {k}", "narration": "More about the idea here.", "items": ["a", "b"]} for k in range(3)]
+    pv.feed(json.dumps({"title": "Second try", "scenes": retry}))                        # the retry goes past what was shown: only the new scenes are added
     deadline = time.time() + 5
+    want = shown + ["Retry 2"]
     while time.time() < deadline:
-        if [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == ["Second try"]:
+        if [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == want:
             break
         time.sleep(0.05)
-    assert [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == ["Second try"]
+    assert [s["heading"] for s in json.loads(path.read_text(encoding="utf-8"))["languages"]["en"]["scenes"]] == want
     pv.close()

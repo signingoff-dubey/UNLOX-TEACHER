@@ -39,7 +39,7 @@ export const StudioButton: React.FC<Props> = ({ kind, label, hint, state, wanted
 
 /** The Meta quiz button: same flow while the world is being built from everything the AI wrote. */
 export const MetaButton: React.FC<{ busy: { progress: number; stage: string } | null | undefined; disabled: boolean; onClick: () => void }> = ({ busy, disabled, onClick }) => {
-  const shown = useSteadyProgress(busy?.progress ?? 0, !!busy, 40);
+  const shown = useSteadyProgress(busy?.progress ?? 0, !!busy);
   const pct = Math.floor(shown * 100);
   return (
     <button type="button" className={`studio-btn meta${busy ? " is-busy" : ""}`} disabled={disabled} aria-busy={!!busy} onClick={onClick}

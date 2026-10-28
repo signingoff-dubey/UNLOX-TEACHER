@@ -77,3 +77,34 @@ def test_urgent_waiter_goes_before_normal_waiter():
     for t in (h, normal, urgent):
         t.join(2)
     assert order == ["urgent", "normal"]
+
+
+def test_shared_holders_overlap_and_ocr_waits_for_all_of_them():
+    slot, events, lock = BigSlot(), [], threading.Lock()
+    both_in, release = threading.Barrier(2, timeout=2), threading.Event()
+
+    def lesson(name):
+        with slot.hold("planner", urgent=True, shared=True):
+            with lock:
+                events.append(f"{name}-in")
+            both_in.wait()                       # only passes if the two lessons hold the slot at the same time
+            release.wait(2)
+            with lock:
+                events.append(f"{name}-out")
+
+    def ocr():
+        with slot.hold("ocr"):
+            with lock:
+                events.append("ocr-in")
+
+    a, b = threading.Thread(target=lesson, args=("a",)), threading.Thread(target=lesson, args=("b",))
+    a.start(); b.start()
+    time.sleep(0.1)
+    c = threading.Thread(target=ocr)
+    c.start()
+    time.sleep(0.1)
+    assert "ocr-in" not in events
+    release.set()
+    for t in (a, b, c):
+        t.join(2)
+    assert events[-1] == "ocr-in" and sorted(events[:2]) == ["a-in", "b-in"]

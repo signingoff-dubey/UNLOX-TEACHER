@@ -44,7 +44,7 @@ def build_lesson(concept: str, languages: list[str], level: str = "beginner", du
 def _gpu_slot():
     try:
         from .gpu import big_slot
-        return big_slot.hold("planner", urgent=True)
+        return big_slot.hold("planner", urgent=True, shared=True)       # lessons share it (episodes of a course overlap); OCR waits for all of them
     except ImportError:                                   # OCR extras not installed
         import contextlib
         return contextlib.nullcontext()
@@ -110,7 +110,7 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
             plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, preview=preview)      # 1.5-4 min: planned in parts
         else:
             plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
-                                        series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
+                                        series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text, fast=on_text is not None)
         note = source_note(sources)
         for n in content.dedupe_plan(plan):                       # no repeated scene, code block or summary reaches the screen
             log.info("plan cleaned: %s", n)
@@ -252,9 +252,12 @@ def resume_languages(lesson_id: str, progress: Progress = lambda s, p: None) -> 
 _lesson_lock = threading.Lock()
 
 
+LANG_WORKERS = int(__import__("os").getenv("LANG_WORKERS", "3"))       # languages in flight: the translator is shared (one batch at a time), the voices overlap
+
+
 def finish_languages(lesson_id: str, codes: list[str], make_track, progress: Progress = lambda s, p: None) -> dict:
-    """The other languages of a lesson, one by one: each is added to lesson.json as soon as it is ready, so the page shows it
-    right away. Translation (GPU, shared model) runs ahead while the previous language's voice is still being recorded."""
+    """The other languages of a lesson, side by side: each is added to lesson.json as soon as it is ready, so the page shows it
+    right away. Translation (GPU, shared model) takes turns behind its lock while the other languages' voices are being recorded."""
     def add(code: str, track: dict | None, secs: float, error: str = "") -> None:
         with _lesson_lock:
             lesson = load_lesson(lesson_id)
@@ -275,9 +278,10 @@ def finish_languages(lesson_id: str, codes: list[str], make_track, progress: Pro
             log.error("lesson %s: language %s failed: %s", lesson_id, code, e, exc_info=True)
             add(code, None, 0.0, f"{type(e).__name__}: {e}")
 
-    for k, code in enumerate(codes):
-        progress(f"Making {get_lang(code).name}", k / max(len(codes), 1))
-        one(code)
+    progress("Making " + ", ".join(get_lang(c).name for c in codes), 0.0)
+    with ThreadPoolExecutor(max_workers=max(1, min(len(codes), LANG_WORKERS))) as pool:
+        for k, _ in enumerate(pool.map(one, codes), 1):
+            progress(f"{k} of {len(codes)} languages ready", k / max(len(codes), 1))
     progress("Ready", 1.0)
     return {"id": lesson_id}
 

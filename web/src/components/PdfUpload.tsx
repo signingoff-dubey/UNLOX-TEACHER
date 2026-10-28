@@ -14,15 +14,13 @@ type Props = {
 const SEND_SHARE = 0.12;
 
 /**
- * Eases `shown` towards `target` every frame and, while work is going on, creeps forward slowly between updates (never more than 3 %
- * past what the backend has reported), so the bar moves steadily instead of in jumps. It never goes backwards, except for a new upload.
+ * Eases `shown` towards `target` (what the backend reported) every frame, so the bar glides instead of jumping. It never runs ahead
+ * of the real value and never goes backwards, except for a new upload.
  */
-function useSmoothed(target: number, active: boolean): number {
+function useSmoothed(target: number): number {
   const [shown, setShown] = useState(0);
   const goal = useRef(target);
-  const live = useRef(active);
   goal.current = target;
-  live.current = active;
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
@@ -32,9 +30,7 @@ function useSmoothed(target: number, active: boolean): number {
       setShown((cur) => {
         const g = goal.current;
         if (g < cur - 0.2) return g;                                    // a new upload starts over
-        let next = cur + (g - cur) * Math.min(1, dt * 6);               // ease towards what the backend reported
-        if (live.current && g < 0.99) next = Math.min(Math.max(next, cur) + dt * 0.006, g + 0.03);     // creep while waiting for the next report
-        next = Math.max(next, cur);
+        const next = Math.max(cur + (g - cur) * Math.min(1, dt * 6), cur);              // ease towards what the backend reported
         return Math.abs(next - cur) < 0.0002 ? cur : next;
       });
       raf = requestAnimationFrame(step);
@@ -130,7 +126,7 @@ export const PdfUpload: React.FC<Props> = ({ sha, onSha, focus, onFocus, disable
   const busy = phase === "uploading" || phase === "reading";
   const target = phase === "uploading" ? SEND_SHARE * pct : phase === "reading" ? SEND_SHARE + (1 - SEND_SHARE) * pct
     : status ? status.tesseract_done / Math.max(status.scanned, 1) : 0;
-  const shown = useSmoothed(busy ? target : status?.state === "ocr" ? target : 0, busy || status?.state === "ocr");
+  const shown = useSmoothed(busy ? target : status?.state === "ocr" ? target : 0);
   let line = "";
   if (phase === "uploading") line = `Uploading ${Math.round(pct * 100)}% of the file`;
   else if (phase === "reading") line = `${stage || "Reading pages"} · ${Math.round(shown * 100)}%`;
