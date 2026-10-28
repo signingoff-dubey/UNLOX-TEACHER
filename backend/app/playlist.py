@@ -114,12 +114,12 @@ def series_context(pl: dict, i: int) -> dict:
 
 # ------------------------------------------------------------------ build
 def start(topic: str, languages: list[str], level: str, duration_s: int, n_episodes: int, documents: list[str],
-          images: list[str] | None = None, mode: str = "explain") -> dict:
+          images: list[str] | None = None, mode: str = "explain", quality: str = "flash") -> dict:
     """Create the playlist record right away so the client has an id to poll before the long job starts."""
     topic = content.clean_topic(topic) if topic.strip() else topic
     pl = {"id": uuid.uuid4().hex[:10], "topic": topic, "title": topic, "created": int(time.time()), "status": "planning",
           "languages": languages, "level": level, "duration_s": duration_s, "documents": documents,
-          "images": images or [], "mode": mode,
+          "images": images or [], "mode": mode, "quality": quality if quality == "pro" else "flash",
           "requested": 0 if n_episodes == 0 else min(max(n_episodes, MIN_EPISODES), MAX_EPISODES), "episodes": [], "error": None}
     save(pl)
     return pl
@@ -186,7 +186,7 @@ def build(playlist_id: str, progress=lambda s, p: None) -> dict:
             try:
                 lesson = build_lesson(f"{pl['topic']}: {ep['title']}", pl["languages"], pl["level"], pl["duration_s"],
                                       pl["documents"], series=series_context(pl, i), images=pl.get("images", []),
-                                      mode=pl.get("mode", "explain"), progressive=True, progress=report)      # every episode streams its scenes
+                                      mode=pl.get("mode", "explain"), progressive=True, quality=pl.get("quality", "flash"), progress=report)      # Flash: every episode streams its scenes
                 ep.pop("preview", None)
                 ep.update(lesson_id=lesson["id"], status="ready", error=None, duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
                 break
@@ -332,7 +332,7 @@ def build_extra(playlist_id: str, index: int, progress=lambda s, p, **kw: None) 
         try:
             lesson = build_lesson(ep.get("topic") or ep["title"], pl["languages"], pl["level"], ep.get("target_s") or pl["duration_s"],
                                   pl["documents"] if continues else [], series=series_context(pl, index) if continues else None,
-                                  mode=pl.get("mode", "explain"), progressive=True, progress=report)
+                                  mode=pl.get("mode", "explain"), progressive=True, quality=pl.get("quality", "flash"), progress=report)
             _update_episode(playlist_id, index, lesson_id=lesson["id"], status="ready", error=None, preview=False,
                             duration_s=max(t["duration_s"] for t in lesson["languages"].values()))
             return {"playlist_id": playlist_id, "index": index, "lesson_id": lesson["id"]}

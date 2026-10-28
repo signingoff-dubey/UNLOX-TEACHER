@@ -38,3 +38,6 @@ data/library/
 data/uploads/
 data/bench/
 data/profile.json
+
+# hand-written lessons (local only); data/kb_extra/ reference notes are part of the backend and ARE committed
+data/curated/

@@ -16,8 +16,8 @@ from .longplan import LONG_MIN, plan_long
 from .planner import plan_lesson
 from .director import direct
 from .review import review as review_plan
-from . import content, expression
-from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan
+from . import content, expression, facts
+from .schema import LIST_FIELDS, TEXT_FIELDS, LessonPlan, normalize
 from .translate import translate_batch
 from .tts import synthesize
 
@@ -30,14 +30,15 @@ Progress = Callable[[str, float], None]
 def build_lesson(concept: str, languages: list[str], level: str = "beginner", duration_s: int = 60,
                  documents: list[str] | None = None, series: dict | None = None, focus: str = "",
                  images: list[str] | None = None, mode: str = "explain", progressive: bool = False,
-                 progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
+                 plan: LessonPlan | None = None, quality: str = "flash", progress: Progress = lambda s, p: None) -> dict:       # `progress` last: jobs.submit appends it
     """Builds a lesson. `documents` holds uploaded PDFs (their sha): facts come from the first one before the
     library; with an empty concept or a `focus` like "chapter 4", the lesson teaches that part of the PDF."""
     concept = content.clean_topic(concept) if concept.strip() else concept          # never "Teach me about ..." in a title or a caption
     # Hold the GPU for the whole build: background OCR (Unlimited-OCR, ~6.8 GB) yields between pages
     # so the LLM and NLLB fit in 8 GB, and never reloads mid-lesson.
+    quality = "pro" if quality == "pro" else "flash"
     with _gpu_slot():
-        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus, images or [], mode, progressive)
+        return _build(concept, languages, level, duration_s, documents or [], series, progress, focus, images or [], mode, progressive, plan, quality)
 
 
 def _gpu_slot():
@@ -50,7 +51,8 @@ def _gpu_slot():
 
 
 def _build(concept: str, languages: list[str], level: str, duration_s: int, documents: list[str],
-           series: dict | None, progress: Progress, focus: str, images: list[str], mode: str, progressive: bool) -> dict:
+           series: dict | None, progress: Progress, focus: str, images: list[str], mode: str, progressive: bool,
+           plan_override: LessonPlan | None = None, quality: str = "flash") -> dict:
     upload = documents[0] if documents else None
     if vision.pending(images):
         progress("Reading your photo", 0.03)                  # the learner did not have to wait for it: the lesson starts with it
@@ -81,35 +83,54 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
     lesson_id = uuid.uuid4().hex[:10]
     out_dir = LESSONS_DIR / lesson_id
 
-    # The first scenes are made while the planner is still writing, so the player can start at once (see streaming.py).
-    preview = None
-    on_text = None
-    long_video = duration_s > LONG_MIN and config.LLM_BACKEND != "mock"
-    if progressive and config.LLM_BACKEND != "mock":
-        from .longplan import parts_for
-        from .planner import scene_target
-        from .streaming import ScenePreview
-        expected = parts_for(duration_s) * scene_target(round(duration_s / parts_for(duration_s))) if long_video else scene_target(duration_s)
-        preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, expected, lesson_path(lesson_id),
-                               on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id),
-                               reject=(lambda o: o.get("template") in ("summary", "quiz")) if long_video else None)      # part 1 of a long video has no quiz or summary
-        on_text = preview.feed
-    if long_video:
-        plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, preview=preview)      # 1.5-4 min: planned in parts
+    if plan_override is not None:                             # a plan that was written by hand: no planner, director, review or fact check, everything after is the same
+        plan, sources, preview = normalize(plan_override), [], None
+        review_notes, fact_report = ["hand-written plan: it was not planned, directed, reviewed or fact-checked by the model"], None
+        timings = {"plan_s": 0.0}
     else:
-        plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
-                                    series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
-    note = source_note(sources)
-    for n in content.dedupe_plan(plan):                       # no repeated scene, code block or summary reaches the screen
-        log.info("plan cleaned: %s", n)
-    progress("Designing the visuals", 0.43)
-    plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
-    progress("Checking the lesson", 0.57)
-    plan, review_notes = review_plan(plan, duration_s, wps)
-    review_notes = director_notes + review_notes
-    if series is not None:
-        raw_progress("Checking the lesson", 0.58, taught=content.taught_summary(plan))       # the next video of the course is planned knowing this
-    timings = {"plan_s": round(time.perf_counter() - t0, 2)}
+        # The first scenes are made while the planner is still writing, so the player can start at once (see streaming.py).
+        preview = None
+        on_text = None
+        long_video = duration_s > LONG_MIN and config.LLM_BACKEND != "mock"
+        pro = quality == "pro" and config.LLM_BACKEND != "mock"
+        if progressive and config.LLM_BACKEND != "mock" and not pro:             # Flash shows the first scenes while the rest is still being written; Pro shows nothing until it is all planned
+            from .longplan import parts_for
+            from .planner import scene_target
+            from .streaming import ScenePreview
+            expected = parts_for(duration_s) * scene_target(round(duration_s / parts_for(duration_s))) if long_video else scene_target(duration_s)
+            preview = ScenePreview(lesson_id, concept or "Your lesson", langs[0], langs[1:], langs, expected, lesson_path(lesson_id),
+                                   on_first=lambda: raw_progress(last[0], last[1], lesson_id=lesson_id),
+                                   reject=(lambda o: o.get("template") in ("summary", "quiz")) if long_video else None)      # part 1 of a long video has no quiz or summary
+            on_text = preview.feed
+        if pro:
+            from .longplan import plan_pro
+            progress("Planning the whole video", 0.02)
+            plan, sources = plan_pro(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, course=series)
+        elif long_video:
+            plan, sources = plan_long(concept, level, duration_s, upload, focus, wps, on_plan, extra, mode, preview=preview)      # 1.5-4 min: planned in parts
+        else:
+            plan, sources = plan_lesson(concept, level=level, duration_s=duration_s, upload=upload, focus=focus, wps=wps,
+                                        series=series, on_progress=on_plan, extra=extra, mode=mode, on_text=on_text)
+        note = source_note(sources)
+        for n in content.dedupe_plan(plan):                       # no repeated scene, code block or summary reaches the screen
+            log.info("plan cleaned: %s", n)
+        from .planner import subject_of
+        for n in content.strip_analogies(plan, keep=1 if any(subject_of(concept)) else 2):      # one everyday comparison per technical video is enough
+            log.info("plan cleaned: %s", n)
+        progress("Designing the visuals", 0.43)
+        plan, director_notes = direct(plan, concept, lambda f: progress("Designing the visuals", 0.43 + 0.13 * f))
+        progress("Checking the lesson", 0.57)
+        plan, review_notes = review_plan(plan, duration_s, wps)
+        review_notes = director_notes + review_notes
+        fact_report = None
+        if config.FACTCHECK and config.LLM_BACKEND != "mock":
+            progress("Checking the facts", 0.575)
+            fact_report = facts.check_plan(plan, concept or plan.title, upload, budget_s=config.FACTCHECK_BUDGET_S * (2 if pro else 1),
+                                           progress=lambda f: progress("Checking the facts", 0.575 + 0.02 * f))
+            review_notes = review_notes + fact_report.notes()
+        if series is not None:
+            raw_progress("Checking the lesson", 0.58, taught=content.taught_summary(plan))       # the next video of the course is planned knowing this
+        timings = {"plan_s": round(time.perf_counter() - t0, 2)}
 
     out_dir.mkdir(parents=True, exist_ok=True)
     if preview is not None:
@@ -180,6 +201,8 @@ def _build(concept: str, languages: list[str], level: str, duration_s: int, docu
         "documents": documents or [],
         "series": series,                             # set when this lesson is an episode of a playlist
         "review": review_notes,
+        "facts": fact_report.summary() if fact_report else None,
+        "quality": quality,
         "languages": tracks,
         "pending": [{"code": c, "name": get_lang(c).name, "native": get_lang(c).native} for c in rest],   # still being made, one by one
         "failed": [],

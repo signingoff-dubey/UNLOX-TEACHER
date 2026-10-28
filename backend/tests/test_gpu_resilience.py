@@ -79,7 +79,7 @@ def test_a_course_episode_with_a_cuda_error_is_retried_and_the_first_episode_ope
     calls = []
     saved = []
 
-    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, progress=None):
+    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, quality="flash", progress=None):
         calls.append(progressive)
         if len(calls) == 1:
             progress("Planning", 0.1, lesson_id="early123")                 # the first scenes exist
@@ -104,7 +104,7 @@ def test_a_course_episode_with_a_cuda_error_is_retried_and_the_first_episode_ope
 def test_every_course_episode_streams_its_scenes(monkeypatch):
     seen = []
 
-    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, progress=None):
+    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, quality="flash", progress=None):
         seen.append((concept, progressive))
         progress("Planning", 0.7, lesson_id=f"early-{len(seen)}")             # past planning: the next episode may start
         return {"id": f"early-{len(seen)}", "languages": {"en": {"duration_s": 40.0}}}

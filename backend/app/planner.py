@@ -8,7 +8,7 @@ import re
 import requests
 from pydantic import ValidationError
 
-from . import config, content, llm
+from . import config, content, llm, memory
 from .knowledge import Passage, pages_passages, retrieve
 from .schema import ICONS, LessonPlan, ScenePlan, normalize
 
@@ -96,9 +96,35 @@ MATH_WORDS = re.compile(r"\b(maths?|mathematics|algebra|geometry|graphs?|plot\w*
                         r"quadratic|cubic|calculus|derivatives?|integrals?|exponential|physics|motion|velocity|slope|curves?|coordinates?|ellipse|angles?|"
                         r"triangles?|statistics|probability|sqrt|logarithm\w*)\b", re.I)
 CODE_WORDS = re.compile(r"\b(python|java|javascript|typescript|rust|golang|go lang|c\+\+|c#|sql|react|jsx|html|css|node|code|coding|programming?|"
-                        r"loops?|arrays?|algorithms?|recursion|variables?|syntax|api|database|git|linux|bash|shell|compilers?|classes|objects?|pointers?)\b", re.I)
+                        r"loops?|arrays?|algorithms?|recursion|variables?|syntax|api|database|git|linux|bash|shell|compilers?|classes|objects?|pointers?|dsa|"
+                        r"data structures?|avl|bst|binary (search )?trees?|linked lists?|stacks?|queues?|heaps?|hash ?(maps?|tables?)|sorting|searching|big-?o|"
+                        r"graph algorithms?|dijkstra|bfs|dfs|mern|mean stack|oop|oops|dbms)\b", re.I)
+NET_WORDS = re.compile(r"\b(trees?|avl|bst|graphs? (theory|algorithms?)|linked lists?|networks?|hierarch\w+|architecture|pipeline|flowcharts?|mind ?maps?|"
+                       r"org(anisation|anization)? chart|family tree|heaps?|tries?|dijkstra|bfs|dfs|stack|mern|mean stack|osi|tcp|internet|food (web|chain))\b", re.I)
+LANGS = {"python": "python", "java": "java", "javascript": "javascript", "js": "javascript", "typescript": "typescript", "c++": "cpp", "cpp": "cpp", "c#": "csharp",
+         "rust": "rust", "go": "go", "golang": "go", "sql": "sql", "kotlin": "kotlin", "react": "jsx", "html": "html", "bash": "bash", "c": "c"}
 SUBJECT_DROP = {"graph": frozenset({"curves", "marks", "equation", "x_range", "y_range"}),
-                "code": frozenset({"code_lang", "code", "highlights", "output"})}
+                "code": frozenset({"code_lang", "code", "highlights", "output"}),
+                "net": frozenset({"nodes", "edges", "positions"})}
+
+
+def network_subject(concept: str) -> bool:
+    """Trees, linked structures, pipelines and hierarchies are drawn as boxes and arrows (the network template). An unknown subject keeps it."""
+    c = (concept or "").strip()
+    return True if (not c or len(c) > 120) else bool(NET_WORDS.search(c))
+
+
+def language_of(concept: str) -> str:
+    """The programming language the learner named ("... in C language", "python loops"), or "" when none is named."""
+    low = (concept or "").lower()
+    for word in sorted(LANGS, key=len, reverse=True):
+        if re.search(r"(?<![\w+#])" + re.escape(word) + r"(?![\w+#])" + (r"(?:\s+(?:language|programming))?" if word == "c" else ""), low):
+            if word == "c" and not re.search(r"\bin c\b|\bc (language|programming|code)\b|\busing c\b", low):
+                continue                                          # a lone "c" is not a language unless it is used like one
+            if word == "go" and not re.search(r"\bgolang\b|\bgo (language|programming)\b|\bin go\b", low):
+                continue
+            return LANGS[word]
+    return ""
 
 
 def subject_of(concept: str) -> tuple[bool, bool]:
@@ -109,19 +135,32 @@ def subject_of(concept: str) -> tuple[bool, bool]:
     return bool(MATH_WORDS.search(c)), bool(CODE_WORDS.search(c))
 
 
+_NET_T = ("- network: heading, narration, nodes (3-8 short labels, max 4 words), edges (arrows {\"src\":i,\"dst\":j} using positions in nodes; src is the parent or the start), "
+          "items (optional). The boxes are placed for you: never write positions. Use it to DRAW trees, linked structures, hierarchies, pipelines and architectures.\n")
+_NET_S = ("- TREES, LINKED STRUCTURES, HIERARCHIES, ARCHITECTURES, PIPELINES: draw them with a \"network\" scene (nodes and edges), one per key shape "
+          "(for example a tree before and after a rotation), not with bullets. The narration walks through the nodes in order.\n")
+_EX_NET = ('Example network scene: {{"template":"network","heading":"A right-heavy chain","narration":"Insert ten, then twenty, then thirty. Each new key goes to the right of the last, '
+           'so the tree leans into a line.","nodes":["10","20","30"],"edges":[{{"src":0,"dst":1}},{{"src":1,"dst":2}}],"items":[]}}\n')
+
+
 def system_prompt(concept: str = "") -> tuple[str, frozenset[str]]:
     """The system prompt for this concept and the schema fields to leave out of the example."""
     math, code = subject_of(concept)
+    net = network_subject(concept)
     parts = [_HEAD]
     if math:
         parts.append(_GRAPH_T)
     if code:
         parts.append(_CODE_T)
+    if net:
+        parts.append(_NET_T)
     parts.append("\n\nChoose the scenes by subject:\n")
     if math:
         parts += [_MATH_S, _REQ_MATH.rstrip("\n") + "\n", _GEOM]
     if code:
         parts += [_CODE_S, _REQ_CODE.rstrip("\n") + "\n"]
+    if net:
+        parts.append(_NET_S)
     variety = _VARIETY
     if not math:
         variety = variety.replace("graph, ", "")
@@ -132,9 +171,11 @@ def system_prompt(concept: str = "") -> tuple[str, frozenset[str]]:
         parts.append(_EX_GRAPH)
     if code:
         parts.append(_EX_CODE)
+    if net:
+        parts.append(_EX_NET)
     rules = _RULES if (math or code) else re.sub(r"^- For code and graph scenes[^\n]*\n", "", _RULES, flags=re.M)         # (that rule is about graph and code scenes only)
     parts.append(rules)
-    drop = frozenset().union(*(SUBJECT_DROP[k] for k, need in (("graph", math), ("code", code)) if not need))
+    drop = frozenset().union(*(SUBJECT_DROP[k] for k, need in (("graph", math), ("code", code), ("net", net)) if not need))
     return "".join(parts), drop
 
 
@@ -200,7 +241,8 @@ def plan_lesson(concept: str, level: str = "beginner", duration_s: int = 60, upl
             last_error = f"invalid JSON: {str(e)[:400]}"
             log.warning("Plan attempt %d invalid: %s", attempt + 1, last_error)
             continue
-        issue = quality_issue(plan, min_scenes=2 if (series and series.get('segment')) else 4)
+        issue = quality_issue(plan, min_scenes=2 if (series and series.get('segment')) else 4, questions=None if series else content.sub_questions(concept),
+                              technical=any(subject_of(concept)))
         if not issue:
             return plan, sources
         log.info("Plan attempt %d needs work: %s", attempt + 1, issue)
@@ -217,7 +259,7 @@ def _words(plan: LessonPlan) -> int:
     return sum(len(s.narration.split()) for s in plan.scenes)
 
 
-def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_scenes: int = 4) -> str | None:
+def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_scenes: int = 4, questions: list[str] | None = None, technical: bool = False) -> str | None:
     """Cheap checks for the ways small models write weak lessons. Returns feedback for a retry.
     Narration length is NOT checked here: the writer agent in review.py lengthens short scenes."""
     if len(plan.scenes) < min_scenes:
@@ -227,9 +269,16 @@ def quality_issue(plan: LessonPlan, duration_s: int = 60, wps: float = 2.3, min_
         for b in range(a + 1, len(lists)):
             if lists[a] and len(lists[a] & lists[b]) >= max(2, len(lists[a]) // 2):
                 return "two scenes repeat the same items; each scene must teach something different"
-    issue = content.schema_echo(plan) or content.repeated_headings(plan) or content.repeated_code(plan)
+    issue = content.schema_echo(plan) or content.repeated_headings(plan) or content.repeated_code(plan) or content.quiz_problem(plan)
     if issue:
         return issue
+    if technical and len(plan.scenes) >= 5 and all(s.template in ("title", "bullets", "flow", "compare", "summary", "quiz", "cycle") for s in plan.scenes):
+        return "this is a technical topic: show it, with a code scene, a network (boxes and arrows) scene or a graph scene, not only text scenes"
+    if content.analogy_overload(plan):
+        return "too many scenes rely on a comparison to an everyday object (a book, a cake, a seesaw): explain with the real terms, real numbers and one precise example instead"
+    missed = content.unanswered(plan, questions or [])
+    if missed:
+        return f"the lesson does not answer the learner's question: '{missed}'. Give it its own scene(s) with the real explanation"
     short = content.narration_problems(plan)
     if len(short) >= max(2, len(plan.scenes) // 3):
         return "the narration is too short: write 2-3 full sentences (about 25 words) in every scene that explain the idea, never a placeholder like 'Let's learn about'"
@@ -319,6 +368,7 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
                  extra: str = "", mode: str = "explain", on_text=None) -> str:
     words = round(duration_s * wps / 10) * 10                 # spoken words per second of the slowest chosen language
     scenes = 4 if duration_s <= 40 else 5 if duration_s <= 55 else 6 if duration_s <= 75 else 7
+    technical = any(subject_of(concept))
     audience = ("a complete beginner: plain words, one idea per scene, everyday examples" if level == "beginner"
                 else "an intermediate learner: assume the basics, add the why and one deeper detail or edge case")
     from .learner import age_hint
@@ -329,11 +379,13 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
             f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
     if series and series.get("segment"):
         # One part of ONE continuous video: it must flow on from the part before and into the part after.
-        scenes = max(3, min(6, round(duration_s / 10)))              # a part of 40-80 s: 4-6 scenes of about 25 words (3 parts at most)
+        scenes = series.get("scenes") or max(3, min(6, round(duration_s / 10)))              # a part of 40-80 s: 4-6 scenes of about 25 words (3 parts at most); Pro says how many
         user = (f"Create part {series['index']} of {series['total']} of ONE continuous video titled \"{series['title']}\" about {series['topic']}.\n"
                 f"Audience: {audience}.\n"
                 f"This part teaches only: {series['this']}\n"
                 f"Length: exactly {scenes} scenes and about {words} spoken words in total (about {duration_s} seconds).")
+        if series.get("beats"):
+            user += "\nThe whole video was outlined first. Write exactly one scene for each beat of THIS part, in this order, keeping its heading and template:\n" + series["beats"]
         if series["previous"]:
             user += ("\nAlready covered in earlier parts (do NOT repeat, build on it): " + " | ".join(series["previous"][-4:])
                      + "\nDo NOT start with a title scene and do not greet or say welcome: continue straight on; the first scene links to what was just taught in a few words.")
@@ -361,11 +413,29 @@ def _ollama_chat(concept: str, previous_error: str, level: str = "beginner", dur
     # What makes the content good, in as few words as possible: a student should learn something new from every scene.
     user += ("\nQuality bar: every scene adds NEW information, with specific facts, real numbers and one concrete example (never vague phrases such as "
              "'it helps a lot'); the narration is 2-3 full sentences of about 25 words that explain, not just announce the heading; never repeat a heading, "
-             "an example, a point or a piece of code that was already shown.")
+             "an example, a point or a piece of code that was already shown. Define every technical term the first time it is used. "
+             + ("This is a technical topic: use the precise terms and real values, and show it with code, a network (boxes and arrows) or a graph scene. "
+                "Use an everyday comparison only if it is exact and at most once in the whole video; never build the video around an object such as a book, a cake or a seesaw. "
+                if technical else "Use an everyday comparison only when it is exact, and at most twice in the whole video. ")
+             + "Every fact must be true: if you are not sure of a detail, leave it out.")
+    lang = language_of(concept)
+    if lang and subject_of(concept)[1]:
+        user += f"\nThe learner asked for {lang}: every code scene uses code_lang \"{lang}\" and valid {lang} syntax."
+    elif subject_of(concept)[1] and not subject_of(concept)[0]:
+        user += "\nNo programming language was named: use Python for the code scenes (code_lang \"python\")."
+    if series and series.get("segment") and series.get("library"):
+        user += "\n" + series["library"]
+    elif not series:
+        seen_before = memory.context(concept)                    # what the learner already has on this subject
+        if seen_before:
+            user += "\n" + seen_before
     if subject_of(concept)[1]:
         user += ("\nProgramming: build up in small steps: a minimal snippet, then the same idea with a variation or traced with real values, then the pitfall "
                  "or the cost. Every code scene shows DIFFERENT code that builds on the one before. Show only the lines that matter: never repeat a class or "
                  "main() skeleton. The code is correct, runnable and uses meaningful names.")
+    asked = content.sub_questions(concept) if not series else []
+    if asked:
+        user += "\nThe learner asked " + str(len(asked)) + " questions. Answer every one of them, in this order, each with its own scene(s) and the real explanation: " + " ".join(f"({i}) {q}?" for i, q in enumerate(asked, 1))
     if series and series.get("taught"):
         user += "\nAlready taught in earlier parts or videos (do NOT repeat these headings, points, examples or code; build on them and go further):\n" + series["taught"]
     if duration_s >= 45 and not (series and series.get("segment") and series.get("next")):

@@ -29,7 +29,7 @@ export default function App() {
   useScrollbars();
   const [screen, setScreen] = useState<Screen>("home");
   const [languages, setLanguages] = useState<Lang[]>([]);
-  const [settings, setSettings] = useState<LessonSettings>({ level: "beginner", duration_s: 60, languages: ["en", "hi"] });
+  const [settings, setSettings] = useState<LessonSettings>({ level: "beginner", duration_s: 60, languages: ["en", "hi"], quality: "flash" });
   const [concept, setConcept] = useState("");
   const [videos, setVideos] = useState(1);                      // 1 = one video, more = a course of that many, 0 = the AI picks (one video per concept)
   const [mode, setMode] = useState<Mode>("explain");           // what the student wants it for

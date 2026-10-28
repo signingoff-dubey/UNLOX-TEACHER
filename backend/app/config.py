@@ -44,6 +44,8 @@ PDF_FIGURES = os.getenv("PDF_FIGURES", "1") == "1"            # describe the pic
 # The model stays loaded between lessons (a cold load is ~24 s). One context size for EVERY call: Ollama reloads the model
 # whenever num_ctx changes between requests, which used to happen between the planner (8192/4096) and the other agents.
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "15m")
+LLM_RETRIES = int(os.getenv("LLM_RETRIES", "2"))                 # extra tries when Ollama is busy, restarting or slow to answer
+
 NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "6144"))
 # LLM layers on the GPU: "auto" = Ollama offloads as many layers as fit in VRAM (rest run on CPU),
 # a number = exactly that many layers, 0 = CPU only. DEVICE=cpu forces 0.
@@ -56,6 +58,9 @@ KB_DIR = Path(os.getenv("KB_DIR", ROOT / "data" / "kb"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "6"))
 # nomic-embed-text: on-topic school passages score >= ~0.73, loosely related ones ~0.6.
 RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.68"))
+# Fact checker (app/facts.py): compares the lesson with the sources and the model's own knowledge before it is recorded
+FACTCHECK = os.getenv("FACTCHECK", "1") == "1"
+FACTCHECK_BUDGET_S = float(os.getenv("FACTCHECK_BUDGET_S", "50"))      # the most time it may take; what is not checked by then is reported as unconfirmed
 
 # Translation: "nllb" (Meta NLLB-200, GPU), "indictrans2" (AI4Bharat, gated), "ollama" (LLM) or "none"
 TRANSLATE_BACKEND = os.getenv("TRANSLATE_BACKEND", "nllb")

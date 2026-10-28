@@ -1,11 +1,15 @@
 import React, { useEffect, useRef } from "react";
-import type { Lang, LessonSettings, LessonSummary, Level, PlaylistSummary } from "../api";
+import type { Lang, LessonSettings, LessonSummary, Level, PlaylistSummary, Quality } from "../api";
 import { Glyph } from "../ds/Glyph";
 import { PdfUpload } from "../components/PdfUpload";
 import type { Mode, PhotoItem } from "../photos";
 import { useRewards } from "../rewards/RewardsContext";
 import { Dashboard } from "./Dashboard";
 
+export const QUALITIES: [Quality, string, string][] = [
+  ["flash", "Flash", "Scenes appear within seconds and flow into each other while the rest is still being written"],
+  ["pro", "Pro", "The whole video is outlined and planned before anything is shown: slower, but more coherent, and checked more thoroughly"],
+];
 export const COUNTS = [0, 1, 2, 3];                        // 0 = Auto: the AI picks 1 to 3 videos. A course is at most 3: more is less coherent, and the first is the one people watch
 export const MODES: [Mode, string, string][] = [["explain", "Explanation", "Understand it"], ["study", "Study", "Revise for a test"], ["homework", "Homework", "Learn it and get the answers"], ["revise", "Revise", "Practise what you got wrong before"]];
 /** Up to 4 minutes. Over 1:30 the backend writes the video in parts (see backend/app/longplan.py). */
@@ -153,6 +157,15 @@ export const Home: React.FC<Props> = (p) => {
               ))}
             </div>
             <p className="mode-hint">{MODES.find(([m]) => m === p.mode)?.[2]}{p.mode === "homework" ? ". Attach the homework as a PDF or a photo; the answers are written as a file you read in the browser." : ""}</p>
+          </div>
+          <div className="wide">
+            <div className="field-label">Build <span className="muted">{QUALITIES.find(([q]) => q === s.quality)?.[2]}</span></div>
+            <div className="seg" role="radiogroup" aria-label="Flash or Pro">
+              {QUALITIES.map(([q, label, hint]) => (
+                <button type="button" key={q} role="radio" aria-checked={s.quality === q} className={s.quality === q ? "on" : ""} title={hint}
+                  onClick={() => p.onSettings({ ...s, quality: q })}>{label}</button>
+              ))}
+            </div>
           </div>
           <div>
             <div className="field-label">How many videos? <span className="muted">{p.videos === 0 ? "the AI counts the concepts" : ""}</span></div>

@@ -133,6 +133,62 @@ def schema_echo(plan: LessonPlan) -> str | None:
     return None
 
 
+_ANALOGY_WORDS = re.compile(r"\b(like a|like an|just like|as if|imagine a|imagine an|think of a|think of an|similar to a|is a bit like)\b", re.I)
+
+
+def analogy_overload(plan: LessonPlan) -> bool:
+    """More than a third of the scenes are comparisons to everyday things (a book, a cake, a seesaw): the lesson is about the object, not the subject."""
+    body = [s for s in plan.scenes if s.template not in ("title", "quiz", "summary")]
+    return len(body) >= 4 and sum(1 for s in body if _ANALOGY_WORDS.search(s.narration)) > max(2, len(body) // 3 + 1)
+
+
+_TAIL_ANALOGY = re.compile(r"[,;:\u2014-]?\s*(?:just |much |almost |exactly )?(?:like|as if|similar to|the way|as though)\s+(?:a|an|the|you|your|when|how|someone|people|stacking|stacked|finding|sorting|balancing|keeping)\b[^.!?]*(?=[.!?]|$)", re.I)
+_LEAD_ANALOGY = re.compile(r"^(?:it'?s|this is|that'?s|think of it|imagine|picture)\s+(?:just |a bit |kind of |exactly )?(?:like|as|a|an)\b[^.!?]*[.!?]\s*", re.I)
+
+
+def strip_analogies(plan: LessonPlan, keep: int = 1) -> list[str]:
+    """Keeps the first `keep` everyday comparisons of the video and removes the rest (a clause "..., just like a seesaw" at the end of a sentence, or a whole
+    sentence "It's like a seesaw."). A small model reaches for the same object again and again; in a technical lesson the real terms must carry it.
+    A narration is never cut below 12 words."""
+    notes: list[str] = []
+    seen = 0
+    for i, s in enumerate(plan.scenes):
+        if s.template in ("title", "quiz", "summary"):
+            continue
+        text = s.narration
+        found = bool(_TAIL_ANALOGY.search(text) or _LEAD_ANALOGY.search(text))
+        if not found:
+            continue
+        seen += 1
+        if seen <= keep:
+            continue
+        new = _LEAD_ANALOGY.sub("", text)
+        new = _TAIL_ANALOGY.sub("", new)
+        new = re.sub(r"\s+([.!?])", r"\1", new)
+        new = re.sub(r"([.!?])\s*\.", r"\1", new).strip()
+        if len(new.split()) >= 12 and new != text:
+            s.narration = new
+            notes.append(f"scene {i + 1}: removed an everyday comparison")
+    return notes
+
+
+def quiz_problem(plan: LessonPlan) -> str | None:
+    """A quiz needs a question, distinct options and a valid answer; it must not give the answer away in the narration."""
+    for s in plan.scenes:
+        if s.template != "quiz":
+            continue
+        opts = [o.strip().lower() for o in s.items]
+        if "?" not in s.narration:
+            return "the quiz scene must ask a clear question that ends with a question mark (not state facts)"
+        if len(opts) < 2 or len(set(opts)) < len(opts) or not 0 <= s.answer_index < len(opts):
+            return "the quiz needs distinct answer options and answer_index must point at the right one"
+        right = opts[s.answer_index]
+        asked = s.narration.split("?")[-1].lower()
+        if len(right) > 2 and right in asked:
+            return "the quiz narration gives the answer away after the question; end it with the question"
+    return None
+
+
 def repeated_headings(plan: LessonPlan) -> str | None:
     seen: set[str] = set()
     for s in plan.scenes:
@@ -159,6 +215,28 @@ def taught_summary(plan: LessonPlan, limit: int = 900) -> str:
         lines.append(entry)
     out = "\n".join(lines)
     return out[:limit]
+
+
+# ---------------------------------------------------------------- a request that asks more than one thing
+_SUBQ = re.compile(r"\s*(?:\?+|[,;]|\band\b)\s*(?=(?:why|how|what|when|where|which|who|does|do|is|are|can|will)\b)", re.I)
+_STOP = {"does", "this", "that", "with", "have", "from", "they", "them", "what", "when", "where", "which", "there", "their", "about", "only", "come", "comes",
+         "together", "into", "work", "works", "make", "makes", "made", "used", "using", "than", "then", "also", "would", "could", "should", "teach", "tell", "explain"}
+
+
+def sub_questions(text: str) -> list[str]:
+    """"how does the rainbow have 7 colours, why does it come only when sunlight and rain are together" is two questions; a lesson must answer both."""
+    parts = [p.strip(" ,.;?") for p in _SUBQ.split(text.strip()) if len(p.split()) >= 3]
+    return parts if len(parts) >= 2 else []
+
+
+def unanswered(plan: LessonPlan, questions: list[str]) -> str | None:
+    """The first question whose key words hardly appear anywhere in the lesson, or None when every question is addressed."""
+    heard = {w[:5] for w in re.findall(r"[a-z]+", " ".join(f"{s.heading} {s.narration} {' '.join(s.items)}" for s in plan.scenes).lower())}
+    for q in questions:
+        keys = {w[:5] for w in re.findall(r"[a-z]{4,}", q.lower()) if w not in _STOP}
+        if keys and sum(1 for k in keys if k in heard) / len(keys) < 0.5:
+            return q
+    return None
 
 
 # ---------------------------------------------------------------- the subject of a request, without the request

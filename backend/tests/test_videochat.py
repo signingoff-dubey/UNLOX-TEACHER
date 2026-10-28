@@ -91,7 +91,7 @@ def test_the_extra_video_is_built_scene_by_scene_and_marked_ready(store, monkeyp
     v = videochat.handle("L1", {"topic": "Black holes", "duration_s": 60})["video"]
     seen = []
 
-    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, progress=None):
+    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, quality="flash", progress=None):
         seen.append((concept, languages, duration_s, series, progressive))
         progress("Planning", 0.1, lesson_id="NEW1")                                   # scene 1 exists
         mid = playlist.load(v["playlist_id"])["episodes"][1]

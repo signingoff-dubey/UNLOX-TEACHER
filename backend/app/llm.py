@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from functools import lru_cache
 from typing import Callable, TypeVar
 
@@ -21,6 +22,30 @@ from . import config
 
 log = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
+
+def current_model() -> str:
+    """The language model for everything that is written or checked (Flash and Pro use the same one: a bigger model does not fit the 8 GB card, see issues.md)."""
+    return config.OLLAMA_MODEL
+
+
+def post(path: str, payload: dict, *, timeout: float, stream: bool = False) -> requests.Response:
+    """POST to Ollama, trying again (1 s, then 3 s) when it is busy loading a model, restarting or answering with a server error.
+    A request that was refused for a reason of its own (a 4xx) is not repeated."""
+    last: Exception | None = None
+    for attempt in range(config.LLM_RETRIES + 1):
+        try:
+            r = requests.post(f"{config.OLLAMA_URL}{path}", json=payload, timeout=timeout, stream=stream)
+            if r.status_code >= 500 and attempt < config.LLM_RETRIES:
+                last = requests.HTTPError(f"{r.status_code} from Ollama", response=r)
+            else:
+                return r
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last = e
+        if attempt < config.LLM_RETRIES:
+            log.warning("Ollama %s failed (%s); trying again", path, last)
+            time.sleep(1 + 2 * attempt)
+    raise last or requests.RequestException("Ollama did not answer")
+
 
 RULE = ("Return ONLY one JSON object (no markdown, no commentary before or after it) shaped exactly like this example. "
         "Each value shows the type or the allowed choices (a|b|c); write real values. Use only the fields you need:\n")
@@ -82,8 +107,8 @@ def extract_json(text: str) -> str:
 def stream_chat(messages: list[dict], options: dict | None = None, *, timeout: float = 300, expected_tokens: int = 400,
                 on_progress: Callable[[float], None] | None = None, on_text: Callable[[str], None] | None = None) -> str:
     """One streamed chat call (no `format`). Progress is tokens so far over what an answer of this kind usually needs."""
-    r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-        "model": config.OLLAMA_MODEL, "messages": messages, "stream": True, "keep_alive": config.OLLAMA_KEEP_ALIVE,
+    r = post("/api/chat", {
+        "model": current_model(), "messages": messages, "stream": True, "think": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
         "options": config.ollama_options(options or {}),
     }, timeout=timeout, stream=True)
     r.raise_for_status()

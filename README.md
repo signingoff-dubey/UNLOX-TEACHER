@@ -1,309 +1,361 @@
 # Chanakya
 
-Type a concept and get a 30–90 s narrated, animated lesson in English plus Indian languages.
-It plays in the browser and exports to MP4. Everything runs offline on one laptop.
+> Type a topic, attach a photo or a PDF, and get a narrated, animated video lesson in English and eight Indian languages, with quizzes, study tools and a tutor. Everything runs offline on one laptop (and on a phone). No outside AI service is ever called.
+
+**Latest release: v0.16.0** · Built for the Unlox hackathon · Repo: https://github.com/signingoff-dubey/UNLOX-TEACHER
 
 ```
-concept ─► retrieve facts from offline knowledge base (embeddings, ~1 ms search)
-        ─► Ollama LLM ─► lesson JSON (schema-checked) ─► IndicTrans2 ─► Piper / Indic Parler-TTS
-                                                                         │ audio length = scene length
-browser player ◄── Remotion scene templates ◄── timed lesson JSON ◄──────┘ captions timed to audio
-MP4 export     ◄── Remotion renderer (headless Chrome + bundled ffmpeg)
+topic / photo / PDF
+   │
+   ├─► memory of what the learner already has ─┐
+   ├─► offline knowledge base (Wikipedia + notes + your PDFs) ─┤
+   ▼                                           ▼
+ local LLM (Ollama) ──► lesson JSON (data only) ──► director ──► reviewer/writer ──► fact checker
+                                                                                    │
+ 9 languages: NLLB / IndicTrans2 ◄──────────────────────────────────────────────────┘
+        │
+        ▼
+ Piper / Indic-TTS / Parler voices (timed per sentence) ──► timed lesson ──► browser player (Remotion)
+                                                                          └► MP4 export (headless Chrome + ffmpeg)
 ```
 
-- **Data, never code:** the LLM only picks one of 10 templates (title, bullets, flow, cycle, compare, diagram, quiz, summary, **graph**, **code**) and fills in its text fields.
-- **Narration first:** each scene's voice is synthesized before anything is animated, and the scene lasts exactly as long as that audio plus 0.5 s. Item reveals and captions are timed against the same audio.
+**The rule that shapes everything:** the AI only ever returns *data* (a JSON lesson that is checked against a schema). It picks one of 11 scene templates and fills in text; our own code draws, times and renders every frame. Nothing the model writes is ever executed.
 
-## Knowledge base and retrieval (RAG)
+---
 
-Lessons are grounded in an offline knowledge base, so facts come from a source and not only from the 7B model's memory.
+## Contents
 
-- **Dataset:** about 300 school topics in `data/topics.txt`, covering biology, chemistry, physics, earth and space, maths, Indian geography, history and civics, economics and computers. They are fetched from **Simple English Wikipedia**, which is written for learners, with English Wikipedia as a fallback. The current build has 308 articles split into 3,500 passages.
-- **Your own material:** drop `.txt` or `.md` files (notes, syllabus text, worksheets) into `data/kb_extra/`, then rebuild.
-- **Indexing:** `backend/scripts/build_knowledge.py` splits articles by section into ~700-character passages and drops references and links sections. It embeds them with `nomic-embed-text` through Ollama and saves a normalised matrix in `data/kb/`. Rebuild offline with `--no-fetch`.
-- **Search:** one matrix-vector product (cosine similarity), plus a boost when the question names the article. At most 2 passages per article for variety, and a score cut-off (0.68) so unrelated topics add nothing. Takes ~35–60 ms.
-- **Use:** the top passages (up to ~4,000 characters) go into the planner prompt as reference material. Each lesson lists its **Sources**.
-- **Inspect it:** `GET /api/knowledge/search?q=how do vaccines work`.
+1. [Features](#features)
+2. [Flash and Pro](#flash-and-pro)
+3. [How a lesson is made](#how-a-lesson-is-made)
+4. [Models used](#models-used)
+5. [Languages and voices](#languages-and-voices)
+6. [Tech stack](#tech-stack)
+7. [Quick start](#quick-start)
+8. [Configuration](#configuration)
+9. [API](#api)
+10. [Project layout](#project-layout)
+11. [Quality, safety and fact checking](#quality-safety-and-fact-checking)
+12. [Android app](#android-app)
+13. [Testing](#testing)
+14. [Performance and hardware](#performance-and-hardware)
+15. [Known limits](#known-limits)
+16. [Licences](#licences)
+17. [Docs and team](#docs-and-team)
+18. [Changelog](#changelog)
 
-Wikipedia text is CC BY-SA 4.0. The articles are downloaded during setup, not stored in this repo, and each lesson links to the articles it used.
+---
 
-## Lessons from your own PDF
+## Features
 
-Attach a textbook or notes PDF (up to 2 GB / 1,000 pages) in the UI, or `POST /api/uploads`. Digital pages are read directly. Scanned pages go through **Tesseract** (about 6 pages/second on 22 cores: 1,000 pages in under 3 minutes, including embeddings and the search index) and then, when the GPU is idle, a higher-accuracy **Unlimited-OCR** pass that always gives way to lesson generation.
+### Make a lesson
+- **Any topic, any length from 30 s to 4 min.** Longer videos are written in parts; a course is 1 to 3 videos, and "Auto" lets the AI decide how many concepts a topic has.
+- **11 scene templates:** `title`, `bullets`, `flow`, `cycle`, `compare`, `diagram`, `quiz`, `summary`, `graph` (11 curve types: line, parabola, cubic, sine, cosine, exp, abs, sqrt, reciprocal, circle, ellipse, plus points, segments, tangents and chords), `code` (syntax-coloured, a highlight that follows the narration, program output), and `network` (boxes and arrows laid out automatically: trees, linked structures, pipelines, architectures).
+- **Modes:** Explanation, Study (key terms, memory tricks, a recall quiz), Homework (teaches the method, writes the answers into a separate file you open in the browser) and Revise (re-teaches what you keep getting wrong).
+- **Level:** Beginner or Intermediate. The learner's age (Profile) shapes the wording.
+- **Photos:** attach a photo of a page, a board or a worksheet; a local vision model reads it. The Create button never waits for it: the photo is read inside the job.
+- **PDFs up to 2 GB / 1,000 pages:** a chapter ("chapter 4"), a page range ("pages 120 to 135") or the whole book. Text-layer pages are read as Markdown (headings, lists, tables kept), scans go through OCR, pictures inside the PDF are described by the vision model, and study notes are written while the book is read. Citations such as `Source: Science 8, Chapter 2, pp. 41-44` appear in the recap.
+- **Ask in your own words:** "teach me about the solar system" becomes the title "The solar system"; "how does the rainbow have 7 colours, why does it come only when sunlight and rain are together" is answered as two questions.
+- **Memory:** the planner is told which related videos you already have and does not repeat them.
+- **Reference notes you can add:** drop `.md`/`.txt` files in `data/kb_extra/` (this repo ships notes on data structures and AVL trees, MERN, coordinate geometry and Python) and rebuild the index.
 
-- **Concept + PDF:** "photosynthesis" searches the PDF first, then the knowledge base.
-- **Chapter or pages:** leave the concept empty and type `chapter 4` or `pages 120-135` as the focus, or type "explain chapter 4" as the concept. The lesson teaches that part of the book in reading order, condensed to fit the prompt.
-- The recap scene shows a citation such as `Source: Science 8, Chapter 2, pp. 41–44`.
-- Uploads run on their own job queue, so a long OCR run never delays a lesson.
+### Watch and study
+- **Player** with scene list, captions timed to the audio, language tabs, auto-advance to the next video of a course, and early playback (Flash starts about 6 to 18 s after you ask).
+- **Tutor chat** (text or voice) that knows the lesson. Say "generate one more video on ..." and it builds one, shows its first frame in the chat and adds it to the playlist.
+- **Study tools** written from the lesson in your languages: flashcards, quiz, mind map, study guide, FAQ, glossary, timeline.
+- **Review** (spaced repetition of what you got wrong), **Teach it back** (explain it and be graded), **Rewards** (streak, score, level, daily goal, badges), **Progress**, **Profile**.
+- **Learnverse:** a walkable 3D world (three.js) the local model builds from your topic or from everything you studied, with quiz gates, points and a shop.
 
-Design: `docs/superpowers/specs/2026-10-27-rag-ocr-design.md`. Code: `backend/app/ocr/`, `backend/app/rag/`, `backend/app/routes_rag.py`.
+### Take it away
+- MP4 export (720p or 1080p, H.264 + AAC), `.srt` captions per language, narration-only audio, the whole lesson as one `.chanakya.zip` with its own player (copy it to a USB stick, import it in Library), worksheets and question papers (HTML).
+- Backend address is configurable, so the UI can use a backend on another laptop.
 
-## Quick start (Windows, PowerShell)
+### Built to keep working
+- Jobs resume after a crash; GPU out-of-memory falls back to the CPU and retries the episode; a memory gate waits when the laptop is short of RAM or VRAM; the PyTorch allocator is capped so the language model is never starved.
+- Translation is checked for script and meaning (back-translation); a bad translation is replaced by English rather than shown.
+- `GET /api/ready` and a start-up self-check say exactly what is missing and what to run.
+
+---
+
+## Flash and Pro
+
+Pick it on the Home page (the "Build" switch) or send `"quality": "flash" | "pro"`. Both use the same model.
+
+| | Flash | Pro |
+|---|---|---|
+| Idea | Scenes appear within seconds and flow into each other while the rest is still being written | The whole video is planned first; nothing is shown until it is complete |
+| How | A short outline, then parts of about 40 s written one after the other, each told what the earlier parts taught; the first scenes stream to the player token by token | A scene-by-scene outline of the whole video first (`longplan.beat_sheet`); the first minute is written in one call; each further minute is patched on in a call that sees the whole outline and the full text so far (`plan_pro`) |
+| Fact check | 50 s budget | 100 s budget |
+| Measured ("teach me what avl trees are", 2 min) | 133 s, first scenes after 18 s | 167 s, shown at the end; covers balance factor, single and double rotation, insertion, deletion and uses |
+| Choose it when | You want to start watching now | You want the most coherent video and can wait |
+
+---
+
+## How a lesson is made
+
+1. **Clean the request** (`content.clean_topic`): "Teach me about dsa in java" is "DSA in Java". Questions are left as they are. A request with two questions must be answered twice.
+2. **Remember** (`memory.py`): related lessons you already have are summarised for the planner.
+3. **Retrieve** (`knowledge.py`, `rag/`): top passages from the offline knowledge base, your PDF first if you attached one.
+4. **Plan** (`planner.py`): a prompt built for the subject (maths gets graph scenes, programming gets code scenes in the language you named, trees and structures get network scenes); Flash or Pro as above. The reply is parsed and repaired by `schema.normalize` (small models slip on types) and sent back with feedback if it repeats headings or code, has narration under 18 words, ignores a question, shows a technical topic only as text, or leans on everyday comparisons.
+5. **Clean** (`content.py`): repeated scenes, headings and openings are dropped, one summary is kept, empty title cards removed, repeated everyday comparisons stripped.
+6. **Direct** (`director.py`): a visual director replaces weak scene choices (a list that should be a flow, a graph with nothing to draw).
+7. **Review** (`review.py`): a writer pass lengthens short narration; Python snippets are parse-checked and repaired.
+8. **Fact check** (`facts.py`): see below.
+9. **Translate** (`translate.py`): batched by length, cached, pre-translated while the planner is still writing.
+10. **Narrate** (`tts.py`, `expression.py`): each sentence is spoken with the delivery that fits it; each scene lasts exactly as long as its audio plus 0.5 s.
+11. **Show**: the Remotion player draws the timed JSON in the browser, or the renderer exports an MP4.
+
+---
+
+## Models used
+
+Everything below runs locally. Nothing is called over the internet at run time, and models whose name ends in `-cloud`/`:cloud` (remote servers) are refused.
+
+| Role | Model | Runs on | Notes |
+|---|---|---|---|
+| Planner, director, writer, fact checker, tutor, study tools, Learnverse builder | **Qwen2.5-7B-Instruct** Q4_K_M (`qwen2.5:7b-instruct-q4_K_M`) through **Ollama** | GPU (5.5 GB, 100 % resident), about 43 tokens/s | Apache-2.0. Context 6144 tokens. Same model for Flash and Pro |
+| Photo reader, pictures inside PDFs | **LLaVA 7B** (`llava:7b`) | GPU, loaded only when needed | The language model steps aside while it runs |
+| Knowledge-base embeddings | **nomic-embed-text** (Ollama) | CPU/GPU | 768 dimensions |
+| PDF passage embeddings | **multilingual-e5-small** (sentence-transformers) | CPU | |
+| Re-ranking | **bge-reranker-v2-m3** | CPU/GPU | Re-ranks retrieved passages (PDF search) |
+| Translation | **NLLB-200 distilled 600M** (default), **AI4Bharat IndicTrans2 dist-200M** (optional, gated), Ollama as a fallback | GPU, released after 10 idle minutes | Back-translation check |
+| Narration | **Piper** voices (en, hi, te, ml, mr, bn), **AI4Bharat Indic-TTS** int8 ONNX (en, ta, kn, gu, plus bn/mr), **Indic Parler-TTS** (GPU fallback, takes a tone description) | CPU (Piper, Indic-TTS), GPU (Parler) | `expression.py` sets per-sentence speed, pauses and emphasis |
+| Speech to text | **faster-whisper** (`STT_MODEL`, default medium; small is bundled) | GPU if 2.2 GB is free, else CPU | Loaded on the first spoken question, cached |
+| Scanned pages | **Tesseract** (fast) then **Unlimited-OCR** (accurate, when the GPU is idle) | CPU / GPU | Gives way to lessons |
+| Phone | **Gemma 4 E2B** (LiteRT-LM), **Piper** via sherpa-onnx, **Whisper base** and **Vosk**, **ML Kit** translation and OCR | On the phone | See [Android app](#android-app) |
+
+A larger model was measured and rejected for this card: `qwen3.5:9b` needs 8.8 GB with the context window, so only 72 % fits in 8 GB of VRAM; it ran at 17 tokens/s against 43 and returned invalid JSON on the test plan (see `issues.md`, ISSUE-046).
+
+---
+
+## Languages and voices
+
+Nine languages. English is always available; the lesson is sized for the slowest voice you pick.
+
+| Language | Code | Translation | Voice engine | Speed (words/s) |
+|---|---|---|---|---|
+| English | `en` | none | Piper `en_US-lessac` / `en_GB-alan`, Indic-TTS | 2.7 |
+| Hindi | `hi` | NLLB / IndicTrans2 | Piper `hi_IN-priyamvada`, `hi_IN-pratham` | 1.9 |
+| Marathi | `mr` | NLLB / IndicTrans2 | Piper `mr_IN-google`, Indic-TTS | 1.8 |
+| Bengali | `bn` | NLLB / IndicTrans2 | Piper `bn_BD-google`, Indic-TTS | 1.8 |
+| Gujarati | `gu` | NLLB / IndicTrans2 | Indic-TTS, Parler | 1.8 |
+| Tamil | `ta` | NLLB / IndicTrans2 | Indic-TTS, Parler | 1.7 |
+| Kannada | `kn` | NLLB / IndicTrans2 | Indic-TTS, Parler | 1.7 |
+| Telugu | `te` | NLLB / IndicTrans2 | Piper `te_IN-padmavathi`, `te_IN-venkatesh` | 1.6 |
+| Malayalam | `ml` | NLLB / IndicTrans2 | Piper `ml_IN-meera` | 1.6 |
+
+Fonts: Noto Sans for every script (SIL OFL), bundled so the browser and the renderer draw Devanagari, Telugu, Tamil and the rest correctly, including conjuncts. If a voice is missing the next engine is tried, and finally silent audio with correct timing.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Language model runtime | Ollama (local), Qwen2.5-7B, LLaVA, nomic-embed-text |
+| Backend | Python 3.12, FastAPI 0.115, Uvicorn, Pydantic 2 (schema and validation), `requests`, SQLite (jobs, learning data, passage store) |
+| ML | PyTorch (CUDA 12.8 wheels for RTX 50-series), Transformers 4.57, sentence-transformers, FAISS, ONNX Runtime, piper-tts, faster-whisper, NLLB-200, IndicTrans2 |
+| Documents | PyMuPDF + pymupdf4llm (PDF to Markdown), Tesseract (pytesseract), Unlimited-OCR, Pillow |
+| Frontend | React 18, TypeScript 5.8, Vite 6, Remotion 4.0.539 (player and scene templates), three.js (Learnverse), Mermaid 11 (mind maps), Figtree and Chakra Petch fonts |
+| Video export | Remotion renderer (headless Chrome) + bundled ffmpeg, Node 20+ |
+| Android | Kotlin, Jetpack Compose (Material 3), Room, WorkManager, Media3, LiteRT-LM (Gemma), sherpa-onnx, Vosk, ML Kit; min SDK 31 |
+| 3D lessons (teammate) | Headless Blender pipeline in `blender 3d/` |
+| Tests | pytest (345 backend tests), `tsc --noEmit` for the web app |
+
+---
+
+## Quick start
+
+Windows, PowerShell. You also need **Ollama** (https://ollama.com).
 
 ```powershell
 git clone https://github.com/signingoff-dubey/UNLOX-TEACHER.git
 cd UNLOX-TEACHER
-.\setup.ps1 -Gpu     # once, online. Leave out -Gpu for a CPU-only setup (Piper voices + Ollama translation)
-.\start.ps1          # opens http://127.0.0.1:8000; add -Lan to accept other devices
+.\setup.ps1 -Gpu      # once, online. Leave out -Gpu for CPU only (Piper voices + Ollama translation)
+.\start.ps1           # opens http://127.0.0.1:8000  (add -Lan for other devices)
 ```
 
-If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
-You also need **Ollama** (https://ollama.com); `setup.ps1` pulls the model if it's installed.
+Manual setup of the backend (Python 3.12):
 
-**What the UI offers:**
-- Type a concept or click an example, pick languages, and get a narrated lesson in under a minute.
-- Language tabs to switch the same lesson between English, Hindi, Telugu and others.
-- A scene list that jumps the player to any scene and highlights the one playing.
-- MP4 export and `.srt` captions download per language.
-- **Recent lessons:** replay any earlier lesson. Generate backups before the demo.
-- **System status:** shows whether the planner, translator, voices and video export are ready.
-- **Backend address:** the UI can use a backend on another laptop (e.g. `http://192.168.1.20:8000`).
-- Build-time breakdown, and the lesson JSON for judges who ask how it works.
+```powershell
+cd backend
+py -V:3.12 -m venv venv
+.\venv\Scripts\pip install -r requirements.txt
+.\venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128   # GPU
+.\venv\Scripts\pip install -r requirements-ml.txt -r requirements-rag.txt
+ollama pull qwen2.5:7b-instruct-q4_K_M
+ollama pull nomic-embed-text
+ollama pull llava:7b                                        # photos and pictures in PDFs
+.\venv\Scripts\python scripts\download_models.py [--ml]     # voices, fonts, models still missing
+.\venv\Scripts\python scripts\build_knowledge.py            # the offline knowledge base (online once); later: --no-fetch
+cd ..\web ; npm install ; npm run bundle ; npm run build    # UI + video renderer
+cd ..\backend ; .\run.ps1
+```
 
-## Layout
+Then open http://127.0.0.1:8000 and check **http://127.0.0.1:8000/api/ready**, which lists what is missing and the command that fixes it.
 
-| Path | What |
-|---|---|
-| `backend/app/planner.py` | Retrieval-grounded prompt, Ollama JSON-schema output, validation, retry, fallback |
-| `backend/app/knowledge.py` | Offline vector search over the knowledge base |
-| `backend/scripts/build_knowledge.py` | Fetches, chunks and embeds the dataset |
-| `data/topics.txt`, `data/kb_extra/` | Dataset topic list and your own documents |
-| `backend/app/schema.py` | Lesson schema + `normalize()` that repairs small-model mistakes |
-| `backend/app/translate.py` | IndicTrans2 (or Ollama) translation, cached on disk |
-| `backend/app/tts.py` | Piper (CPU) → Indic Parler-TTS (GPU) → silent fallback chain, cached |
-| `backend/app/pipeline.py` | Orchestration; builds per-language timed tracks + `.srt` |
-| `backend/app/exporter.py` | Runs `web/render.mjs` to make the MP4 |
-| `backend/app/main.py` | FastAPI app, job queue, serves media/fonts/built frontend |
-| `web/src/remotion/` | Video: templates, icons, captions, fonts |
-| `web/src/App.tsx`, `web/src/components/` | Student UI: input, player, scenes, history, status |
-| `web/src/api.ts` | API client, job polling, configurable backend address |
-| `setup.ps1`, `start.ps1` | One-command setup and start |
+Before a demo: set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`, turn Wi-Fi off, and make one lesson end to end. Development: run the backend, then `cd web; npm run dev` (UI on :5173, proxied to :8000); `npm run studio` previews every template without the backend; `LLM_BACKEND=mock` runs the pipeline without Ollama.
 
-## Setup on the machine that runs the backend (the one with the models)
+---
 
-The backend renders MP4s with Node, so copy the **whole project folder** (backend + web) to that machine.
+## Configuration
 
-1. **Python 3.12** (3.14 is too new for these packages):
-   ```powershell
-   cd backend
-   py -V:3.12 -m venv venv
-   .\venv\Scripts\pip install -r requirements.txt
-   # GPU extras (RTX 50-series needs CUDA 12.8 wheels):
-   .\venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu128
-   .\venv\Scripts\pip install -r requirements-ml.txt
-   ```
-2. **Config:** `copy .env.example .env`, then point it at the models already on that machine:
-   - `INDICTRANS2_MODEL` / `PARLER_MODEL`: a Hugging Face id (read from the HF cache) or a local folder path
-   - `PIPER_DIR`: the folder with `*.onnx` + `*.onnx.json` voices. Files must be named as in `backend/app/languages.py`, e.g. `hi_IN-priyamvada-medium.onnx`.
-   - `OLLAMA_MODEL`: must match a name in `ollama list`
-3. **Anything missing** (voices, fonts, models) while still online: `.\venv\Scripts\python scripts\download_models.py [--ml]`
-4. **Frontend + renderer** (Node 20+):
-   ```powershell
-   cd ..\web
-   npm install
-   npm run bundle      # pre-builds the video bundle + downloads headless Chrome once
-   npm run build       # backend then serves the UI at http://127.0.0.1:8000
-   ```
-5. **Run:** `ollama serve`, then `cd backend; .\run.ps1` (add `-Lan` to accept other devices).
-   Check `http://127.0.0.1:8000/api/health`: it reports what loaded (Ollama, translator, voices, renderer).
-6. **Before the demo:** set `HF_HUB_OFFLINE=1`, turn Wi-Fi off, and generate one lesson end to end.
+Set in `backend/.env` (copy `.env.example`) or the environment. Common ones:
 
-**Development:** run the backend, then `cd web; npm run dev` (UI on :5173, proxied to :8000).
-`npm run studio` previews every template with no backend.
-`LLM_BACKEND=mock` runs the whole pipeline without Ollama.
-
-## Fallbacks (the demo keeps going)
-
-| Failure | What happens | Shown in the response as |
+| Variable | Default | Meaning |
 |---|---|---|
-| LLM returns bad JSON | One retry with the error message, then a minimal 2-scene lesson | — |
-| Ollama not running | Job fails with a clear "start Ollama" message | `job.error` |
-| Translation model won't load | English text is kept for that language | `track.translator = "untranslated"` |
-| No Piper voice for a language (kn, ta, bn, gu) | Indic Parler-TTS is used | `track.tts_engines` |
-| No voice model at all | Silent audio with the right timing | `track.tts_engines = ["silent"]` |
+| `OLLAMA_MODEL` | `qwen2.5:7b-instruct-q4_K_M` | The language model (must be in `ollama list`) |
+| `VISION_MODEL` | `llava:7b` | Reads photos and PDF pictures |
+| `EMBED_MODEL` | `nomic-embed-text` | Knowledge-base embeddings |
+| `OLLAMA_NUM_CTX` | `6144` | Context window; the same for every call (changing it reloads the model) |
+| `LLM_RETRIES` | `2` | Extra tries when Ollama is busy or restarting |
+| `RAG_ENABLED`, `RAG_TOP_K`, `RAG_MIN_SCORE` | `1`, `6`, `0.68` | Retrieval |
+| `FACTCHECK`, `FACTCHECK_BUDGET_S` | `1`, `50` | The fact checker and its time budget (Pro doubles it) |
+| `TRANSLATE_BACKEND` | `nllb` | `nllb`, `indictrans2`, `ollama`, `none` |
+| `BACKCHECK` | `1` | Translate back to English and compare |
+| `TTS_ENGINE`, `TTS_FALLBACK`, `TTS_EXPRESSIVE` | `piper`, `parler`, `1` | Voices and expressive delivery |
+| `STT_MODEL`, `PRELOAD_STT` | `medium`, `0` | Speech recognition |
+| `DEVICE`, `OLLAMA_NUM_GPU` | `auto` | GPU/CPU choice |
+| `TORCH_VRAM_FRACTION` | `0.35` | Share of the card PyTorch may hold |
+| `MIN_FREE_RAM_GB`, `MIN_FREE_VRAM_GB`, `MODEL_IDLE_S` | `1.5`, `0.8`, `600` | The resource gate |
+| `PDF_FIGURES`, `PDF_MAX_FIGURES` | `1`, `40` | Describe pictures inside PDFs |
+| `PUBLIC_BASE_URL`, `CORS_ORIGINS`, `NODE_BIN` | | Serving and export |
+
+Secrets are never committed (`.env` is git-ignored).
+
+---
 
 ## API
 
-All long work runs as a job: POST returns a job, then poll `GET /api/jobs/{id}` until `status` is `done` or `error`.
+Long work runs as a job: POST returns a job, then poll `GET /api/jobs/{id}` until `status` is `done` or `error`.
 
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET | `/api/health` | — | What is installed and loaded |
-| GET | `/api/languages` | — | `[{code, name, native, piper}]` |
-| POST | `/api/lessons` | `{"concept": "Photosynthesis", "languages": ["hi","te"]}` | Job; `result` = Lesson |
-| GET | `/api/jobs/{id}` | — | `{id, status, stage, progress 0..1, result, error}` |
-| GET | `/api/lessons/{id}` | — | Lesson |
-| GET | `/api/lessons` | — | Recent lessons (history) |
-| GET | `/api/knowledge/search?q=…&k=5` | — | Retrieved passages with scores |
-| POST | `/api/lessons/{id}/export` | `{"lang": "hi"}` | Job; `result` = `{"url": "/media/.../lesson_hi.mp4"}` |
-| GET | `/media/...` | — | Audio, MP4s, `captions_<lang>.srt` |
-| GET | `/fonts/...` | — | Noto fonts used by the player and renderer |
+| Group | Endpoints |
+|---|---|
+| Status | `GET /api/ready` (what is missing, what to run), `GET /api/health`, `GET /api/languages`, `GET /api/jobs/{id}` |
+| Lessons | `POST /api/lessons` (`concept`, `languages`, `level`, `duration_s` 30-240, `mode`, `quality`, `upload`, `focus`, `images`), `GET /api/lessons`, `GET /api/lessons/{id}`, `POST /api/lessons/{id}/export` |
+| Courses | `POST /api/playlists` (same fields plus `episodes` 0-3), `GET /api/playlists[/{id}]`, `POST /api/playlists/{id}/export` |
+| Sources | `POST /api/uploads` (PDF), `GET /api/uploads/{sha}[/notes]`, `POST /api/search`, `GET /api/knowledge/search?q=...`, `POST /api/images`, `GET /api/images/{sha}` |
+| Homework | `POST /api/homework`, `GET /api/homework[/{id}[/download]]` |
+| Learning | `POST /api/lessons/{id}/chat`, `.../studio[/{kind}]`, `.../teachback`, `GET /api/review/due`, `/api/review/stats`, `POST /api/review/answer`, `/api/weak*`, `/api/profile`, `/api/rewards*` |
+| Take away | `GET /api/lessons/{id}/subtitles`, `POST .../podcast`, `.../say`, `GET .../bundle`, `POST /api/bundle/import`, `/api/papers*` |
+| Voice and world | `POST /api/stt`, `POST /api/metaquiz`, `POST /api/metaworld`, `GET/POST /api/metaverse/save` |
+| Files | `GET /media/...` (audio, MP4, `.srt`), `GET /fonts/...` |
 
-English is always included. The language codes are `en hi te ml mr kn ta bn gu`.
+The lesson JSON shape is mirrored in `web/src/types.ts`; the plan schema is `backend/app/schema.py`. To render a track in any React app, give it to `LessonVideo` (`web/src/remotion/Lesson.tsx`) inside Remotion's `<Player>` with `inputProps={{ track, assetBase: "" }}`.
 
-**Lesson shape** (`web/src/types.ts` mirrors it):
+---
 
-```json
-{
-  "id": "e66517564b", "concept": "Photosynthesis",
-  "timings": {"plan_s": 12.1, "en_s": 2.0, "hi_s": 3.5},
-  "videos": {"en": "/media/lessons/e66517564b/lesson_en.mp4"},
-  "languages": {
-    "hi": {
-      "lang": "hi", "name": "Hindi", "native": "हिन्दी", "title": "प्रकाश संश्लेषण",
-      "duration_s": 49.6, "tts_engines": ["piper"], "translator": "indictrans2",
-      "scenes": [{
-        "template": "diagram", "heading": "…", "narration": "…", "items": ["…"], "icon": "leaf",
-        "left_title": "", "right_title": "", "left": [], "right": [], "answer_index": 0,
-        "audio_url": "/media/audio/<hash>.wav", "speech_s": 7.07, "duration_s": 7.57, "start_s": 4.85,
-        "captions": [{"start": 0.0, "end": 2.4, "text": "…"}]
-      }]
-    }
-  }
-}
+## Project layout
+
+| Path | What |
+|---|---|
+| `backend/app/planner.py`, `longplan.py` | Prompts by subject, Flash parts, Pro outline and blocks |
+| `backend/app/content.py`, `memory.py`, `facts.py` | Quality rules, what already exists, fact checker |
+| `backend/app/pipeline.py`, `playlist.py`, `streaming.py` | Orchestration, courses, scenes that play while they are made |
+| `backend/app/schema.py`, `director.py`, `review.py` | Lesson schema and repair, visual director, writer/reviewer |
+| `backend/app/knowledge.py`, `rag/`, `ocr/` | Retrieval, PDF ingestion, OCR, Markdown, figures, notes |
+| `backend/app/translate.py`, `tts.py`, `expression.py`, `stt.py`, `languages.py` | Languages and voices |
+| `backend/app/vision.py`, `homework.py`, `chat.py`, `videochat.py`, `studio.py` | Photos, homework, tutor, extra videos, study tools |
+| `backend/app/jobs.py`, `resume.py`, `resources.py`, `gpu.py`, `selfcheck.py` | Jobs, crash resume, memory gate, GPU slot, readiness |
+| `backend/scripts/` | `build_knowledge.py`, `fetch_library.py`, `download_models.py` |
+| `backend/tests/` | 345 tests |
+| `web/src/remotion/` | Scene templates, graph, code, icons, themes |
+| `web/src/pages/`, `components/`, `studio/` | Home, Lesson, Library, Rewards, Progress, Review, Profile, Settings; study tools |
+| `metaverse/` | The walkable 3D world (Learnverse) |
+| `Unlox_Hackethon/` | The Android app (Kotlin, Compose) |
+| `blender 3d/` | Offline narrated 3D lessons with headless Blender (Dhiraj) |
+| `data/topics.txt`, `data/kb_extra/` | Wikipedia topic list; reference notes (committed) |
+| `data/curated/` | Hand-written lesson plans (git-ignored) |
+| `docs/` | Design notes; `docs/README-notes.md` is the older detailed README |
+
+---
+
+## Quality, safety and fact checking
+
+- **Schema first.** Every model reply is parsed as JSON, repaired and validated; bad plans are retried with the error, and a plan that is weak (repeats, short captions, an unanswered question, a technical topic with no code or drawing) is sent back with feedback. A minimal fallback lesson means a job never ends empty.
+- **Grounded.** The planner reads retrieved passages (Simple English Wikipedia, reference notes in `data/kb_extra/`, your PDFs). Sources are listed with each lesson.
+- **Fact checker (`facts.py`).** Runs on the English plan before translation, using no outside service:
+  1. *Calculation:* arithmetic and linear equations are worked out ("x = 20 / 3" for 3x + 5 = 20 is corrected to x = 5); a count that does not match its list ("7 colours: red ... indigo") and a few lists every child learns (rainbow, planets in order, continents, oceans, senses) are checked against the real list.
+  2. *Sources:* each statement is compared with passages that are about it; a verdict only counts if the judge quotes words that really are in the source, and a focused second question must agree before anything changes.
+  3. *Second opinion:* the model, when no source covers a statement, may only say "wrong" if the opposite question ("is it true?") agrees.
+  4. *Repair:* a correction must pass the same check, keep what the sentence taught and have no notes or brackets, else the statement is removed (never leaving a scene too thin). Quiz answers change only when a source and the model agree. Analogies are not treated as claims.
+  The report (checked, confirmed, corrected, removed, sources) is saved with the lesson and shown in the notes panel.
+- **Safe translation.** Script checks and back-translation; a failure keeps English.
+- **No code runs.** Code scenes are text; Python is only parse-checked.
+- **Privacy.** Everything stays on the machine; the learner profile is a local file.
+
+---
+
+## Android app
+
+`Unlox_Hackethon/` is the same product as a native app that runs fully on the phone (tested on a OnePlus 13R, 16 GB): lesson planner, tutor and homework solver on Gemma 4 E2B (LiteRT-LM), narration with Piper through sherpa-onnx (and the phone's voice for Tamil and Kannada), speech to text with Whisper + Vosk, translation and OCR with ML Kit, long videos in parts, a set of videos that plays on by itself, and "make one more video" in the chat. Models (about 4 GB) are not in git: copy them to `Android/data/com.kabir.unlox_hackethon/files/models/` (`llm/`, `stt/`, `tts/`, `embeddings/`). Build with `gradlew :app:assembleDebug` (JDK 21). The Android app does not have the Flash/Pro switch, the fact checker or the memory yet.
+
+---
+
+## Testing
+
+```powershell
+cd backend ; .\venv\Scripts\python -m pytest -q          # 345 tests; run with the backend stopped (a few thread-timing tests are flaky under load)
+cd ..\web ; npx tsc --noEmit ; npx vite build
+cd ..\Unlox_Hackethon ; .\gradlew.bat :app:assembleDebug
 ```
 
-To render a track in any React frontend, pass it to `LessonVideo` (`web/src/remotion/Lesson.tsx`) with Remotion's `<Player>`:
-`inputProps={{ track, assetBase: "" }}`. `assetBase` is the backend origin if the UI is served from somewhere else.
+Live checks used while building: lessons on the aquatic life of earth, the solar system, rainbows, the MERN stack, why the sky is blue, how steel is made, how a refrigerator works, and AVL trees, in Flash and Pro, with the fact checker on.
 
-## Verified on the RTX 5060 laptop (mock planner, Piper voices)
+---
 
-- A 6-scene, 40 s English lesson with Hindi and Telugu tracks built through the API (narration: ~3.5 s for Hindi, ~4.2 s for Telugu).
-- MP4 export: 1920×1080 H.264 + AAC, 40.2 s, matching the narration. The first export took 87 s, including the one-time bundle and Chrome download.
-- Devanagari and Telugu render correctly in the video, including conjuncts, using the bundled Noto fonts.
-- The backend serves the built UI, assets, lesson history and deep links (`/#<lessonId>`).
-- **Full offline pipeline (Dhiraj's machine):** Ollama `qwen2.5:7b-instruct-q4_K_M` with RAG, NLLB-200 on the GPU, and Piper.
-  - "Why do we have seasons?" in English, Hindi and Telugu was built in **32 s**: plan 22 s, Hindi 4.5 s, Telugu 3.9 s.
-  - It drew on 5 knowledge-base sources (top match "Season", 0.80) and produced a 6-scene lesson of 47 s in English and 73 s in Hindi.
-  - The Hindi MP4 export took 60 s. The server starts in ~14 s with models preloaded.
-- **Translation comparison:** NLLB-200 gives fluent Hindi and Telugu. Qwen-7B mixed scripts in Hindi and produced mostly wrong Telugu, and is now only a fallback. IndicTrans2 (Kabir's machine) is also supported and handles hi/te/ta/mr well.
-- **Known limits:**
-  - Very short labels can be mistranslated because they lack context ("Light bends" became "lightweight bends").
-  - IndicTrans2 is gated on Hugging Face and its toolkit needs a C compiler on Windows.
+## Performance and hardware
 
-## Models, Voices & Assets Used (licenses)
-| Component | Name | License | Source |
-|---|---|---|---|
-| Planner LLM | Qwen2.5-7B-Instruct, Qwen3-4B (fallback) | 7B: Apache-2.0 (verified via `ollama show --license`). 3B: Qwen Research License (verified) — NOT used. Fallback: qwen3:4b (confirm Apache-2.0 via `ollama show --license` once pulled) | ollama.com/library/qwen2.5 |
-| TTS engine | piper-tts 1.8.0 (OHF-Voice/piper1-gpl; uses espeak-ng) | **GPL-3.0-or-later** (verified via pip metadata). Old rhasspy/piper is MIT but archived | github.com/OHF-Voice/piper1-gpl |
-| Piper voices | hi_IN-pratham, te_IN-venkatesh, mr_IN-google, bn_BD-google, ml_IN-meera, en_GB-alan (medium) | Per-voice, see each `.onnx.json` / model card — TO VERIFY | huggingface.co/rhasspy/piper-voices |
-| Indic TTS | AI4Bharat Indic-TTS, int8 ONNX repack (en, ta, kn, gu) | MIT (upstream); repack by RaunakSaha, unofficial | huggingface.co/RaunakSaha/echobharat-models |
-| Translation (optional) | IndicTrans2 distilled 200M | MIT (gated download) | huggingface.co/ai4bharat/indictrans2-en-indic-dist-200M |
-| Fonts | Noto Sans (Indic scripts) | SIL OFL 1.1 | github.com/google/fonts |
-| Video engine | Revideo | MIT | github.com/midrender/revideo |
-| Encoder | ffmpeg | LGPL/GPL by build | ffmpeg.org |
-Excluded: Meta MMS-TTS (CC-BY-NC), sarvam-translate (GPL-3.0 tag + Gemma base).
+Built and measured on a laptop with an RTX 5060 (8 GB VRAM), 15 GB RAM, Windows 11.
 
-## Hackathon docs
-See `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md`, `issues.md`, `docs/orchestration.md`.
+- Language model: 43 tokens/s, 100 % on the GPU. First scene of a short lesson about 1.2 s warm; the player opens 6 to 18 s after you ask (Flash).
+- A 2-minute video: about 2 to 3 minutes to build (planning, checking, translation, narration), then export about 1.5 times its length.
+- PDF reading: text-layer pages 1 to 15 ms each, Markdown 50 to 500 ms, OCR about 1 s; a 1,000-page scan is searchable in under 3 minutes.
+- Translation of 32 sentences: 2.9 s after batching and caching.
+- The three GPU users (language model, translator, voices) share 8 GB by taking turns; the resource gate and a PyTorch cap keep the language model from being starved.
 
-## Submission Checklist
-- [ ] Repo with README, setup, licenses
-- [ ] MP4 on judge topic (live), MP4 on our topic
-- [ ] 5-min offline demo rehearsed
-- [ ] Verified with network disabled
+---
 
-## Graph and code lessons
+## Known limits
 
-- Maths topics (circle, parabola, sine wave, lines...) get `graph` scenes: curves are chosen from a fixed list (`line, parabola, cubic, sine, cosine, exp, abs, sqrt, reciprocal, circle, ellipse`) with numeric parameters; circles can mark centre, radius, diameter, chord, tangent.
-- Programming topics (Python, Rust, React/JSX, Java, Go, SQL...) get `code` scenes: syntax-coloured snippet, a highlight that follows the narration, one note per line, optional program output. Snippets are only displayed, never executed.
-- Test offline without a model: `LLM_BACKEND=mock` with a concept containing "circle" or "python".
-- Export size: `POST /api/lessons/{id}/export` takes `"height": 720` (default) or `1080`.
-- GPU/CPU: `OLLAMA_NUM_GPU=auto|N|0`, `DEVICE=auto|cuda|cpu`; see `/api/health` -> `gpu`.
+- The 7B model still gets facts wrong now and then. The fact checker removes or corrects what it can prove wrong; the rest is reported as "not confirmed".
+- Code is shown, not run; only Python is syntax-checked.
+- Very short labels can be mistranslated for lack of context; IndicTrans2 is gated and needs a C compiler on Windows (NLLB is the default).
+- Android lacks Flash/Pro, the fact checker and memory; its changes since v0.15.0 are compiled but not tested on the device.
+- Only one extra chat video at a time.
+- Hand-written lessons are not fact-checked.
 
-## Screens and document upload
+---
 
-- Home: topic, optional PDF (with a focus like "chapter 4"), level, length, languages. Creating: progress. Lesson: player, scenes, downloads, sources.
+## Licences
 
-## Models and voices (as run on the demo laptop)
+| Component | Licence |
+|---|---|
+| Qwen2.5-7B-Instruct | Apache-2.0 |
+| LLaVA, nomic-embed-text, bge-reranker, multilingual-e5-small | see each model card |
+| NLLB-200 | CC-BY-NC (research/education use; check before commercial use) |
+| IndicTrans2, AI4Bharat Indic-TTS | MIT (gated download; ONNX repack is unofficial) |
+| piper-tts | GPL-3.0-or-later (voices: per-voice cards) |
+| Wikipedia text | CC BY-SA 4.0 (downloaded at setup, each lesson lists its articles) |
+| Noto fonts | SIL OFL 1.1 |
+| Remotion | Remotion licence (free for individuals and small teams; read the terms) |
+| ffmpeg | LGPL/GPL by build |
+| NCERT / OpenStax (optional library) | NCERT: local use only; OpenStax: CC BY 4.0 |
 
-| Role | Model | Where |
-|---|---|---|
-| Planner / reviewer / writer / tutor | Qwen2.5-7B-Instruct Q4_K_M via Ollama (GPU layers auto) | Ollama |
-| Translation | AI4Bharat IndicTrans2 dist-200M (MIT, gated) | `models/indictrans2` (`INDICTRANS2_MODEL`) |
-| Voices hi, te, ml, en | Piper | `models/piper` |
-| Voices ta, kn, gu, bn, mr (+ en) | AI4Bharat Indic-TTS ONNX (CPU) | `models/indic-tts/<lang>` |
-| Check only | faster-whisper medium (round-trip test of voices) | HF cache |
+Excluded: Meta MMS-TTS (CC-BY-NC), sarvam-translate (GPL tag + Gemma base). Please verify the licences of anything you redistribute.
 
-Download gated models with `HF_HUB_DISABLE_XET=1` set (the Xet path stalls on some networks).
+---
 
-## Study tools, Meta quiz and the metaverse entrance (Kabir)
+## Docs and team
 
-- **Study tools** (`backend/app/studio.py`, `web/src/studio/`): flashcards, quiz, mind map, study guide, FAQ, glossary and timeline, made from the lesson (and its PDF passages). They are written **in the background** as soon as a video exists (low priority, so lesson generation is never slowed; a tool you click jumps the queue). The buttons at the top of the chat panel show the state: ready tools open instantly; a tool being written has a border of flowing colour and a steady percentage, and opens by itself when done. API: `GET /api/lessons/{id}/studio?lang=` (status), `POST` the same path (jump the queue), `GET .../studio/{kind}` (result). Output is JSON only; the browser draws it. Size and difficulty options, Markdown export, Anki CSV export for flashcards.
-- **Mind map** is Mermaid text written by the model, parsed and re-written by the backend (nothing but a clean mind-map tree can reach the browser) and rendered on-device with Mermaid (bundled, offline).
-- **Meta quiz** button: builds one metaverse world from **everything** the AI wrote for the video (or for every episode of a course): the lesson, quiz, flashcards, glossary, FAQ, study guide, timeline and mind map. Four stations to read (with extra reading from every tool) and quiz gates that ask several questions each, with explanations. `POST /api/metaquiz`.
-- **PDF notes** are written 30 pages at a time as the OCR reads them (`backend/app/ocr/digest.py`, `GET /api/uploads/{sha}/notes`): a 100-page scan has its first notes after about 22 s and all of them after about 32 s. A lesson about a whole PDF is planned from these notes, not from 1,000 pages. Uploads are capped at 1,000 pages.
-- **Metaverse entrance** (`web/src/components/TunnelTransition.tsx`, `MetaverseLayer.tsx`): a tunnel of blocks builds around you, light speed, a bright light, then a Start page. All motion is compositor-only (no blur filters); the 3D world starts up behind a still white frame so nothing animated waits on the main thread.
+`prd.md`, `problem_statement.md`, `pitch.md`, `progress.md` (versions and git history), `issues.md` (every bug and its fix), `todo.md`, `docs/` (long videos, voice assistant, presentation mode, RAG and OCR design), `blender 3d/README.md`, `CLAUDE.md`.
 
-## PDF lessons, RAG and the metaverse (merged from Dhiraj and Niharika)
+Team folders: **Kabir** (backend, web app, Android), **Dhiraj Shetty** (RAG, OCR, library, Blender 3D), **Niharika** (metaverse, voice assistant), **Priya** (Figma designs).
 
-- **PDF lessons:** `POST /api/uploads` (PDF up to 2 GB) -> job; poll `GET /api/uploads/{sha}`. Then `POST /api/lessons` with `upload=<sha>` (and optional `focus` such as "chapter 4"); an empty concept teaches that part of the PDF. Playlists take `documents: [sha]`. OCR (Tesseract + Unlimited-OCR) and hybrid search (e5 embeddings, FTS5 + FAISS, bge reranker) live in `backend/app/ocr` and `backend/app/rag`; the offline library is built with `backend/scripts/fetch_library.py` / `build_library.py`.
-- **Metaverse quiz world (Niharika):** `metaverse/` is a walkable 3D world with quiz gates, points and a shop. The web app opens it from the Home screen and from a lesson ("Quiz in the metaverse"); a lesson becomes a world through `metaverse/src/lessonToWorld.ts`.
-- **Voice assistant (Niharika's plan in `Niharika/`):** see `docs/voice-assistant.md` for what is built.
-- `Dhiraj/` is a full snapshot of Dhiraj's own build, kept as pushed; the running app is the root `backend/` and `web/`.
-- Backend tests: `cd backend && pytest` (needs `requirements-rag.txt`).
+---
 
-## Home screen, rewards and long videos (v0.9.0)
-- The prompt box on Home shrinks into a header as you scroll; settings (1-3 videos, 0:30-4:00 each, level, languages, PDF) are in the card below it
-- The left column holds your awards: streak, score, level, daily goal, badges
-- Videos over 1:30 are planned in parts and joined (`backend/app/longplan.py`); the API takes `duration_s` 30-240
-- While a video is being made you can leave its page: a floating "Creating…" pill (bottom right) leads back and says "Created" when it is done
+## Changelog
 
-## Photos, modes and homework (v0.10.0)
-- Plus button in the prompt box: attach photos (read locally by llava)
-- Explanation / Study / Homework pills; Homework also writes an answers file (`#/homework/<id>`, download as .md)
-- Videos: Auto lets the AI pick one video per concept
-
-## Android app (v0.13.0)
-`Unlox_Hackethon/` is the same product as a native Kotlin + Jetpack Compose app that runs fully on the phone (tested on a OnePlus 13R, 16 GB). No server, no internet at run time.
-
-| Part | Engine |
-|------|--------|
-| Tutor, lesson planner, study tools, homework solver | Gemma 4 E2B through LiteRT-LM |
-| Narration | Piper voices through sherpa-onnx 1.13.8 (en, hi, te, mr, bn, gu, ml); the phone's own voice for Tamil and Kannada |
-| Speech to text | Whisper names the language, then Vosk (en, hi, te, gu) or Whisper base (ta, kn, ml, mr, bn). The approach is borrowed from the NDialRecorder |
-| Translation | ML Kit language packs (download once), Gemma as the fallback |
-| Homework photos | ML Kit text recognition (Latin and Devanagari) |
-
-Screens follow the Figma file "NOTES - Kabir Edition" (onboarding, home, create, generating, player, tutor chat, progress, library) plus study tools, homework, rewards, settings and a profile with name and age. The opening animation and the ripple and wave of the voice screen are the website's.
-Models are not in git (about 4 GB): copy them to `Android/data/com.kabir.unlox_hackethon/files/models/` (`llm/`, `stt/`, `tts/`, `embeddings/`); Settings > On this phone shows what is found. Build: `cd Unlox_Hackethon && gradlew :app:assembleDebug`. A debug APK is attached to the GitHub release.
-
-## What is new in v0.14.0
-- **Scenes play while they are made**: the player opens on scene 1 about 6 s after you ask, the rest arrives behind it.
-- **Review** (spaced repetition), **Revise** mode (your weak spots), **Profile** (name and age), **Teach it back**.
-- **Take it away**: subtitles only, narration only (mp3), the whole lesson as one `.chanakya.zip` with its own player (copy it to a USB stick, import it from Library), worksheets and question papers to print, "Hear it" for glossary terms.
-- **Safer translation** (script and back-translation checks), **network diagrams**, **misconception scenes**, **jobs that resume after a crash**.
-- New pages: `#/review`, `#/profile`. New API: `/api/review/*`, `/api/weak*`, `/api/profile`, `/api/papers*`, `/api/lessons/{id}/{subtitles,podcast,say,bundle,teachback}`, `/api/bundle/import`, `/api/jobs`.
-- Environment: `STUDIO_WORKERS` (3), `BACKCHECK` (1: translate narration back to English and compare).
-- New backend files: `streaming.py`, `srs.py`, `learner.py`, `fidelity.py`, `exports.py`, `bundle.py`, `paper.py`, `teachback.py`, `layout.py`, `resume.py`.
-
-## What is new in v0.14.1
-- **Learnverse builds a world for any topic you type** with the local model, behind a "Building your world" screen. Quiz gates open by themselves when you reach them, Space (or the Jump button) jumps, and points and purchases are also kept on the backend.
-- New API: `POST /api/metaworld`, `GET/POST /api/metaverse/save`. New backend file: `metaworld.py`.
-- The "+" button on the home prompt now sits beside Create lesson.
-
-## What is new in v0.14.2
-- A GPU out-of-memory no longer fails a whole course: torch models fall back to the CPU, the failed episode is retried. Environment: `TRANSLATE_MIN_FREE_GB` (1.8).
-- Long videos are made in parts of 30 s and play while they are made; episode 1 of a course plays while it is made.
-- Videos start playing by themselves again after a language switch or a new episode.
-- Resource limits (all optional): `MIN_FREE_RAM_GB` (1.5), `MIN_FREE_VRAM_GB` (0.8), `MODEL_IDLE_S` (600), `PIPER_CUDA` (0), `PRELOAD_STT` (0), `STT_MIN_FREE_GB` (3), `STUDIO_WORKERS` (2), `PLAYLIST_WORKERS` (2). See `docs/presentation-mode.md`.
-- `TORCH_VRAM_FRACTION` (0.35): the share of the graphics card PyTorch may hold.
-
-## What is new in v0.14.3
-- Say "generate one more video on ..." in the tutor chat: the video is built scene by scene, shows up in the chat with its first frame and a play button, and is added to the playlist under the player. Every episode of a course now plays while it is made.
-
-## What is new in v0.14.4
-- **PDFs**: pages with a text layer are read as Markdown (headings, lists, tables kept) instead of OCR; broken fonts are detected and sent to OCR; pictures inside the PDF are described by llava (`PDF_FIGURES=1`, `PDF_MAX_FIGURES=40`) and searched with their page. New dependency: `pymupdf4llm==1.27.2.2` (`pip install -r backend/requirements-rag.txt`).
-- **Speed**: translation batches by length, other-language translations pre-cached while a lesson is being planned, speech recognition results cached, embedding and speech models pre-warmed when idle.
-
-## What is new in v0.15.0
-- **Faster, steadier first scene**: the planner prompt is built for the subject (first scene about 1.2 s warm, was about 3.2 s with a wide spread).
-- **PDF upload**: one continuous progress bar, much faster Markdown reading.
-- **Android**: long videos in 30 s parts, every video of a set opens as soon as its first scene exists and plays on to the next, "make one more video on ..." in the tutor chat, and lag fixes.
-- **Learnverse**: new sky, wind, sparks, colour grade, livelier avatar.
-
-## What is new in v0.15.2
-- **Coherent long videos and courses**: at most 3 parts per video and 3 videos per course, planned one after the other, each told what was already taught; one title card, one summary, no repeated headings, code or narration, captions of 22 to 34 words.
-- **"Teach me" is gone from titles**: the subject is taken out of the request ("teach me about dsa in java" is "DSA in Java"), on the website and the phone.
-- **A photo no longer blocks Create** and its description is cleaned (no loops, only the lines that fit each episode).
-- **Expressive narration** (`TTS_EXPRESSIVE=1`, default on; `0` for the old flat voice): per-scene tone and per-sentence pacing, pauses and emphasis. New backend files: `content.py`, `expression.py`.
+Current: **v0.16.0** (2026-10-29): Flash and Pro, memory of what already exists, technical topics shown with code and network scenes, reference notes, retries and readiness checks, fact checker.
+Earlier: v0.15.2 coherent long videos and courses, "Teach me" removed from titles, expressive narration, non-blocking photos; v0.15.0 subject-aware prompt and faster first scene, PDF progress, Android parts and chat video; v0.14.x PDF Markdown and figures, caching, Learnverse worlds, chat videos, resilience; v0.13 Android app; v0.10 photos, modes, homework; v0.9 grey-glass home, rewards, long videos.
+Full per-version notes: `progress.md` and `docs/README-notes.md`.

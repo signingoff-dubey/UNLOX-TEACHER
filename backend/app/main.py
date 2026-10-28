@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, content, homework, jobs, knowledge, resources, routes_rag, stt, translate, tts, vision
+from . import config, content, homework, jobs, knowledge, resources, routes_rag, selfcheck, stt, translate, tts, vision
 from .exporter import export_mp4
 from .ocr.ingest import upload_status
 from .languages import LANGUAGES
@@ -71,6 +71,10 @@ def _warm_up() -> None:
 async def lifespan(_: FastAPI):
     resources.lower_priority()                 # the desktop, the browser and the slides always win over a lesson being made
     try:
+        selfcheck.log_report(log)              # what is missing is in the log in the first second, not after a three minute lesson
+    except Exception as e:  # noqa: BLE001
+        log.warning("self-check failed: %s", e)
+    try:
         knowledge.KnowledgeBase.get()          # load the index once, not on the first lesson
     except Exception as e:
         log.error("Knowledge base failed to load: %s", e)
@@ -101,6 +105,7 @@ class LessonRequest(BaseModel):
     documents: list[str] = []
     images: list[str] = Field(default_factory=list, max_length=4)       # ids from POST /api/images
     mode: Literal["study", "homework", "explain", "revise"] = "explain"
+    quality: Literal["flash", "pro"] = "flash"      # flash: scenes stream while the rest is written; pro: the whole video is planned first
 
 
 class PlaylistRequest(BaseModel):
@@ -112,6 +117,7 @@ class PlaylistRequest(BaseModel):
     documents: list[str] = []
     images: list[str] = Field(default_factory=list, max_length=4)
     mode: Literal["study", "homework", "explain"] = "explain"
+    quality: Literal["flash", "pro"] = "flash"
 
 
 class PlaylistExportRequest(BaseModel):
@@ -140,6 +146,12 @@ def _ollama_loaded() -> list[dict]:
         return [{"model": m["name"], "gpu_percent": round(100 * m.get("size_vram", 0) / max(m.get("size", 1), 1))} for m in ps]
     except requests.RequestException:
         return []
+
+
+@app.get("/api/ready")
+def ready() -> dict:
+    """Can a lesson be made right now? Every check says ok / warn / fail and what to run to fix it (selfcheck.py)."""
+    return selfcheck.report()
 
 
 @app.get("/api/health")
@@ -192,7 +204,7 @@ def create_lesson(req: LessonRequest) -> dict:
         if upload_status(d) is None:
             raise HTTPException(404, "That PDF upload was not found")
     return jobs.submit("lesson", build_lesson, concept, req.languages, req.level, req.duration_s, documents, None,
-                       req.focus.strip(), req.images, req.mode, True)       # True: one language at a time
+                       req.focus.strip(), req.images, req.mode, True, None, req.quality)       # True: one language at a time
 
 
 @app.get("/api/jobs/{job_id}")
@@ -246,7 +258,7 @@ def create_playlist(req: PlaylistRequest) -> dict:
     if len(topic) < 2 and not req.documents and not req.images:
         raise HTTPException(400, "Type a topic, or attach a PDF or a photo")
     topic = topic or ("Homework help" if req.mode == "homework" else "Your document" if req.documents else "Your photo")
-    pl = playlist.start(topic, req.languages, req.level, req.duration_s, req.episodes, req.documents, req.images, req.mode)
+    pl = playlist.start(topic, req.languages, req.level, req.duration_s, req.episodes, req.documents, req.images, req.mode, req.quality)
     job = jobs.submit("playlist", playlist.build, pl["id"])
     return {"playlist": pl, "job": job}
 

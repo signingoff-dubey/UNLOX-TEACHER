@@ -83,4 +83,6 @@ export type Playlist = {
 export type PlaylistSummary = { id: string; topic: string; title: string; created: number; status: string; episodes: number; ready: number };
 
 export type Level = "beginner" | "intermediate";
-export type LessonSettings = { level: Level; duration_s: number; languages: string[] };
+/** Flash: the first scenes are shown within seconds while the rest is still being written. Pro: the whole video is outlined and planned first (slower, more coherent). */
+export type Quality = "flash" | "pro";
+export type LessonSettings = { level: Level; duration_s: number; languages: string[]; quality: Quality };

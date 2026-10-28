@@ -397,3 +397,34 @@
 **Fix:** `notes=False` in those two tests; `wait_for_upgrades` is asserted, so a timeout fails clearly
 **Files Changed:** backend/tests/test_knowledge_bridge.py, tests/test_pdf_markdown_figures.py
 **Status:** Resolved
+
+
+---
+
+## [ISSUE-045] — 2026-10-29
+**Title:** "teach me what avl trees are": repeated, shallow video built on a "book of stories" comparison
+**Symptom:** a 2-episode course with six scenes each: "stories" instead of nodes, no definition of balance factor or rotations, no tree drawn, no code although the request said C, the same hook twice, narration of 18 to 34 words
+**Root Cause:** AVL trees were not in the knowledge base, so there was no source; DSA words were not recognised as a code topic; the `network` (boxes and arrows) template was never described to the model, so a tree could not be drawn; the prompt asked for an everyday example in every scene; nothing told the planner what the learner already had
+**Fix:** subjects (`planner.CODE_WORDS`, `NET_WORDS`), the network template documented only for topics that can use it, `language_of`, a retry when a technical lesson has no code/network/graph scene or leans on comparisons (`content.analogy_overload`), `content.strip_analogies`, `memory.py`, reference notes in `data/kb_extra/` (AVL, BSTs, heaps, sorting, graphs, MERN), Flash/Pro modes
+**Files Changed:** backend/app/planner.py, content.py, memory.py (new), longplan.py, pipeline.py, llm.py, selfcheck.py (new), main.py, playlist.py, tests/test_modes_memory.py; web Home.tsx, api.ts, App.tsx; data/kb_extra/*
+**Status:** Resolved for Flash and Pro (checked on the real model); the 7B can still pick a weak example
+
+---
+
+## [ISSUE-046] — 2026-10-29
+**Title:** A larger local model (qwen3.5:9b) is slower, not better, on the 8 GB card
+**Symptom:** `ollama ps` showed 72 % of the model on the GPU (6.3 of 8.8 GB, the rest on the CPU); 17 tokens/s against 43 for qwen2.5:7b (100 % on the GPU, 5.5 GB); the AVL plan came back as invalid JSON
+**Root Cause:** a 9.7B Q4 model plus a 6144-token context does not fit in 8 GB next to the translation model and voices
+**Fix:** nothing adopted; Flash and Pro use the same model. A model is only worth adding if `ollama ps` shows 100 % on the GPU. Models whose name ends in `-cloud` or `:cloud` run on a remote server and are not allowed (offline rule)
+**Files Changed:** none (benchmark: scratch script)
+**Status:** Closed (decision)
+
+---
+
+## [ISSUE-047] — 2026-10-29
+**Title:** test_studio_queue tests fail in the full suite only while the machine is loaded
+**Symptom:** `test_prebuild_queues_everything_once` and `test_urgent_request_jumps_ahead_of_background` failed twice in a full run made right after a GPU benchmark; they pass alone and in three other full runs (343 passed)
+**Root Cause:** timing: they wait on background threads
+**Fix:** none yet; rerun when the laptop is idle
+**Files Changed:** none
+**Status:** Ongoing (flaky under load)

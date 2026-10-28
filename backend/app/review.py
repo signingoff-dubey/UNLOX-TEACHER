@@ -76,7 +76,7 @@ def _lengthen(plan: LessonPlan, target_words: int, only_short: bool = False) -> 
             f"Plain text only: no markdown, no list, no quotes.")
         try:
             r = requests.post(f"{config.OLLAMA_URL}/api/chat", json={
-                "model": config.OLLAMA_MODEL, "stream": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
+                "model": llm.current_model(), "stream": False, "think": False, "keep_alive": config.OLLAMA_KEEP_ALIVE,
                 "messages": [{"role": "user", "content": prompt}],
                 "options": config.ollama_options({"temperature": 0.6, "num_predict": 110}),
             }, timeout=120)

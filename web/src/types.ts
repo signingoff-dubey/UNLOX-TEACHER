@@ -88,6 +88,20 @@ export type Lesson = {
   /** English source plan (tutor context) and notes from the lesson reviewer. */
   plan?: unknown;
   review?: string[];
+  /** What the fact checker did: statements checked, confirmed by sources, corrected or removed. */
+  facts?: FactReport | null;
+};
+
+export type FactReport = {
+  checked: number;
+  supported: number;
+  confirmed_by_model: number;
+  unconfirmed: number;
+  fixed: { scene: number; before: string; after: string; why: string }[];
+  removed: { scene: number; text: string; why: string }[];
+  sources: string[];
+  seconds: number;
+  partial: boolean;
 };
 
 export type LessonProps = {

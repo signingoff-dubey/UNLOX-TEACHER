@@ -132,6 +132,21 @@ export const NotesPanel: React.FC<Props> = ({ lesson, track, current, onSeek }) 
               </ul>
             </div>
           )}
+          {lesson?.facts && lesson.facts.checked > 0 && (
+            <div className="sources-box">
+              <div className="label">Fact check</div>
+              <p className="muted">
+                {lesson.facts.checked} statements checked: {lesson.facts.supported} confirmed by {lesson.facts.sources.length ? lesson.facts.sources.join(", ") : "the sources"},{" "}
+                {lesson.facts.confirmed_by_model} by a second look, {lesson.facts.unconfirmed} could not be confirmed
+                {lesson.facts.fixed.length + lesson.facts.removed.length > 0 && `; ${lesson.facts.fixed.length} corrected, ${lesson.facts.removed.length} removed`}.
+              </p>
+              {lesson.facts.fixed.length > 0 && (
+                <ul className="sources">
+                  {lesson.facts.fixed.map((f, i) => <li key={i}><span className="src-title">Scene {f.scene}</span> <span className="muted">{f.before} → {f.after}</span></li>)}
+                </ul>
+              )}
+            </div>
+          )}
           <div className="mine">
             <label htmlFor="mynotes" className="label">My notes</label>
             <textarea id="mynotes" value={mine} onChange={(e) => edit(e.target.value)} placeholder="Type anything you want to remember…" rows={4} />

@@ -1,7 +1,23 @@
 # Progress Log
 
-## Current Version: v0.15.2
+## Current Version: v0.16.0
 ## Status: In Progress (pre-Gate 1)
+
+---
+
+## [v0.16.0] — 2026-10-29
+### What's New
+- **Flash and Pro** (`quality` on `/api/lessons` and `/api/playlists`, a Flash/Pro switch on the Home page, same model for both). Flash is what it was: scenes appear within seconds and flow into each other while the rest is still being written. Pro shows nothing until the whole video is planned: the video is outlined scene by scene first (`longplan.beat_sheet`), the first minute is written in one call, and each further minute is patched on in a call that sees the whole outline and the full text written so far (`longplan.plan_pro`, `PRO_BLOCK_S = 60`); the fact check gets twice the time. Measured on "teach me what avl trees are" (2 min): Flash 133 s (first scenes after 18 s), Pro 167 s (nothing until the end); Pro covers balance factor, single and double rotation, insertion, deletion and applications, Flash stayed on a "stacked books" comparison
+- **Memory of what already exists** (`memory.py`): every finished lesson is summarised (headings, key points, first lines of code); the planner is told which related videos the learner already has and must not repeat their hook, definitions, examples or code. A retry of the same request is not treated as something to avoid. Course episodes get the same through the course context; Pro also sees the other episodes
+- **Technical topics are shown, not described**: data structures, trees, DSA, MERN and similar are now recognised as code topics; trees, linked structures, pipelines and architectures are drawn with the `network` template (it was never documented to the model before); the language the learner names ("in C language") is used for the code; a technical lesson of only text scenes is sent back; one everyday comparison per technical video is kept and the rest are removed (`content.strip_analogies`)
+- **Reference notes for the fact checker and planner** (`data/kb_extra/`, indexed by `scripts/build_knowledge.py --no-fetch`): data structures and AVL trees (balance factor, four rotation cases, worked examples, C code), MERN, coordinate geometry, Python basics. Hand-written lesson plans live in `data/curated/` (git-ignored)
+- **Robustness**: Ollama calls are repeated twice with a wait when it is busy or restarting (`llm.post`); `GET /api/ready` and a start-up log say what is missing and what to run (Ollama, models, knowledge base, disk, voices, video export); `quality` is validated; `build_lesson(plan=...)` builds a hand-written plan through the same voices, templates and renderer
+- **Fact checker** (`facts.py`, from the previous work): arithmetic and canonical lists checked by calculation, statements checked against retrieved passages with a quoted proof, a focused second question before anything is changed, corrections must pass the same check; the report is saved with the lesson and shown on the web page
+
+### Known Issues
+- Android has no Flash/Pro switch yet (it keeps its own Flash-style generation)
+- A bigger local model was measured and rejected: `qwen3.5:9b` is 8.8 GB with the context window, only 72 % fits on the 8 GB card, 17 tokens/s against 43 for the current 7B, and its first answer was invalid JSON. Cloud models in Ollama are refused: the project is offline
+- The 7B still gets facts wrong now and then (the fact checker removes what it can prove wrong); code in code scenes is shown, not run or verified (Python snippets are parse-checked)
 
 ---
 

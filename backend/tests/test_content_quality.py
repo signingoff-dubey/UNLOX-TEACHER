@@ -140,7 +140,7 @@ def test_a_course_is_at_most_three_videos_and_later_videos_know_the_earlier_ones
 def test_the_course_hands_each_video_what_the_previous_one_taught(monkeypatch):
     seen = []
 
-    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, progress=None):
+    def fake_build(concept, languages, level, duration_s, documents, series=None, images=None, mode="explain", progressive=False, quality="flash", progress=None):
         seen.append((concept, (series or {}).get("taught", "")))
         progress("Checking the lesson", 0.58, taught=f"- Taught in {concept}")
         progress("Almost", 0.7)
@@ -199,7 +199,7 @@ def test_a_lesson_built_from_a_request_never_carries_the_request_words(monkeypat
     from app import pipeline
     seen = {}
 
-    def fake_build(concept, languages, level, duration_s, documents, series, progress, focus, images, mode, progressive):
+    def fake_build(concept, languages, level, duration_s, documents, series, progress, focus, images, mode, progressive, plan_override=None, quality="flash"):
         seen["concept"] = concept
         return {"id": "x"}
 
@@ -233,3 +233,14 @@ def test_two_scenes_that_open_with_the_same_sentence_are_one_scene():
     plan = part([sc("title", "Rainbows"), sc("flow", "Colours order", a), sc("diagram", "Order diagram", b), sc("bullets", "Drops", "A drop acts as a tiny mirror and lens at once, sending light back toward you."), sc("quiz", "Quiz")])
     content.dedupe_plan(plan)
     assert [s.heading for s in plan.scenes].count("Order diagram") == 0
+
+
+def test_a_quiz_must_ask_a_question_and_not_give_the_answer_away():
+    good = part([sc("title", "T"), sc("quiz", "Q", "Which color bends the most? Think about the drop.", items=["Red", "Violet", "Green"], answer_index=1)])
+    assert content.quiz_problem(good) is None
+    statement = part([sc("title", "T"), sc("quiz", "Q", "Red is on the outside of a rainbow. Violet follows behind.", items=["Red", "Violet", "Green"], answer_index=1)])
+    assert "question" in content.quiz_problem(statement)
+    leaked = part([sc("title", "T"), sc("quiz", "Q", "Which color bends the most? It is violet.", items=["Red", "Violet", "Green"], answer_index=1)])
+    assert "answer away" in content.quiz_problem(leaked)
+    dup = part([sc("title", "T"), sc("quiz", "Q", "Which one is it?", items=["Red", "red", "Green"], answer_index=1)])
+    assert "distinct" in content.quiz_problem(dup)
