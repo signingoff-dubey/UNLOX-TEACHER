@@ -50,6 +50,16 @@ Working end-to-end 25%, Teaching quality 20%, Visuals 15%, Languages 15%, Engine
 ## Out of Scope
 Cloud anything, native mobile app, STT/Whisper, generative video, user accounts.
 
+## Team
+| | |
+|---|---|
+| **Team name** | The Last Commit |
+| **Members** | Aryan Dubey, Priyadarshini Prasad, Niharika K P, Dhiraj Shetty |
+| **College** | RV University, Bengaluru |
+| **Course** | B.Tech (Hons) |
+| **Branch** | Computer Science Engineering |
+| **Year of study** | 2nd year |
+
 ## Ownership
 - Teammate: backend (`backend/`) + frontend (`web/`) — merged from origin/main
 - This workstream: docs, model/asset setup, benchmarks, orchestration design (frontend `web/` is the teammate's, Remotion-based)

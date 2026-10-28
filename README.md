@@ -4,6 +4,15 @@
 
 **Latest release: v0.16.0** · Built for the Unlox hackathon · Repo: https://github.com/signingoff-dubey/UNLOX-TEACHER
 
+| | |
+|---|---|
+| **Team name** | The Last Commit |
+| **Members** | Aryan Dubey, Priyadarshini Prasad, Niharika K P, Dhiraj Shetty |
+| **College** | RV University, Bengaluru |
+| **Course** | B.Tech (Hons) |
+| **Branch** | Computer Science Engineering |
+| **Year of study** | 2nd year |
+
 ```
 topic / photo / PDF
    │
@@ -350,7 +359,7 @@ Excluded: Meta MMS-TTS (CC-BY-NC), sarvam-translate (GPL tag + Gemma base). Plea
 
 `prd.md`, `problem_statement.md`, `pitch.md`, `progress.md` (versions and git history), `issues.md` (every bug and its fix), `todo.md`, `docs/` (long videos, voice assistant, presentation mode, RAG and OCR design), `blender 3d/README.md`, `CLAUDE.md`.
 
-Team folders: **Kabir** (backend, web app, Android), **Dhiraj Shetty** (RAG, OCR, library, Blender 3D), **Niharika** (metaverse, voice assistant), **Priya** (Figma designs).
+Team folders in the repo: `Dhiraj/` (Dhiraj Shetty's snapshot of the RAG, OCR and library work), `Niharika/` (Niharika K P's voice-assistant and metaverse notes), `Priya/` (Priyadarshini Prasad's screen designs). See the team table at the top.
 
 ---
 

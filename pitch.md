@@ -33,4 +33,13 @@ Open Indic TTS and small instruct models now run on CPU; privacy and offline use
 TBD (add rendered MP4s under `samples/`)
 
 ## Team
-Unlox hackathon team (frontend/docs + backend split).
+| | |
+|---|---|
+| **Team name** | The Last Commit |
+| **Members** | Aryan Dubey, Priyadarshini Prasad, Niharika K P, Dhiraj Shetty |
+| **College** | RV University, Bengaluru |
+| **Course** | B.Tech (Hons) |
+| **Branch** | Computer Science Engineering |
+| **Year of study** | 2nd year |
+
+Built for the Unlox hackathon.
