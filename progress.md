@@ -460,6 +460,8 @@
 ## Git History
 | Commit | Date | Message |
 |--------|------|---------|
+| 671c52c | 2026-10-28 | v0.16.4: languages drafted while the video is made, exports and papers reused instead of remade, MP4 save popup and real export progress, Learnverse world behind Start, study-tool borders, notes panel fix, architecture and flow docs |
+| 7227da8 | 2026-10-28 | docs: git history in progress.md |
 | f4a3de6 | 2026-10-28 | v0.16.3: Flash streams every part without pauses, course videos overlap, languages in parallel, full worksheets/papers with download popup, real progress bars, animated take-away buttons |
 | d9c4009 | 2026-10-29 | v0.16.2: Android player fixes (centred picture, full-screen exit, progress that keeps moving, build progress card) |
 | aca1c6c | 2026-10-29 | v0.16.1: audit fixes (offline by default, duration follows the slowest language, placeholder-heading regression, recap scene, more code topics, Indian languages preselected, verified licence table) |
